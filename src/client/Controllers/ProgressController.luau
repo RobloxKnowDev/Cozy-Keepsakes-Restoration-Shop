@@ -16,7 +16,7 @@ function Progresscontroller:Init()
 	}
 end
 
-function Progresscontroller:Update(Object: Model | BasePart): boolean
+function Progresscontroller:Update(Object: Model | BasePart)
 	local Totalspots = Object:GetAttribute("TotalSpots") or 0
 	local Cleanedspots = Object:GetAttribute("CleanedSpots") or 0
 	local Globalratio = Totalspots > 0 and math.clamp(Cleanedspots / Totalspots, 0, 1) or 0
@@ -28,7 +28,6 @@ function Progresscontroller:Update(Object: Model | BasePart): boolean
 		self.texts[Kind].Text = string.format("%d%%", math.floor(Ratio * 100 + 0.5))
 		Bar.Size = UDim2.fromScale(Ratio, 1)
 	end
-	return Totalspots > 0 and Cleanedspots >= Totalspots
 end
 
 return Progresscontroller

@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local Runservice = game:GetService("RunService")
 local Guiservice = game:GetService("GuiService")
+local Tweenservice = game:GetService("TweenService")
 local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
@@ -37,6 +38,13 @@ local Selectioncallback: ((boolean) -> ())? = nil
 local Previouscameratype = Enum.CameraType.Custom
 local Previouscamerasubject = Camera.CameraSubject
 local Completionview = false
+local Introcameraactive = false
+local Introcameratween: Tween? = nil
+local Cameratransitionactive = false
+local Cameratransitionelapsed = 0
+local Cameratransitionduration = 2
+local Cameratransitionstart = CFrame.identity
+local Cameratransitionlooktarget = Vector3.zero
 
 local function Pointerposition(Input: InputObject): Vector2
 	return Vector2.new(Input.Position.X, Input.Position.Y)
@@ -156,6 +164,15 @@ function Controller:IsDragging(): boolean
 	return Dragging
 end
 
+function Controller:IsIntroCameraReady(): boolean
+	local Campart = Workspace:FindFirstChild("CamPart")
+	return Introcameraactive
+		and Introcameratween == nil
+		and Campart ~= nil
+		and Campart:IsA("BasePart")
+		and (Camera.CFrame.Position - Campart.Position).Magnitude < 0.05
+end
+
 function Controller:SetEnabled(Value: boolean)
 	Enabled = Value
 	if not Enabled then
@@ -182,7 +199,47 @@ function Controller:SelectObject()
 	end
 end
 
+function Controller:ShowIntroCamera()
+	local Campart = Workspace:FindFirstChild("CamPart")
+	if not Campart or not Campart:IsA("BasePart") then
+		warn("InspectionCameraController: Workspace.CamPart introuvable")
+		return
+	end
+
+	if not Introcameraactive then
+		Previouscameratype = Camera.CameraType
+		Previouscamerasubject = Camera.CameraSubject
+	end
+
+	Introcameraactive = true
+	Camera.CameraType = Enum.CameraType.Scriptable
+	if Introcameratween then
+		Introcameratween:Cancel()
+		Introcameratween = nil
+	end
+
+	local Newtween = Tweenservice:Create(
+		Camera,
+		TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ CFrame = Campart.CFrame }
+	)
+	Introcameratween = Newtween
+	Newtween:Play()
+	Newtween.Completed:Once(function()
+		if Introcameratween == Newtween then
+			Newtween:Destroy()
+			Introcameratween = nil
+		end
+	end)
+end
+
 function Controller:Begin(Object: InspectionTarget)
+	local Shouldtransition = Introcameraactive
+	if Introcameratween then
+		Introcameratween:Cancel()
+		Introcameratween:Destroy()
+		Introcameratween = nil
+	end
 	Target = Object
 	Objectselected = false
 	Focusoffset = Vector3.zero
@@ -203,8 +260,15 @@ function Controller:Begin(Object: InspectionTarget)
 	Distance = Targetdistance
 	Safecameradistance = Distance
 
-	Previouscameratype = Camera.CameraType
-	Previouscamerasubject = Camera.CameraSubject
+	if not Introcameraactive then
+		Previouscameratype = Camera.CameraType
+		Previouscamerasubject = Camera.CameraSubject
+	end
+	Cameratransitionactive = Shouldtransition
+	Cameratransitionelapsed = 0
+	Cameratransitionstart = Camera.CFrame
+	Cameratransitionlooktarget = Camera.CFrame.Position + Camera.CFrame.LookVector * 10
+	Introcameraactive = false
 	Camera.CameraType = Enum.CameraType.Scriptable
 end
 
@@ -220,6 +284,13 @@ end
 function Controller:End()
 	Enabled = false
 	Completionview = false
+	Introcameraactive = false
+	Cameratransitionactive = false
+	if Introcameratween then
+		Introcameratween:Cancel()
+		Introcameratween:Destroy()
+		Introcameratween = nil
+	end
 	Enddrag()
 	Setobjectselected(false)
 	Target = nil
@@ -231,7 +302,7 @@ end
 
 function Controller:Start()
 	Userinputservice.InputBegan:Connect(function(Input, Processed)
-		if Processed or not Target or Completionview then
+		if Processed or not Target or Completionview or Cameratransitionactive then
 			return
 		end
 
@@ -260,7 +331,7 @@ function Controller:Start()
 	end)
 
 	Userinputservice.InputChanged:Connect(function(Input)
-		if not Target or Completionview then
+		if not Target or Completionview or Cameratransitionactive then
 			return
 		end
 
@@ -388,7 +459,29 @@ function Controller:Start()
 			Safecameradistance += (Alloweddistance - Safecameradistance) * Collisionalpha
 		end
 		local Safeposition = Focus + Orbitdirection * Safecameradistance
-		Camera.CFrame = Camera.CFrame:Lerp(CFrame.lookAt(Safeposition, Focus), Alpha)
+		local Desiredcamera = CFrame.lookAt(Safeposition, Focus)
+		if Cameratransitionactive then
+			Cameratransitionelapsed += Deltatime
+			local Progress = math.clamp(Cameratransitionelapsed / Cameratransitionduration, 0, 1)
+			local Easedprogress = Tweenservice:GetValue(
+				Progress,
+				Enum.EasingStyle.Quint,
+				Enum.EasingDirection.InOut
+			)
+			local Traveldistance = (Safeposition - Cameratransitionstart.Position).Magnitude
+			local Arc = math.clamp(Traveldistance * 0.06, 0.5, 2) * math.sin(Easedprogress * math.pi)
+			local Position = Cameratransitionstart.Position:Lerp(Safeposition, Easedprogress)
+				+ Vector3.new(0, Arc, 0)
+			local Looktarget = Cameratransitionlooktarget:Lerp(Focus, Easedprogress)
+			Camera.CFrame = CFrame.lookAt(Position, Looktarget)
+
+			if Progress >= 1 then
+				Cameratransitionactive = false
+				Camera.CFrame = Desiredcamera
+			end
+		else
+			Camera.CFrame = Camera.CFrame:Lerp(Desiredcamera, Alpha)
+		end
 	end)
 end
 

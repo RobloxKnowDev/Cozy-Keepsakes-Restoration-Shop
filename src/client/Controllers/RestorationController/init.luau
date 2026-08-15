@@ -1,6 +1,8 @@
 local Guiservice = game:GetService("GuiService")
+local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
+local Startergui = game:GetService("StarterGui")
 local Userinputservice = game:GetService("UserInputService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
@@ -20,6 +22,41 @@ local Controller = { Name = "RestorationController", Priority = 1 }
 local Interface = Interfacemodule.new(Tools)
 local Runtime = Toolruntime.new(Tools, Interface)
 local Activeobject: (Model | BasePart)? = nil
+local Player = Players.LocalPlayer
+
+local function Lockcharacter(Character: Model)
+	local Humanoid = Character:WaitForChild("Humanoid", 10)
+	if not Humanoid or not Humanoid:IsA("Humanoid") then return end
+	Humanoid.WalkSpeed = 0
+	Humanoid.JumpPower = 0
+	Humanoid.JumpHeight = 0
+	Humanoid.AutoRotate = false
+	Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+end
+
+local function Disableplayercontrols()
+	local Playerscripts = Player:WaitForChild("PlayerScripts")
+	local Playermodule = Playerscripts:WaitForChild("PlayerModule")
+	local Controls = require(Playermodule):GetControls()
+	Controls:Disable()
+
+	if Player.Character then
+		task.spawn(Lockcharacter, Player.Character)
+	end
+	Player.CharacterAdded:Connect(Lockcharacter)
+
+	task.spawn(function()
+		for _ = 1, 20 do
+			if pcall(function()
+				Startergui:SetCore("ResetButtonCallback", false)
+			end) then
+				return
+			end
+			task.wait(0.25)
+		end
+		warn("RestorationController: impossible de désactiver le bouton Reset")
+	end)
+end
 
 local function Showcompletion()
 	local Completion = Core:GetController("CompletionController")
@@ -28,23 +65,30 @@ local function Showcompletion()
 	Core:GetController("InspectionCameraController"):PrepareCompletion()
 	Interface:HideForCompletion()
 	Completion:Show(Activeobject, function()
+		Remotemanager:InvokeServer("RestorationService", "CompleteRestoration")
 		Remotemanager:FireServer("RestorationService", "SessionEnded")
-		Core:GetController("InspectionCameraController"):End()
+		local Cameracontroller = Core:GetController("InspectionCameraController")
+		Cameracontroller:End()
+		Cameracontroller:ShowIntroCamera()
 		Activeobject = nil
 		Runtime:SetObject(nil)
-		Interface.Gui.Enabled = false
+		Interface:ShowIntro()
 		Completion:Hide()
 	end)
 end
 
 local function Updateprogress()
-	if Activeobject and Core:GetController("ProgressController"):Update(Activeobject) then
-		Showcompletion()
+	if Activeobject then
+		Core:GetController("ProgressController"):Update(Activeobject)
 	end
 end
 
 function Controller:SelectTool(Name: string)
 	Runtime:Select(Name)
+end
+
+function Controller:IsEditingObject(): boolean
+	return Activeobject ~= nil
 end
 
 function Controller:Enter()
@@ -56,6 +100,7 @@ function Controller:Enter()
 	Core:GetController("CompletionController"):Hide()
 	Core:GetController("InspectionCameraController"):Begin(Object)
 	Interface.Gui.Enabled = true
+	Interface:ShowForRestoration()
 	Interface.ProgressText.Visible = true
 	Userinputservice.MouseBehavior = Enum.MouseBehavior.Default
 	Updateprogress()
@@ -64,12 +109,17 @@ end
 
 function Controller:Start()
 	local Cameracontroller = Core:GetController("InspectionCameraController")
+	Disableplayercontrols()
 	Interface:Start(
 		function(Name) Runtime:Select(Name) end,
 		function(Mode) Cameracontroller:SetTransformMode(Mode) end,
-		function() Cameracontroller:FlipObject() end
+		function() Cameracontroller:FlipObject() end,
+		function() Showcompletion() end
 	)
 	Cameracontroller:SetTransformMode("Rotate")
+	Cameracontroller:ShowIntroCamera()
+	Interface:ShowIntro()
+	Core:GetController("CompletionController"):Hide()
 	Userinputservice.MouseIconEnabled = true
 
 	Userinputservice.InputBegan:Connect(function(Input, Processed)
@@ -87,8 +137,6 @@ function Controller:Start()
 		Runtime:Update(Deltatime)
 		Updateprogress()
 	end)
-
-	task.defer(function() Controller:Enter() end)
 end
 
 return Controller

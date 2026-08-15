@@ -3,6 +3,7 @@ local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Tweenservice = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
+local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Config = require(Replicatedstorage.Shared.Config.Object)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
@@ -12,6 +13,7 @@ local Restorationservice = {
 	Remotes = {
 		BeginSession = "Function",
 		BeginPeel = "Function",
+		CompleteRestoration = "Function",
 		CompletePeel = "Event",
 		CancelPeel = "Event",
 		CleanSpot = "Event",
@@ -35,10 +37,36 @@ type RestorationObject = Model | BasePart
 local Sessions: { [Player]: RestorationObject } = {}
 local Lastclean: { [Player]: number } = {}
 local Peeling: { [Player]: BasePart } = {}
+local Activeobject: RestorationObject? = nil
+
+local function Destroyobject(Object: RestorationObject?)
+	if Object and Object.Parent then
+		Object:Destroy()
+	end
+end
+
+local function Getcompletionratio(Object: RestorationObject): number
+	local Totalspots = tonumber(Object:GetAttribute("TotalSpots")) or 0
+	local Cleanedspots = tonumber(Object:GetAttribute("CleanedSpots")) or 0
+	if Totalspots <= 0 then
+		return 0
+	end
+
+	return math.clamp(Cleanedspots / Totalspots, 0, 1)
+end
+
+local function Cleanupactiveobjectifidle()
+	if next(Sessions) == nil then
+		Destroyobject(Activeobject)
+		Activeobject = nil
+	end
+end
 
 local function Validsessionspot(Player: Player, Spot: any): (RestorationObject?, boolean)
 	local Object = Sessions[Player]
-	if not Object or typeof(Spot) ~= "Instance" or not Spot:IsA("BasePart") then return Object, false end
+	if not Object or typeof(Spot) ~= "Instance" or not Spot:IsA("BasePart") then
+		return Object, false
+	end
 	local Spots = Object:FindFirstChild("RestorationSpots")
 	return Object, Spots ~= nil and Spot:IsDescendantOf(Spots)
 end
@@ -58,57 +86,77 @@ local function Isnamedobject(Instance: Instance): boolean
 	return false
 end
 
-local function Spawnconfiguredobject(): RestorationObject?
+local function Spawnconfiguredobject(Objectname: string?): RestorationObject?
 	local Spawnattachment = Workspace:FindFirstChild("Spawn", true)
 	if not Spawnattachment or not Spawnattachment:IsA("Attachment") then
 		warn("RestorationService: attachment Workspace.Spawn introuvable")
 		return nil
 	end
 
-	local Objectassets = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object")
-	for Assetname, Definition in pairs(Config.Object) do
-		local Asset = Objectassets:FindFirstChild(Assetname)
-		if not Asset or (not Asset:IsA("Model") and not Asset:IsA("BasePart")) then
-			warn(string.format("RestorationService: Asset/Object/%s introuvable ou invalide", Assetname))
-			continue
+	local Assetname = Objectname
+	if not Assetname then
+		for Name in pairs(Config.Object) do
+			Assetname = Name
+			break
 		end
-
-		local Object = Asset:Clone() :: RestorationObject
-		Object.Name = Assetname
-		Object:SetAttribute("RestorationObject", true)
-		Object:SetAttribute("KeepSpawnPosition", true)
-		Object:SetAttribute("SpawnFloorY", Spawnattachment.WorldPosition.Y)
-		Object:SetAttribute("DisplayName", Definition.Name)
-		Object:SetAttribute("MaxPrice", Definition.MaxPrice)
-		Object.Parent = Workspace
-		if Object:IsA("Model") then
-			Object:PivotTo(Spawnattachment.WorldCFrame)
-		else
-			Object.CFrame = Spawnattachment.WorldCFrame
-		end
-
-		
-		local Boundscframe, boundsSize
-		if Object:IsA("Model") then
-			Boundscframe, boundsSize = Object:GetBoundingBox()
-		else
-			Boundscframe, boundsSize = Object.CFrame, Object.Size
-		end
-		local Bottomy = Boundscframe.Position.Y - boundsSize.Y * 0.5
-		local Heightoffset = Spawnattachment.WorldPosition.Y - Bottomy
-		if Object:IsA("Model") then
-			Object:PivotTo(Object:GetPivot() + Vector3.new(0, Heightoffset, 0))
-		else
-			Object.CFrame += Vector3.new(0, Heightoffset, 0)
-		end
-		return Object
 	end
-	return nil
+	if not Assetname then
+		return nil
+	end
+
+	local Definition = Config.Object[Assetname]
+	if not Definition then
+		warn(string.format("RestorationService: config objet '%s' introuvable", Assetname))
+		return nil
+	end
+
+	local Objectassets = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object")
+	local Asset = Objectassets:FindFirstChild(Assetname)
+	if not Asset or (not Asset:IsA("Model") and not Asset:IsA("BasePart")) then
+		warn(string.format("RestorationService: Asset/Object/%s introuvable ou invalide", Assetname))
+		return nil
+	end
+
+	local Object = Asset:Clone() :: RestorationObject
+	local Maxvalue = tonumber(Definition.MaxValue) or tonumber(Definition.MaxPrice) or 0
+	Object.Name = Assetname
+	Object:SetAttribute("RestorationObject", true)
+	Object:SetAttribute("KeepSpawnPosition", true)
+	Object:SetAttribute("SpawnFloorY", Spawnattachment.WorldPosition.Y)
+	Object:SetAttribute("DisplayName", Definition.Name or Assetname)
+	Object:SetAttribute("MaxPrice", Maxvalue)
+	Object:SetAttribute("MaxValue", Maxvalue)
+	Object:SetAttribute("Rarity", Definition.Rarity or Definition.Rarety or "Common")
+	Object:SetAttribute("ImageId", Definition.IdImage or "")
+	Object.Parent = Workspace
+	if Object:IsA("Model") then
+		Object:PivotTo(Spawnattachment.WorldCFrame)
+	else
+		Object.CFrame = Spawnattachment.WorldCFrame
+	end
+
+	local Boundscframe, Boundssize
+	if Object:IsA("Model") then
+		Boundscframe, Boundssize = Object:GetBoundingBox()
+	else
+		Boundscframe, Boundssize = Object.CFrame, Object.Size
+	end
+	local Bottomy = Boundscframe.Position.Y - Boundssize.Y * 0.5
+	local Heightoffset = Spawnattachment.WorldPosition.Y - Bottomy
+	if Object:IsA("Model") then
+		Object:PivotTo(Object:GetPivot() + Vector3.new(0, Heightoffset, 0))
+	else
+		Object.CFrame += Vector3.new(0, Heightoffset, 0)
+	end
+
+	return Object
 end
 
-local function Findobject(): RestorationObject
-	local Spawnedobject = Spawnconfiguredobject()
-	if Spawnedobject then return Spawnedobject end
+local function Findobject(Objectname: string?): RestorationObject
+	local Spawnedobject = Spawnconfiguredobject(Objectname)
+	if Spawnedobject then
+		return Spawnedobject
+	end
 
 	for _, Descendant in ipairs(Workspace:GetChildren()) do
 		if Isnamedobject(Descendant) then
@@ -116,7 +164,9 @@ local function Findobject(): RestorationObject
 		end
 	end
 	for _, Descendant in ipairs(Workspace:GetDescendants()) do
-		if Isnamedobject(Descendant) then return Descendant :: RestorationObject end
+		if Isnamedobject(Descendant) then
+			return Descendant :: RestorationObject
+		end
 	end
 	for _, Child in ipairs(Workspace:GetChildren()) do
 		if Child:IsA("BasePart") and Child.Name == "Part" and Child.Size.Magnitude <= 30 then
@@ -125,7 +175,7 @@ local function Findobject(): RestorationObject
 	end
 
 	local Demo = Instance.new("Part")
-	Demo.Name = "RestorationObject"
+	Demo.Name = Objectname or "RestorationObject"
 	Demo.Size = Vector3.new(5.5, 1.1, 3.6)
 	Demo.CFrame = CFrame.new(0, 4, 0) * CFrame.Angles(0, math.rad(20), 0)
 	Demo.Color = Color3.fromRGB(109, 116, 107)
@@ -179,10 +229,14 @@ local function Createspots(Object: RestorationObject)
 		table.insert(Surfaces, Object)
 	else
 		for _, Descendant in ipairs(Object:GetDescendants()) do
-			if Descendant:IsA("BasePart") then table.insert(Surfaces, Descendant) end
+			if Descendant:IsA("BasePart") then
+				table.insert(Surfaces, Descendant)
+			end
 		end
 	end
-	if #Surfaces == 0 then return end
+	if #Surfaces == 0 then
+		return
+	end
 
 	for Index = 1, Spotcount do
 		local Kind = Spotkinds[((Index - 1) % #Spotkinds) + 1]
@@ -244,20 +298,36 @@ local function Createspots(Object: RestorationObject)
 	Object:SetAttribute("CleanedSpots", 0)
 end
 
-function Restorationservice:Init()
-	local Object = Findobject()
+function Restorationservice:PrepareObject(Objectname: string): RestorationObject
+	Destroyobject(Activeobject)
+	local Object = Findobject(Objectname)
 	if Object:IsA("BasePart") then
 		Object.Anchored = true
 	else
 		for _, Descendant in ipairs(Object:GetDescendants()) do
-			if Descendant:IsA("BasePart") then Descendant.Anchored = true end
+			if Descendant:IsA("BasePart") then
+				Descendant.Anchored = true
+			end
 		end
 	end
 	Object:SetAttribute("RestorationObject", true)
 	Createspots(Object)
+	Activeobject = Object
+	return Object
+end
 
+function Restorationservice:HasActiveSession(): boolean
+	return next(Sessions) ~= nil
+end
+
+function Restorationservice:HasActiveObject(): boolean
+	return Activeobject ~= nil and Activeobject.Parent ~= nil
+end
+
+function Restorationservice:Init()
 	Remotemanager:OnServerInvoke(self.Name, "BeginSession", function(Player)
-		if not Object.Parent then
+		local Object = Activeobject
+		if not Object or not Object.Parent then
 			return nil
 		end
 		Sessions[Player] = Object
@@ -266,17 +336,69 @@ function Restorationservice:Init()
 
 	Remotemanager:OnServerInvoke(self.Name, "BeginPeel", function(Player, Spot)
 		local _, Valid = Validsessionspot(Player, Spot)
-		if not Valid or Spot:GetAttribute("SpotKind") ~= "Sticker" then return false end
+		if not Valid or Spot:GetAttribute("SpotKind") ~= "Sticker" then
+			return false
+		end
 		local Owner = Spot:GetAttribute("PeelingBy")
-		if Owner and Owner ~= Player.UserId then return false end
+		if Owner and Owner ~= Player.UserId then
+			return false
+		end
 		Spot:SetAttribute("PeelingBy", Player.UserId)
 		Peeling[Player] = Spot
 		return true
 	end)
 
+	Remotemanager:OnServerInvoke(self.Name, "CompleteRestoration", function(Player)
+		local Sessionobject = Sessions[Player]
+		if not Sessionobject or not Sessionobject.Parent then
+			return nil
+		end
+
+		local Inventoryservice = Core:GetService("InventoryService")
+		local Completionratio = Getcompletionratio(Sessionobject)
+		local Maxvalue = tonumber(Sessionobject:GetAttribute("MaxValue")) or tonumber(Sessionobject:GetAttribute("MaxPrice")) or 0
+		local Salevalue = math.round(Maxvalue * Completionratio * 100) / 100
+		local Purchaseprice = tonumber(Sessionobject:GetAttribute("PurchasePrice")) or 0
+		local Restoreditem = Inventoryservice:AddRestoredItem(Player, {
+			Id = 0,
+			Name = tostring(Sessionobject:GetAttribute("DisplayName") or Sessionobject.Name),
+			ImageId = tostring(Sessionobject:GetAttribute("ImageId") or ""),
+			Rarity = tostring(Sessionobject:GetAttribute("Rarity") or "Common"),
+			RestorationPercent = math.floor(Completionratio * 100 + 0.5),
+			PurchasePrice = Purchaseprice,
+			CurrentValue = Salevalue,
+			MaxValue = Maxvalue,
+			NetProfit = math.round((Salevalue - Purchaseprice) * 100) / 100,
+		})
+
+		if Completionratio >= 0.5 then
+			Inventoryservice:UnlockIndexEntry(Player, Sessionobject.Name)
+		end
+
+		Sessionobject:SetAttribute("SaleValue", Salevalue)
+
+		local Spot = Peeling[Player]
+		if Spot and Spot.Parent then
+			Spot:SetAttribute("PeelingBy", nil)
+		end
+		Peeling[Player] = nil
+		Sessions[Player] = nil
+		Lastclean[Player] = nil
+
+		if Activeobject == Sessionobject then
+			Activeobject = nil
+		end
+		Destroyobject(Sessionobject)
+		Cleanupactiveobjectifidle()
+
+		return Restoreditem
+	end)
+
 	Remotemanager:OnServerEvent(self.Name, "CompletePeel", function(Player, Spot)
 		local Object, Valid = Validsessionspot(Player, Spot)
-		if not Object or not Valid or Peeling[Player] ~= Spot or Spot:GetAttribute("PeelingBy") ~= Player.UserId then return end
+		if not Object or not Valid or Peeling[Player] ~= Spot or Spot:GetAttribute("PeelingBy") ~= Player.UserId then
+			return
+		end
 		Peeling[Player] = nil
 		Spot.CanQuery = false
 		Object:SetAttribute("CleanedSpots", (Object:GetAttribute("CleanedSpots") or 0) + 1)
@@ -285,7 +407,9 @@ function Restorationservice:Init()
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CancelPeel", function(Player, Spot)
-		if Peeling[Player] ~= Spot then return end
+		if Peeling[Player] ~= Spot then
+			return
+		end
 		Peeling[Player] = nil
 		if Spot.Parent and Spot:GetAttribute("PeelingBy") == Player.UserId then
 			Spot:SetAttribute("PeelingBy", nil)
@@ -294,14 +418,14 @@ function Restorationservice:Init()
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanSpot", function(Player, Spot, Toolname)
-		local Activeobject = Sessions[Player]
-		if not Activeobject then
+		local Sessionobject = Sessions[Player]
+		if not Sessionobject then
 			return
 		end
 		if typeof(Spot) ~= "Instance" or not Spot:IsA("BasePart") then
 			return
 		end
-		local Spots = Activeobject:FindFirstChild("RestorationSpots")
+		local Spots = Sessionobject:FindFirstChild("RestorationSpots")
 		if not Spots or not Spot:IsDescendantOf(Spots) then
 			return
 		end
@@ -321,17 +445,17 @@ function Restorationservice:Init()
 		Lastclean[Player] = Now
 		local Health = (Spot:GetAttribute("Health") or 1) - (Toolpower[Toolname] or 0)
 		if Health <= 0 then
-			Activeobject:SetAttribute("CleanedSpots", (Activeobject:GetAttribute("CleanedSpots") or 0) + 1)
-			Activeobject:SetAttribute("Cleaned_" .. Kind, (Activeobject:GetAttribute("Cleaned_" .. Kind) or 0) + 1)
+			Sessionobject:SetAttribute("CleanedSpots", (Sessionobject:GetAttribute("CleanedSpots") or 0) + 1)
+			Sessionobject:SetAttribute("Cleaned_" .. Kind, (Sessionobject:GetAttribute("Cleaned_" .. Kind) or 0) + 1)
 			if Kind == "Sticker" and Toolname == "Tweezers" then
 				Spot.CanQuery = false
 				local Weld = Spot:FindFirstChildOfClass("WeldConstraint")
-				if Weld then Weld:Destroy() end
+				if Weld then
+					Weld:Destroy()
+				end
 				Spot.Anchored = true
 				local Peeldirection = Spot.CFrame.LookVector
-				local Peeledcframe = Spot.CFrame
-					+ Peeldirection * 0.65
-					+ Vector3.new(0, 0.28, 0)
+				local Peeledcframe = Spot.CFrame + Peeldirection * 0.65 + Vector3.new(0, 0.28, 0)
 				Peeledcframe *= CFrame.Angles(math.rad(55), math.rad(18), math.rad(30))
 				local Tween = Tweenservice:Create(Spot, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 					CFrame = Peeledcframe,
@@ -339,7 +463,9 @@ function Restorationservice:Init()
 					Size = Vector3.new(Spot.Size.X * 0.72, Spot.Size.Y * 0.72, Spot.Size.Z),
 				})
 				Tween:Play()
-				Tween.Completed:Once(function() Spot:Destroy() end)
+				Tween.Completed:Once(function()
+					Spot:Destroy()
+				end)
 			else
 				Spot:Destroy()
 			end
@@ -351,14 +477,18 @@ function Restorationservice:Init()
 
 	Remotemanager:OnServerEvent(self.Name, "SessionEnded", function(Player)
 		Sessions[Player] = nil
+		Cleanupactiveobjectifidle()
 	end)
 
 	Players.PlayerRemoving:Connect(function(Player)
 		local Spot = Peeling[Player]
-		if Spot and Spot.Parent then Spot:SetAttribute("PeelingBy", nil) end
+		if Spot and Spot.Parent then
+			Spot:SetAttribute("PeelingBy", nil)
+		end
 		Peeling[Player] = nil
 		Sessions[Player] = nil
 		Lastclean[Player] = nil
+		Cleanupactiveobjectifidle()
 	end)
 end
 

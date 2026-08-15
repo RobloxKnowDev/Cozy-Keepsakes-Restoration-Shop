@@ -28,6 +28,7 @@ function Interface.new(Tools)
 	Self.Cursor = Hud:WaitForChild("CurseurFrame")
 	Self.ProgressText = Gui:WaitForChild("Progress")
 	Self.ReturnButton = Gui:WaitForChild("ReturnButton")
+	Self.ContinueButton = Gui:WaitForChild("ContinueButton")
 	Self.TurnButton = Self.TransformFrame:WaitForChild("TurnButton")
 	Self.LockButton = Self.TransformFrame:WaitForChild("PadlockButton")
 	Self.LockImage = Self.LockButton:WaitForChild("LockImage")
@@ -68,12 +69,14 @@ function Interface:Select(Name: string, Definition)
 	self:SetPanel(self.ProgressFrame, Definition.ShowsProgress == true, Vector2.new(28, 0))
 end
 
-function Interface:Start(Selecttool, Setmode, Flipobject)
+function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 	for Name, Button in pairs(self.Buttons) do
 		Button.BackgroundTransparency = 0.7
 		Button.Activated:Connect(function() Selecttool(Name) end)
 	end
-	for _, Button in ipairs({ self.TurnButton, self.LockButton, self.ReturnButton }) do Animate(Button) end
+	for _, Button in ipairs({ self.TurnButton, self.LockButton, self.ReturnButton, self.ContinueButton }) do
+		Animate(Button)
+	end
 	self.TurnButton.BackgroundTransparency = 0
 	local Locked = false
 	local function Refreshlock()
@@ -83,14 +86,42 @@ function Interface:Start(Selecttool, Setmode, Flipobject)
 	self.TurnButton.Activated:Connect(function() Locked = false Setmode("Rotate") Refreshlock() end)
 	self.LockButton.Activated:Connect(function() Locked = not Locked Setmode(Locked and "Locked" or "Rotate") Refreshlock() end)
 	self.ReturnButton.Activated:Connect(Flipobject)
+	self.ContinueButton.Activated:Connect(Continue)
 	self.Gui.Enabled = false
 	self.TransformFrame.Visible, self.ProgressFrame.Visible = false, false
 	self.Cursor.Visible, self.Cursor.AnchorPoint = true, Vector2.new(0.5, 0.5)
 	Refreshlock()
 end
 
+function Interface:ShowForRestoration()
+	for _, Item in ipairs({
+		self.FrameTool,
+		self.PercentFrame,
+		self.Cursor,
+		self.ReturnButton,
+		self.ProgressText,
+		self.ContinueButton,
+	}) do
+		Item.Visible = true
+	end
+end
+
+function Interface:ShowIntro()
+	self.Gui.Enabled = false
+	self.Cursor.Visible = true
+end
+
 function Interface:HideForCompletion()
-	for _, Item in ipairs({ self.FrameTool, self.TransformFrame, self.ProgressFrame, self.PercentFrame, self.Cursor, self.ReturnButton, self.ProgressText }) do
+	for _, Item in ipairs({
+		self.FrameTool,
+		self.TransformFrame,
+		self.ProgressFrame,
+		self.PercentFrame,
+		self.Cursor,
+		self.ReturnButton,
+		self.ProgressText,
+		self.ContinueButton,
+	}) do
 		Item.Visible = false
 	end
 end

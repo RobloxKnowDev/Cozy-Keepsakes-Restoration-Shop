@@ -14,12 +14,13 @@ local function Findtext(Parent: Instance, Name: string): TextLabel | TextButton 
 end
 
 local function Formattime(Clocktime: number): string
-	local Totalminutes = math.floor(Clocktime * 60 + 0.5) % 1440
+	local Totalminutes = math.floor(Clocktime * 60) % 1440
 	local Hour24 = math.floor(Totalminutes / 60)
 	local Minutes = Totalminutes % 60
-	local Hour12 = Hour24 % 12
-	if Hour12 == 0 then Hour12 = 12 end
-	return string.format("%d:%02d", Hour12, Minutes)
+	if Minutes == 0 then
+		return string.format("%02dh", Hour24)
+	end
+	return string.format("%02dh%02d", Hour24, Minutes)
 end
 
 function Daynightcontroller:Init()

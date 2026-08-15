@@ -19,6 +19,14 @@ local Completioncontroller = {
 	closing = false,
 }
 
+local Completionkinds = { "Dirt", "Sticker", "Adhesive", "Scratch" }
+local Rownamecandidates = {
+	Dirt = { "DirtFrame", "DirtsFrame" },
+	Sticker = { "StickerFrame", "StickersFrame" },
+	Adhesive = { "AdhesiveFrame", "AdhesivesFrame" },
+	Scratch = { "ScratchFrame", "ScratchesFrame", "ScratchsFrame" },
+}
+
 local function Pivotof(Object: RestorationObject): CFrame
 	return Object:IsA("Model") and Object:GetPivot() or Object.CFrame
 end
@@ -39,6 +47,10 @@ local function Pivotto(Object: RestorationObject, Cframe: CFrame)
 end
 
 function Completioncontroller:EnsurePreviewObjects()
+	if not self.viewport then
+		return
+	end
+
 	local World = self.viewport:FindFirstChild("WorldModel")
 	if not World or not World:IsA("WorldModel") then
 		World = Instance.new("WorldModel")
@@ -62,10 +74,14 @@ function Completioncontroller:Init()
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.gui = Playergui:WaitForChild("CompleteUi") :: ScreenGui
 	self.frame = self.gui:WaitForChild("CompleteFrame") :: GuiObject
-	self.viewport = self.frame:WaitForChild("ObjectPreview") :: ViewportFrame
+	self.preview = self.frame:WaitForChild("ObjectPreview")
+	self.viewport = if self.preview:IsA("ViewportFrame") then self.preview else nil
 	self.nextButton = self.frame:WaitForChild("NextButton") :: GuiButton
-	self.nameText = self.frame:FindFirstChild("Name", true)
-	self.maxPriceText = self.frame:FindFirstChild("MaxPrice", true)
+	self.objectNameText = self.frame:FindFirstChild("ObjectName", true) or self.frame:FindFirstChild("Name", true)
+	self.rarityText = self.frame:FindFirstChild("Rarity", true)
+	self.totalProgressText = self.frame:FindFirstChild("TotalProgress", true)
+	self.valueText = self.frame:FindFirstChild("Value", true)
+	self.maxValueText = self.frame:FindFirstChild("MaxValue", true) or self.frame:FindFirstChild("MaxPrice", true)
 	self.frameShownPosition = self.frame.Position
 	self.transition = self.gui:FindFirstChild("CompletionTransition")
 	if not self.transition then
@@ -91,6 +107,62 @@ end
 local function Settext(Instance: Instance?, Value: string)
 	if Instance and (Instance:IsA("TextLabel") or Instance:IsA("TextButton") or Instance:IsA("TextBox")) then
 		Instance.Text = Value
+	end
+end
+
+local function Formatcurrency(Value: number): string
+	if math.abs(Value - math.round(Value)) < 0.005 then
+		return string.format("$%d", math.round(Value))
+	end
+
+	return string.format("$%.2f", Value)
+end
+
+local function Ratiofromattributes(Object: RestorationObject, Kind: string): number
+	local Total = Object:GetAttribute("Total_" .. Kind) or 0
+	local Cleaned = Object:GetAttribute("Cleaned_" .. Kind) or 0
+	return Total > 0 and math.clamp(Cleaned / Total, 0, 1) or 1
+end
+
+local function Progressfromattributes(Object: RestorationObject): number
+	local Totalspots = Object:GetAttribute("TotalSpots") or 0
+	local Cleanedspots = Object:GetAttribute("CleanedSpots") or 0
+	return Totalspots > 0 and math.clamp(Cleanedspots / Totalspots, 0, 1) or 0
+end
+
+function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
+	local Progressframe = self.frame:FindFirstChild("ProgressFrame")
+	local Overallratio = Progressfromattributes(Object)
+	local Maxvalue = tonumber(Object:GetAttribute("MaxValue")) or tonumber(Object:GetAttribute("MaxPrice")) or 0
+	local Currentvalue = Maxvalue * Overallratio
+
+	Settext(self.objectNameText, tostring(Object:GetAttribute("DisplayName") or Object.Name))
+	Settext(self.rarityText, tostring(Object:GetAttribute("Rarity") or "Common"))
+	Settext(self.totalProgressText, string.format("%d%%", math.floor(Overallratio * 100 + 0.5)))
+	Settext(self.valueText, Formatcurrency(Currentvalue))
+	Settext(self.maxValueText, Formatcurrency(Maxvalue))
+
+	if Progressframe then
+		for _, Kind in ipairs(Completionkinds) do
+			local Row
+			for _, Candidate in ipairs(Rownamecandidates[Kind]) do
+				Row = Progressframe:FindFirstChild(Candidate)
+				if Row then
+					break
+				end
+			end
+			if Row and Row:IsA("GuiObject") then
+				local Ratio = Ratiofromattributes(Object, Kind)
+				local Percenttext = Row:FindFirstChild("PercentText", true)
+				if Percenttext and Percenttext:IsA("TextLabel") then
+					Percenttext.Text = string.format("%d%%", math.floor(Ratio * 100 + 0.5))
+				end
+				local Bar = Row:FindFirstChild("Bar", true)
+				if Bar and Bar:IsA("GuiObject") then
+					Bar.Size = UDim2.fromScale(Ratio, 1)
+				end
+			end
+		end
 	end
 end
 
@@ -338,6 +410,10 @@ function Completioncontroller:PlayExitAnimation(Onfinished: () -> ())
 end
 
 function Completioncontroller:FrameObject()
+	if not self.viewport then
+		return
+	end
+
 	local Clone = self.displayObject
 	if not Clone or not Clone.Parent then
 		return
@@ -358,6 +434,10 @@ function Completioncontroller:FrameObject()
 end
 
 function Completioncontroller:AnimateObjectArrival()
+	if not self.viewport then
+		return
+	end
+
 	if not self.previewCameraTarget or not self.objectCenter then
 		return
 	end
@@ -382,44 +462,52 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 	self:EnsurePreviewObjects()
 	self.closing = false
 	self.onContinue = Oncontinue
-	Settext(self.nameText, Object:GetAttribute("DisplayName") or Object.Name)
-	Settext(self.maxPriceText, tostring(Object:GetAttribute("MaxPrice") or 0))
+	self:ApplyProgressStats(Object)
 
-	Object.Archivable = true
-	local Clone = Object:Clone()
-	for _, Item in Clone:GetDescendants() do
-		if Item:IsA("BasePart") then
-			Item.Anchored = true
-			Item.CanCollide = false
-			Item.CanQuery = false
-			Item.CanTouch = false
+	if self.viewport and self.world then
+		Object.Archivable = true
+		local Clone = Object:Clone()
+		for _, Item in Clone:GetDescendants() do
+			if Item:IsA("BasePart") then
+				Item.Anchored = true
+				Item.CanCollide = false
+				Item.CanQuery = false
+				Item.CanTouch = false
+			end
 		end
-	end
-	if Clone:IsA("BasePart") then
-		Clone.Anchored = true
-		Clone.CanCollide = false
-		Clone.CanQuery = false
-		Clone.CanTouch = false
-	end
+		if Clone:IsA("BasePart") then
+			Clone.Anchored = true
+			Clone.CanCollide = false
+			Clone.CanQuery = false
+			Clone.CanTouch = false
+		end
 
-	Pivotto(Clone, CFrame.Angles(math.rad(90), math.rad(-90), math.rad(90)))
-	Clone.Parent = self.world
-	self.displayObject = Clone
-	self.basePivot = Pivotof(Clone)
-	self.rotation = 0
+		Pivotto(Clone, CFrame.Angles(math.rad(90), math.rad(-90), math.rad(90)))
+		Clone.Parent = self.world
+		self.displayObject = Clone
+		self.basePivot = Pivotof(Clone)
+		self.rotation = 0
+	else
+		self.displayObject = nil
+	end
 
 	self.gui.Enabled = true
 	self.frame.Visible = false
-	self:FrameObject()
-	self:PlayAppearanceAnimation()
-	self.viewportSizeConnection = self.viewport:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	if self.viewport then
 		self:FrameObject()
-	end)
+	end
+	self:PlayAppearanceAnimation()
+	if self.viewport then
+		self.viewportSizeConnection = self.viewport:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			self:FrameObject()
+		end)
+	end
 end
 
 function Completioncontroller:InputBegan(Input: InputObject): boolean
 	if
 		not self:IsVisible()
+		or not self.viewport
 		or (
 			Input.UserInputType ~= Enum.UserInputType.MouseButton1
 			and Input.UserInputType ~= Enum.UserInputType.MouseButton2

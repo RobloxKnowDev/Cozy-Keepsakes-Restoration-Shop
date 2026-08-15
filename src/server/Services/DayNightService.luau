@@ -10,6 +10,30 @@ local Daynightservice = {
 	Priority = 5,
 }
 
+local Daytimehours = Config.NightStartHour - Config.DayStartHour
+local Nighttimehours = 24 - Daytimehours
+local Nighttimeduration = Config.DayDuration - Config.DaytimeDuration
+local Midnightoffset = Config.DaytimeDuration
+	+ Nighttimeduration * ((24 - Config.NightStartHour) / Nighttimehours)
+
+local function Getclocktime(Cycleelapsed: number): number
+	if Cycleelapsed < Config.DaytimeDuration then
+		local Progress = Cycleelapsed / Config.DaytimeDuration
+		return Config.DayStartHour + Progress * Daytimehours
+	end
+
+	local Progress = (Cycleelapsed - Config.DaytimeDuration) / Nighttimeduration
+	return (Config.NightStartHour + Progress * Nighttimehours) % 24
+end
+
+local function Getday(Elapsed: number): number
+	if Elapsed < Midnightoffset then
+		return 1
+	end
+
+	return math.floor((Elapsed - Midnightoffset) / Config.DayDuration) + 2
+end
+
 function Daynightservice:Init()
 	self.Starttime = Workspace:GetServerTimeNow()
 	Lighting:SetAttribute("Day", 1)
@@ -19,9 +43,9 @@ end
 function Daynightservice:Start()
 	Runservice.Heartbeat:Connect(function()
 		local Elapsed = Workspace:GetServerTimeNow() - self.Starttime
-		local Dayprogress = Elapsed / Config.DayDuration
-		local Day = math.floor(Dayprogress) + 1
-		local Clocktime = (Config.StartClockTime + Dayprogress % 1 * 24) % 24
+		local Cycleelapsed = Elapsed % Config.DayDuration
+		local Day = Getday(Elapsed)
+		local Clocktime = Getclocktime(Cycleelapsed)
 		Lighting.ClockTime = Clocktime
 		if Lighting:GetAttribute("Day") ~= Day then
 			Lighting:SetAttribute("Day", Day)

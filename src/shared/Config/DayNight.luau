@@ -1,4 +1,7 @@
 return {
-	DayDuration = 180,
-	StartClockTime = 4.5,
+	DayDuration = 350,
+	DaytimeDuration = 280,
+	DayStartHour = 6,
+	NightStartHour = 20,
+	StartClockTime = 6,
 }
