@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
@@ -15,13 +16,12 @@ local Customerservice = {
 	Remotes = {
 		OfferUpdated = "Event",
 		RespondToOffer = "Function",
+		RequestPriceEstimate = "Function",
 	},
 }
 
 local QueueFolderName = "SpawnCustomer"
 local TurnTweenDuration = 0.35
-local MaxCustomersPerDay = 8
-
 type CustomerOffer = {
 	Id: number,
 	CustomerType: string,
@@ -29,6 +29,7 @@ type CustomerOffer = {
 	ObjectName: string,
 	ImageId: string,
 	Price: number,
+	MaxValue: number,
 }
 
 local AttachmentsByIndex: { [number]: Attachment } = {}
@@ -45,9 +46,21 @@ local CurrentDay = 1
 local SpawnedCustomersToday = 0
 local ArrivedCustomersToday = 0
 
+local function GetShopPlayer(): Player?
+	return Players:GetPlayers()[1]
+end
+
+local function GetMaxCustomersPerDay(): number
+	local Player = GetShopPlayer()
+	if not Player then
+		return 0
+	end
+	return math.max(math.floor(Core:GetService("UpgradeService"):GetValue(Player, "DailyCustomers")), 0)
+end
+
 local function ReplicateCustomerCount()
 	Lighting:SetAttribute("CustomersToday", ArrivedCustomersToday)
-	Lighting:SetAttribute("MaxCustomersPerDay", MaxCustomersPerDay)
+	Lighting:SetAttribute("MaxCustomersPerDay", GetMaxCustomersPerDay())
 end
 
 local function SyncDayState()
@@ -78,7 +91,7 @@ end
 
 local function CanSpawnMoreCustomersToday(): boolean
 	SyncDayState()
-	return SpawnedCustomersToday < MaxCustomersPerDay
+	return SpawnedCustomersToday < GetMaxCustomersPerDay()
 end
 
 local function FindAttachmentFolder(): Folder?
@@ -343,10 +356,22 @@ RefreshFrontCustomerAttribute = function()
 end
 
 local function BroadcastOffer(Offer: CustomerOffer?)
-	Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", Offer)
+	if not Offer then
+		Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", nil)
+		return
+	end
+	-- MaxValue reste côté serveur jusqu'à l'utilisation d'une estimation.
+	Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", {
+		Id = Offer.Id,
+		CustomerType = Offer.CustomerType,
+		ObjectKey = Offer.ObjectKey,
+		ObjectName = Offer.ObjectName,
+		ImageId = Offer.ImageId,
+		Price = Offer.Price,
+	})
 end
 
-local function ChooseCustomerRequest(): CustomerOffer?
+local function ChooseCustomerRequest(Player: Player): CustomerOffer?
 	local Archetype = Customerconfig.Normal
 	if not Archetype then
 		return nil
@@ -373,6 +398,9 @@ local function ChooseCustomerRequest(): CustomerOffer?
 		0
 	)
 	OfferSerial += 1
+	local DiscountPercent = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
+	local BasePrice = math.random(Minprice, math.max(Minprice, Maxprice))
+	local DiscountedPrice = math.max(math.round(BasePrice * (1 - DiscountPercent / 100)), 0)
 
 	return {
 		Id = OfferSerial,
@@ -380,7 +408,8 @@ local function ChooseCustomerRequest(): CustomerOffer?
 		ObjectKey = ObjectKey,
 		ObjectName = Definition.Name or ObjectKey,
 		ImageId = tostring(Definition.IdImage or ""),
-		Price = math.random(Minprice, math.max(Minprice, Maxprice)),
+		Price = DiscountedPrice,
+		MaxValue = math.max(tonumber(Definition.MaxValue) or tonumber(Definition.MaxPrice) or Maxprice, 0),
 	}
 end
 
@@ -468,7 +497,11 @@ PresentFrontOffer = function()
 		return
 	end
 
-	PendingOffer = ChooseCustomerRequest()
+	local Player = GetShopPlayer()
+	if not Player then
+		return
+	end
+	PendingOffer = ChooseCustomerRequest(Player)
 	if PendingOffer then
 		BroadcastOffer(PendingOffer)
 	end
@@ -479,6 +512,29 @@ function Customerservice:Init()
 	CachedCustomerTemplate = FindCustomerTemplate()
 	SyncDayState()
 	Lighting:GetAttributeChangedSignal("Day"):Connect(SyncDayState)
+	Players.PlayerAdded:Connect(function()
+		task.defer(function()
+			self:RefreshCustomerLimit()
+		end)
+	end)
+	Players.PlayerRemoving:Connect(function()
+		task.defer(function()
+			self:RefreshCustomerLimit()
+		end)
+	end)
+
+	Remotemanager:OnServerInvoke(self.Name, "RequestPriceEstimate", function(Player, OfferId)
+		if not PendingOffer or PendingOffer.Id ~= tonumber(OfferId) then
+			return { Success = false, Reason = "OfferUnavailable" }
+		end
+		if not Core:GetService("UpgradeService"):ConsumePriceEstimate(Player) then
+			return { Success = false, Reason = "NoEstimatesRemaining" }
+		end
+		return {
+			Success = true,
+			MaxPrice = PendingOffer.MaxValue,
+		}
+	end)
 
 	Remotemanager:OnServerInvoke(self.Name, "RespondToOffer", function(Player, OfferId, Decision)
 		local FrontCustomer = GetFrontCustomer()
@@ -505,12 +561,19 @@ function Customerservice:Init()
 			local Restorationservice = Core:GetService("RestorationService")
 			local Restorationobject = Restorationservice:PrepareObject(PendingOffer.ObjectKey)
 			Restorationobject:SetAttribute("PurchasePrice", PendingOffer.Price)
+			local ExitAttachment = AttachmentsByIndex[0]
 			OccupiedSlots[1] = nil
 			FrontCustomer:SetAttribute("IsFrontCustomer", false)
 			FrontCustomer:SetAttribute("ArrivedAtSlot1", false)
 			RefreshFrontCustomerAttribute()
-			DespawnCustomer(FrontCustomer)
 			ClearPendingOffer()
+			if ExitAttachment then
+				MoveCustomerTo(FrontCustomer, ExitAttachment, function()
+					DespawnCustomer(FrontCustomer)
+				end)
+			else
+				DespawnCustomer(FrontCustomer)
+			end
 			return {
 				Success = true,
 			}
@@ -541,6 +604,19 @@ function Customerservice:Init()
 			Reason = "InvalidDecision",
 		}
 	end)
+end
+
+function Customerservice:RefreshCustomerLimit()
+	ReplicateCustomerCount()
+	if HighestQueueIndex <= 0 or not AttachmentsByIndex[0] then
+		return
+	end
+	if IsBusinessHours()
+		and CanSpawnMoreCustomersToday()
+		and not OccupiedSlots[HighestQueueIndex]
+	then
+		SpawnCustomerAt(HighestQueueIndex)
+	end
 end
 
 function Customerservice:Start()

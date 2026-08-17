@@ -1,6 +1,9 @@
+local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+
+Players.CharacterAutoLoads = true
 
 local Servicesfolder = script.Parent.Services
 local Allservices = {}

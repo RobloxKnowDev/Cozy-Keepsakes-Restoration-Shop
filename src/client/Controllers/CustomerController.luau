@@ -16,9 +16,36 @@ local Customercontroller = {
 local Customerservicename = "CustomerService"
 local Frametweeninfo = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local Buttontweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local Estimationtweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local HighlightFillcolor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlinecolor = Color3.fromRGB(255, 255, 255)
 local ErrorMessageColor = Color3.fromRGB(255, 92, 92)
+local DisabledEstimateColor = Color3.fromRGB(115, 115, 115)
+
+local function GetOrCreateCloseButton(CustomerFrame: Frame): GuiButton
+	local Existing = CustomerFrame:FindFirstChild("CloseButton")
+	if Existing and Existing:IsA("GuiButton") then
+		return Existing
+	end
+
+	local Button = Instance.new("TextButton")
+	Button.Name = "CloseButton"
+	Button.AnchorPoint = Vector2.new(1, 0)
+	Button.Position = UDim2.new(1, -10, 0, 10)
+	Button.Size = UDim2.fromOffset(36, 36)
+	Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+	Button.Font = Enum.Font.GothamBold
+	Button.Text = "X"
+	Button.TextColor3 = Color3.new(1, 1, 1)
+	Button.TextScaled = true
+	Button.ZIndex = 20
+	Button.Parent = CustomerFrame
+
+	local Corner = Instance.new("UICorner")
+	Corner.CornerRadius = UDim.new(0, 8)
+	Corner.Parent = Button
+	return Button
+end
 
 local function FindFirstTextLabel(Root: Instance, Candidates: { string }): TextLabel?
 	for _, Name in ipairs(Candidates) do
@@ -29,6 +56,51 @@ local function FindFirstTextLabel(Root: Instance, Candidates: { string }): TextL
 	end
 
 	return nil
+end
+
+function Customercontroller:HideEstimateText()
+	if not self.estimatePriceText then
+		return
+	end
+	self.estimateAnimationId = (self.estimateAnimationId or 0) + 1
+	self.estimatePriceText.Visible = false
+	self.estimatePriceText.TextTransparency = 1
+	self.estimatePriceText.TextStrokeTransparency = 1
+	self.estimateTextScale.Scale = 0.82
+end
+
+function Customercontroller:RevealEstimate(MaxPrice: number)
+	self.estimateAnimationId += 1
+	self.estimatePriceText.Text = string.format("$%d", MaxPrice)
+	self.estimatePriceText.Visible = true
+	self.estimatePriceText.TextTransparency = 1
+	self.estimatePriceText.TextStrokeTransparency = 1
+	self.estimateTextScale.Scale = 0.82
+
+	Tweenservice:Create(self.estimatePriceText, Estimationtweeninfo, {
+		TextTransparency = self.baseEstimateTextTransparency,
+		TextStrokeTransparency = self.baseEstimateStrokeTransparency,
+	}):Play()
+	Tweenservice:Create(self.estimateTextScale, Estimationtweeninfo, { Scale = 1 }):Play()
+end
+
+function Customercontroller:UpdateEstimateButtonAppearance()
+	if not self.estimateButton then
+		return
+	end
+	local HasEstimatedCurrentOffer = self.activeOfferId ~= nil and self.estimatedOfferId == self.activeOfferId
+	local IsAvailable = (self.estimatesRemaining or 0) > 0 and not HasEstimatedCurrentOffer
+	self.estimateButton.Visible = self:IsVisible()
+	-- Sans estimation disponible, le bouton reste cliquable pour afficher le message d'amélioration.
+	-- Après avoir estimé l'offre courante, il ne peut plus être utilisé une seconde fois.
+	self.estimateButton.Interactable = not HasEstimatedCurrentOffer
+	self.estimateButton.Active = true
+	self.estimateButton.AutoButtonColor = IsAvailable
+	for ImageObject, DefaultColor in pairs(self.estimateImageColors or {}) do
+		Tweenservice:Create(ImageObject, Buttontweeninfo, {
+			ImageColor3 = if IsAvailable then DefaultColor else DisabledEstimateColor,
+		}):Play()
+	end
 end
 
 local function FindFirstImageObject(Root: Instance, Candidates: { string }): GuiObject?
@@ -91,12 +163,15 @@ end
 
 function Customercontroller:HideInstant()
 	self.activeOfferId = nil
+	self.estimatedOfferId = nil
+	self.estimatedMaxPrice = nil
 	self.isBusy = false
 	self.gui.Enabled = false
 	self.frame.Visible = false
 	self.frame.Position = self.hiddenPosition
 	self.frameScale.Scale = 0.96
 	self.frame.BackgroundTransparency = 1
+	self:HideEstimateText()
 end
 
 function Customercontroller:IsVisible(): boolean
@@ -113,7 +188,9 @@ end
 function Customercontroller:CanInteract(): boolean
 	local Computercontroller = Core:GetController("ComputerController")
 	local Cameracontroller = Core:GetController("InspectionCameraController")
-	return not Computercontroller:IsOpen() and Cameracontroller:IsIntroCameraReady()
+	return not self:IsVisible()
+		and not Computercontroller:IsOpen()
+		and Cameracontroller:IsIntroCameraReady()
 end
 
 function Customercontroller:SetHoveredCustomer(Customer: Model?)
@@ -150,6 +227,11 @@ function Customercontroller:ShowPendingOffer()
 end
 
 function Customercontroller:ShowOffer(Offer)
+	local HasCachedEstimate = self.estimatedOfferId == Offer.Id and self.estimatedMaxPrice ~= nil
+	if self.estimatedOfferId ~= nil and self.estimatedOfferId ~= Offer.Id then
+		self.estimatedOfferId = nil
+		self.estimatedMaxPrice = nil
+	end
 	self.activeOfferId = Offer.Id
 	self.gui.Enabled = true
 	self.frame.Visible = true
@@ -173,6 +255,12 @@ function Customercontroller:ShowOffer(Offer)
 	if self.iconImage and (self.iconImage:IsA("ImageLabel") or self.iconImage:IsA("ImageButton")) then
 		self.iconImage.Image = tostring(Offer.ImageId or "")
 	end
+	if HasCachedEstimate then
+		self:RevealEstimate(self.estimatedMaxPrice)
+	else
+		self:HideEstimateText()
+	end
+	self:UpdateEstimateButtonAppearance()
 
 	Tweenservice:Create(self.frame, Frametweeninfo, {
 		Position = self.shownPosition,
@@ -181,6 +269,34 @@ function Customercontroller:ShowOffer(Offer)
 	Tweenservice:Create(self.frameScale, Frametweeninfo, {
 		Scale = 1,
 	}):Play()
+end
+
+function Customercontroller:ApplyUpgradeState(State)
+	self.estimatesRemaining = tonumber(State and State.EstimatesRemaining) or 0
+	self:UpdateEstimateButtonAppearance()
+end
+
+function Customercontroller:RequestPriceEstimate()
+	if not self.activeOfferId or self.isEstimating or self.estimatedOfferId == self.activeOfferId then
+		return
+	end
+	if (self.estimatesRemaining or 0) <= 0 then
+		Core:GetController("MessageController"):Show("Upgrade Price Estimation to get more estimates", ErrorMessageColor)
+		return
+	end
+	self.isEstimating = true
+	local Response = Remotemanager:InvokeServer(Customerservicename, "RequestPriceEstimate", self.activeOfferId)
+	self.isEstimating = false
+	if type(Response) == "table" and Response.Success == true then
+		self.estimatedOfferId = self.activeOfferId
+		self.estimatedMaxPrice = tonumber(Response.MaxPrice) or 0
+		self:RevealEstimate(self.estimatedMaxPrice)
+		self:UpdateEstimateButtonAppearance()
+		return
+	end
+	if type(Response) == "table" and Response.Reason == "NoEstimatesRemaining" then
+		Core:GetController("MessageController"):Show("No price estimates remaining today", ErrorMessageColor)
+	end
 end
 
 function Customercontroller:HideAnimated()
@@ -200,6 +316,14 @@ function Customercontroller:HideAnimated()
 			self.frame.Visible = false
 		end
 	end)
+end
+
+function Customercontroller:CloseOfferUi()
+	if not self:IsVisible() or self.isBusy then
+		return
+	end
+	self:SetHoveredCustomer(nil)
+	self:HideAnimated()
 end
 
 function Customercontroller:Respond(Decision: string)
@@ -239,6 +363,7 @@ function Customercontroller:Init()
 	self.frame = self.gui:WaitForChild("CustomerFrame") :: Frame
 	self.acceptButton = self.frame:WaitForChild("AcceptButton") :: GuiButton
 	self.declineButton = self.frame:WaitForChild("DeclineButton") :: GuiButton
+	self.closeButton = GetOrCreateCloseButton(self.frame)
 	self.frameScale = EnsureScale(self.frame)
 	self.shownPosition = self.frame.Position
 	self.hiddenPosition = self.shownPosition + UDim2.fromOffset(0, 24)
@@ -249,6 +374,25 @@ function Customercontroller:Init()
 	self.priceLabel = FindFirstTextLabel(self.frame, { "PriceLabel" })
 	self.priceValueLabel = FindFirstTextLabel(self.frame, { "PriceText", "PriceValue", "Price" })
 	self.iconImage = FindFirstImageObject(self.frame, { "Icon" })
+	self.estimateButton = self.frame:WaitForChild("EstimationButton") :: GuiButton
+	self.estimatePriceText = self.frame:WaitForChild("EstimationText") :: TextLabel
+	assert(self.estimateButton:IsA("GuiButton"), "EstimationButton doit être un GuiButton")
+	assert(self.estimatePriceText:IsA("TextLabel"), "EstimationText doit être un TextLabel")
+	self.estimateTextScale = EnsureScale(self.estimatePriceText)
+	self.baseEstimateTextTransparency = self.estimatePriceText.TextTransparency
+	self.baseEstimateStrokeTransparency = self.estimatePriceText.TextStrokeTransparency
+	self.estimateAnimationId = 0
+	self.estimateImageColors = {}
+	if self.estimateButton:IsA("ImageButton") then
+		self.estimateImageColors[self.estimateButton] = self.estimateButton.ImageColor3
+	end
+	for _, Descendant in ipairs(self.estimateButton:GetDescendants()) do
+		if Descendant:IsA("ImageLabel") or Descendant:IsA("ImageButton") then
+			self.estimateImageColors[Descendant] = Descendant.ImageColor3
+		end
+	end
+	self.estimatesRemaining = 0
+	self.isEstimating = false
 	self.hoverHighlight = Instance.new("Highlight")
 	self.hoverHighlight.Name = "CustomerHoverHighlight"
 	self.hoverHighlight.DepthMode = Enum.HighlightDepthMode.Occluded
@@ -270,6 +414,8 @@ function Customercontroller:Init()
 
 	AnimateButton(self.acceptButton)
 	AnimateButton(self.declineButton)
+	AnimateButton(self.estimateButton)
+	AnimateButton(self.closeButton)
 
 	self.acceptButton.Activated:Connect(function()
 		self:Respond("Accept")
@@ -278,11 +424,22 @@ function Customercontroller:Init()
 	self.declineButton.Activated:Connect(function()
 		self:Respond("Decline")
 	end)
+	self.estimateButton.Activated:Connect(function()
+		self:RequestPriceEstimate()
+	end)
+	self.closeButton.Activated:Connect(function()
+		self:CloseOfferUi()
+	end)
 
+	self:ApplyUpgradeState(Remotemanager:InvokeServer("UpgradeService", "GetUpgrades"))
 	self:HideInstant()
 end
 
 function Customercontroller:Start()
+	Remotemanager:OnClientEvent("UpgradeService", "UpgradesUpdated", function(State)
+		self:ApplyUpgradeState(State)
+	end)
+
 	Remotemanager:OnClientEvent(Customerservicename, "OfferUpdated", function(Offer)
 		if Offer then
 			self.pendingOffer = Offer
