@@ -16,15 +16,6 @@ local Pulseinfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirectio
 local Gaincolor = Color3.fromRGB(126, 255, 145)
 local Losscolor = Color3.fromRGB(255, 138, 138)
 
-local function FindText(Parent: Instance, Name: string): TextLabel | TextButton | TextBox
-	local Instance = Parent:FindFirstChild(Name, true)
-	assert(
-		Instance and (Instance:IsA("TextLabel") or Instance:IsA("TextButton") or Instance:IsA("TextBox")),
-		Name .. " introuvable dans HUD"
-	)
-	return Instance
-end
-
 local function EnsureScale(Target: Instance): UIScale
 	local Existing = Target:FindFirstChildOfClass("UIScale")
 	if Existing then
@@ -88,7 +79,7 @@ end
 function Cashcontroller:Init()
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	local Hud = Playergui:WaitForChild("HUD")
-	self.cashText = FindText(Hud:WaitForChild("CashFrame"), "CashText")
+	self.cashText = Hud:WaitForChild("CashFrame"):WaitForChild("CashText")
 	self.cashScale = EnsureScale(self.cashText)
 	self.baseTextColor = self.cashText.TextColor3
 	self.displayedCash = 0

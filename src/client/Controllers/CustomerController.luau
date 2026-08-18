@@ -47,17 +47,6 @@ local function GetOrCreateCloseButton(CustomerFrame: Frame): GuiButton
 	return Button
 end
 
-local function FindFirstTextLabel(Root: Instance, Candidates: { string }): TextLabel?
-	for _, Name in ipairs(Candidates) do
-		local Descendant = Root:FindFirstChild(Name, true)
-		if Descendant and Descendant:IsA("TextLabel") then
-			return Descendant
-		end
-	end
-
-	return nil
-end
-
 function Customercontroller:HideEstimateText()
 	if not self.estimatePriceText then
 		return
@@ -91,8 +80,6 @@ function Customercontroller:UpdateEstimateButtonAppearance()
 	local HasEstimatedCurrentOffer = self.activeOfferId ~= nil and self.estimatedOfferId == self.activeOfferId
 	local IsAvailable = (self.estimatesRemaining or 0) > 0 and not HasEstimatedCurrentOffer
 	self.estimateButton.Visible = self:IsVisible()
-	-- Sans estimation disponible, le bouton reste cliquable pour afficher le message d'amélioration.
-	-- Après avoir estimé l'offre courante, il ne peut plus être utilisé une seconde fois.
 	self.estimateButton.Interactable = not HasEstimatedCurrentOffer
 	self.estimateButton.Active = true
 	self.estimateButton.AutoButtonColor = IsAvailable
@@ -101,17 +88,6 @@ function Customercontroller:UpdateEstimateButtonAppearance()
 			ImageColor3 = if IsAvailable then DefaultColor else DisabledEstimateColor,
 		}):Play()
 	end
-end
-
-local function FindFirstImageObject(Root: Instance, Candidates: { string }): GuiObject?
-	for _, Name in ipairs(Candidates) do
-		local Descendant = Root:FindFirstChild(Name, true)
-		if Descendant and (Descendant:IsA("ImageLabel") or Descendant:IsA("ImageButton")) then
-			return Descendant
-		end
-	end
-
-	return nil
 end
 
 local function EnsureScale(Target: Instance): UIScale
@@ -239,10 +215,6 @@ function Customercontroller:ShowOffer(Offer)
 	self.frameScale.Scale = 0.96
 	self.frame.BackgroundTransparency = 1
 
-	if self.nameLabel then
-		self.nameLabel.Text = ""
-		self.nameLabel.Visible = false
-	end
 
 	if self.objectLabel then
 		self.objectLabel.Text = Offer.ObjectName
@@ -369,15 +341,12 @@ function Customercontroller:Init()
 	self.hiddenPosition = self.shownPosition + UDim2.fromOffset(0, 24)
 	self.baseBackgroundTransparency = self.frame.BackgroundTransparency
 
-	self.nameLabel = FindFirstTextLabel(self.frame, { "CustomerName", "Name", "CustomerLabel" })
-	self.objectLabel = FindFirstTextLabel(self.frame, { "ObjectName", "Object", "ItemName", "ObjectLabel" })
-	self.priceLabel = FindFirstTextLabel(self.frame, { "PriceLabel" })
-	self.priceValueLabel = FindFirstTextLabel(self.frame, { "PriceText", "PriceValue", "Price" })
-	self.iconImage = FindFirstImageObject(self.frame, { "Icon" })
+	self.objectLabel = self.frame:WaitForChild("ObjectName")
+	self.priceLabel = self.frame:WaitForChild("PriceLabel")
+	self.priceValueLabel = self.frame:WaitForChild("PriceText")
+	self.iconImage = self.frame:WaitForChild("Icon")
 	self.estimateButton = self.frame:WaitForChild("EstimationButton") :: GuiButton
 	self.estimatePriceText = self.frame:WaitForChild("EstimationText") :: TextLabel
-	assert(self.estimateButton:IsA("GuiButton"), "EstimationButton doit être un GuiButton")
-	assert(self.estimatePriceText:IsA("TextLabel"), "EstimationText doit être un TextLabel")
 	self.estimateTextScale = EnsureScale(self.estimatePriceText)
 	self.baseEstimateTextTransparency = self.estimatePriceText.TextTransparency
 	self.baseEstimateStrokeTransparency = self.estimatePriceText.TextStrokeTransparency
@@ -402,11 +371,6 @@ function Customercontroller:Init()
 	self.hoverHighlight.OutlineTransparency = 0
 	self.hoverHighlight.Enabled = false
 	self.hoverHighlight.Parent = Workspace
-
-	if self.nameLabel then
-		self.nameLabel.Text = ""
-		self.nameLabel.Visible = false
-	end
 
 	if self.priceLabel then
 		self.priceLabel.Text = "Price :"

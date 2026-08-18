@@ -10,7 +10,6 @@ local LockedIconColor = Color3.fromRGB(160, 160, 160)
 local LockedIconTransparency = 0.35
 
 local function UpdateCount(Controller)
-	if not Controller.restoredText then return end
 	local UnlockedCount = 0
 	for _, Entry in ipairs(Controller.indexEntries) do
 		if Entry.Unlocked then UnlockedCount += 1 end
@@ -36,25 +35,20 @@ function Index.ApplyEntries(Controller, Entries)
 		Card.Name = "Index_" .. tostring(Entry.ObjectKey or Entry.Name or math.random(1, 999999))
 		Card.Visible = true
 		Card.Parent = Controller.indexScrollingFrame
-		local RootButton = Card:FindFirstChild("Button")
-		if RootButton and RootButton:IsA("GuiButton") then Shared.AnimateButton(RootButton, function() return false end) end
-		local ButtonRoot = RootButton or Card
-		local NameText = ButtonRoot:FindFirstChild("NameText", true)
-		local RarityText = ButtonRoot:FindFirstChild("RarityText", true)
-		local Icon = ButtonRoot:FindFirstChild("Icon", true)
+		local RootButton = Card:WaitForChild("Button")
+		Shared.AnimateButton(RootButton, function() return false end)
+		local NameText = RootButton:WaitForChild("NameText")
+		local RarityText = RootButton:WaitForChild("RarityText")
+		local Icon = RootButton:WaitForChild("Icon")
 		local IsUnlocked = Entry.Unlocked == true
-		if NameText and (NameText:IsA("TextLabel") or NameText:IsA("TextButton") or NameText:IsA("TextBox")) then
-			NameText.Text = tostring(Entry.Name or "")
-			if NameText:IsA("GuiObject") then NameText.Visible = IsUnlocked end
-		end
-		if RarityText and (RarityText:IsA("TextLabel") or RarityText:IsA("TextButton") or RarityText:IsA("TextBox")) then RarityText.Text = tostring(Entry.Rarity or "Common") end
-		if Icon and (Icon:IsA("ImageLabel") or Icon:IsA("ImageButton")) then
-			local DefaultColor = Icon.ImageColor3
-			local DefaultTransparency = Icon.ImageTransparency
-			Icon.Image = tostring(Entry.ImageId or "")
-			Icon.ImageColor3 = if IsUnlocked then DefaultColor else LockedIconColor
-			Icon.ImageTransparency = if IsUnlocked then DefaultTransparency else LockedIconTransparency
-		end
+		NameText.Text = tostring(Entry.Name or "")
+		NameText.Visible = IsUnlocked
+		RarityText.Text = tostring(Entry.Rarity or "Common")
+		local DefaultColor = Icon.ImageColor3
+		local DefaultTransparency = Icon.ImageTransparency
+		Icon.Image = tostring(Entry.ImageId or "")
+		Icon.ImageColor3 = if IsUnlocked then DefaultColor else LockedIconColor
+		Icon.ImageTransparency = if IsUnlocked then DefaultTransparency else LockedIconTransparency
 	end
 
 	if Controller.hasLoadedIndexEntries then
@@ -70,11 +64,10 @@ function Index.ApplyEntries(Controller, Entries)
 end
 
 function Index.Init(Controller)
-	Controller.indexScrollingFrame = Shared.RequireScrollingFrame(Controller.indexFrame, "ScrollingFrame")
-	Controller.indexTemplate = Shared.RequireFrame(Controller.indexScrollingFrame, "Template")
-	Controller.indexGridLayout = Controller.indexScrollingFrame:FindFirstChildOfClass("UIGridLayout")
-	assert(Controller.indexGridLayout, "UIGridLayout introuvable dans IndexFrame.ScrollingFrame")
-	Controller.restoredText = Shared.FindText(Controller.indexFrame, "RestoredText")
+	Controller.indexScrollingFrame = Controller.indexFrame:WaitForChild("ScrollingFrame")
+	Controller.indexTemplate = Controller.indexScrollingFrame:WaitForChild("Template")
+	Controller.indexGridLayout = Controller.indexScrollingFrame:WaitForChild("UIGridLayout")
+	Controller.restoredText = Controller.indexFrame:WaitForChild("RestoredText")
 	Controller.indexEntries = {}
 	Controller.indexUnlockedByObject = {}
 	Controller.hasLoadedIndexEntries = false

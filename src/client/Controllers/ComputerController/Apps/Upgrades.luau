@@ -68,18 +68,18 @@ function Upgrades.Apply(Controller, State)
 end
 
 local function BindCard(Controller, UpgradeName: string)
-	local Card = Controller.upgradesScrollingFrame:FindFirstChild(UpgradeName)
-	assert(Card and Card:IsA("GuiObject"), UpgradeName .. " introuvable dans UpgradesFrame.ScrollingFrame")
-	local CashButton = Shared.RequireButton(Card, "UpgradeButton")
-	local RobuxButton = Shared.RequireButton(Card, "RobuxButton")
+	local Card = Controller.upgradesScrollingFrame:WaitForChild(UpgradeName)
+	local Button = Card:WaitForChild("Button")
+	local CashButton = Button:WaitForChild("UpgradeButton")
+	local RobuxButton = Button:WaitForChild("RobuxButton")
 	local CardData = {
 		CashButton = CashButton,
 		RobuxButton = RobuxButton,
-		CashPriceText = Shared.RequireText(CashButton, "PriceText"),
-		RobuxPriceText = Shared.RequireText(RobuxButton, "PriceText"),
-		LevelText = Shared.RequireText(Card, "LevelText"),
-		CurrentText = Shared.RequireText(Card, "CurrentText"),
-		NextText = Shared.RequireText(Card, "NextText"),
+		CashPriceText = CashButton:WaitForChild("PriceText"),
+		RobuxPriceText = RobuxButton:WaitForChild("PriceText"),
+		LevelText = Button:WaitForChild("LevelText"),
+		CurrentText = Button:WaitForChild("CurrentText"),
+		NextText = Button:WaitForChild("NextText"),
 		ProductId = 0,
 		LastProductId = nil,
 		IsMaxLevel = false,
@@ -104,9 +104,8 @@ local function BindCard(Controller, UpgradeName: string)
 end
 
 function Upgrades.Init(Controller)
-	Controller.upgradesScrollingFrame = Shared.RequireScrollingFrame(Controller.upgradesFrame, "ScrollingFrame")
-	Controller.upgradesGridLayout = Controller.upgradesScrollingFrame:FindFirstChildOfClass("UIGridLayout")
-	assert(Controller.upgradesGridLayout, "UIGridLayout introuvable dans UpgradesFrame.ScrollingFrame")
+	Controller.upgradesScrollingFrame = Controller.upgradesFrame:WaitForChild("ScrollingFrame")
+	Controller.upgradesGridLayout = Controller.upgradesScrollingFrame:WaitForChild("UIGridLayout")
 	Controller.upgradeCards = {}
 	Controller.upgradeState = {}
 	for _, Name in ipairs({ "PriceEstimation", "DailyCustomers", "PurchaseDiscount" }) do BindCard(Controller, Name) end

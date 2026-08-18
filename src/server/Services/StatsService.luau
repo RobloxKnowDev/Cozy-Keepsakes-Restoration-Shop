@@ -2,6 +2,7 @@ local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 
+local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
 local Statsservice = {
@@ -87,6 +88,15 @@ function Statsservice:AddDailyProfit(Player: Player, Amount: number)
 	self:ResetDailyProfitIfNeeded(Player)
 	Stats.DailyProfit = RoundCurrency(Stats.DailyProfit + Amount)
 	self:PushStats(Player)
+end
+
+function Statsservice:AddReputation(Player: Player, Amount: number): number
+	local Stats = self:EnsurePlayer(Player)
+	local Multiplier = Core:GetService("MonetizationService"):GetReputationMultiplier(Player)
+	local Granted = math.max(Amount, 0) * Multiplier
+	Stats.Reputation = math.max(math.round((Stats.Reputation + Granted) * 100) / 100, 0)
+	self:PushStats(Player)
+	return Granted
 end
 
 function Statsservice:Init()

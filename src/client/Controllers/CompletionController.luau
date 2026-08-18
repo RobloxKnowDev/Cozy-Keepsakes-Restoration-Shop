@@ -20,11 +20,11 @@ local Completioncontroller = {
 }
 
 local Completionkinds = { "Dirt", "Sticker", "Adhesive", "Scratch" }
-local Rownamecandidates = {
-	Dirt = { "DirtFrame", "DirtsFrame" },
-	Sticker = { "StickerFrame", "StickersFrame" },
-	Adhesive = { "AdhesiveFrame", "AdhesivesFrame" },
-	Scratch = { "ScratchFrame", "ScratchesFrame", "ScratchsFrame" },
+local Rownames = {
+	Dirt = "DirtFrame",
+	Sticker = "StickersFrame",
+	Adhesive = "InkFrame",
+	Scratch = "ScratchesFrame",
 }
 
 local function Pivotof(Object: RestorationObject): CFrame
@@ -77,11 +77,11 @@ function Completioncontroller:Init()
 	self.preview = self.frame:WaitForChild("ObjectPreview")
 	self.viewport = if self.preview:IsA("ViewportFrame") then self.preview else nil
 	self.nextButton = self.frame:WaitForChild("NextButton") :: GuiButton
-	self.objectNameText = self.frame:FindFirstChild("ObjectName", true) or self.frame:FindFirstChild("Name", true)
-	self.rarityText = self.frame:FindFirstChild("Rarity", true)
-	self.totalProgressText = self.frame:FindFirstChild("TotalProgress", true)
-	self.valueText = self.frame:FindFirstChild("Value", true)
-	self.maxValueText = self.frame:FindFirstChild("MaxValue", true) or self.frame:FindFirstChild("MaxPrice", true)
+	self.objectNameText = self.frame:WaitForChild("ObjectName")
+	self.rarityText = self.frame.RarityFrame:WaitForChild("Rarity")
+	self.totalProgressText = self.frame:WaitForChild("TotalProgress")
+	self.valueText = self.frame:WaitForChild("Value")
+	self.maxValueText = self.frame:WaitForChild("MaxValue")
 	self.frameShownPosition = self.frame.Position
 	self.transition = self.gui:FindFirstChild("CompletionTransition")
 	if not self.transition then
@@ -102,12 +102,6 @@ function Completioncontroller:Init()
 	end
 
 	self:EnsurePreviewObjects()
-end
-
-local function Settext(Instance: Instance?, Value: string)
-	if Instance and (Instance:IsA("TextLabel") or Instance:IsA("TextButton") or Instance:IsA("TextBox")) then
-		Instance.Text = Value
-	end
 end
 
 local function Formatcurrency(Value: number): string
@@ -131,38 +125,22 @@ local function Progressfromattributes(Object: RestorationObject): number
 end
 
 function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
-	local Progressframe = self.frame:FindFirstChild("ProgressFrame")
+	local Progressframe = self.frame:WaitForChild("ProgressFrame")
 	local Overallratio = Progressfromattributes(Object)
 	local Maxvalue = tonumber(Object:GetAttribute("MaxValue")) or tonumber(Object:GetAttribute("MaxPrice")) or 0
 	local Currentvalue = Maxvalue * Overallratio
 
-	Settext(self.objectNameText, tostring(Object:GetAttribute("DisplayName") or Object.Name))
-	Settext(self.rarityText, tostring(Object:GetAttribute("Rarity") or "Common"))
-	Settext(self.totalProgressText, string.format("%d%%", math.floor(Overallratio * 100 + 0.5)))
-	Settext(self.valueText, Formatcurrency(Currentvalue))
-	Settext(self.maxValueText, Formatcurrency(Maxvalue))
+	self.objectNameText.Text = tostring(Object:GetAttribute("DisplayName") or Object.Name)
+	self.rarityText.Text = tostring(Object:GetAttribute("Rarity") or "Common")
+	self.totalProgressText.Text = string.format("%d%%", math.floor(Overallratio * 100 + 0.5))
+	self.valueText.Text = Formatcurrency(Currentvalue)
+	self.maxValueText.Text = Formatcurrency(Maxvalue)
 
-	if Progressframe then
-		for _, Kind in ipairs(Completionkinds) do
-			local Row
-			for _, Candidate in ipairs(Rownamecandidates[Kind]) do
-				Row = Progressframe:FindFirstChild(Candidate)
-				if Row then
-					break
-				end
-			end
-			if Row and Row:IsA("GuiObject") then
-				local Ratio = Ratiofromattributes(Object, Kind)
-				local Percenttext = Row:FindFirstChild("PercentText", true)
-				if Percenttext and Percenttext:IsA("TextLabel") then
-					Percenttext.Text = string.format("%d%%", math.floor(Ratio * 100 + 0.5))
-				end
-				local Bar = Row:FindFirstChild("Bar", true)
-				if Bar and Bar:IsA("GuiObject") then
-					Bar.Size = UDim2.fromScale(Ratio, 1)
-				end
-			end
-		end
+	for _, Kind in ipairs(Completionkinds) do
+		local Row = Progressframe:WaitForChild(Rownames[Kind])
+		local Ratio = Ratiofromattributes(Object, Kind)
+		Row:WaitForChild("PercentText").Text = string.format("%d%%", math.floor(Ratio * 100 + 0.5))
+		Row:WaitForChild("FrameBar"):WaitForChild("Bar").Size = UDim2.fromScale(Ratio, 1)
 	end
 end
 
@@ -299,7 +277,7 @@ function Completioncontroller:StartConfetti()
 end
 
 function Completioncontroller:PlayProgressAnimation()
-	local Progressframe = self.frame:FindFirstChild("ProgressFrame")
+	local Progressframe = self.frame:WaitForChild("ProgressFrame")
 	if not Progressframe then
 		return
 	end

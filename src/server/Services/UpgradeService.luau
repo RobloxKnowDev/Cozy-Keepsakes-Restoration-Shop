@@ -1,5 +1,4 @@
 local Lighting = game:GetService("Lighting")
-local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -166,6 +165,8 @@ function UpgradeService:GrantLevel(Player: Player, UpgradeName: string): boolean
 	self:PushUpgrades(Player)
 	if UpgradeName == "DailyCustomers" then
 		Core:GetService("CustomerService"):RefreshCustomerLimit()
+	elseif UpgradeName == "PurchaseDiscount" then
+		Core:GetService("CustomerService"):RefreshPendingOfferPrice(Player)
 	end
 	return true
 end
@@ -183,7 +184,7 @@ function UpgradeService:PurchaseWithCash(Player: Player, UpgradeName: string)
 		return { Success = false, Reason = "NotEnoughCash" }
 	end
 	if not self:GrantLevel(Player, UpgradeName) then
-		Core:GetService("CashService"):AddCash(Player, Price)
+		Core:GetService("CashService"):AddCash(Player, Price, false)
 		return { Success = false, Reason = "UpgradeFailed" }
 	end
 	return { Success = true, State = self:GetUpgradeState(Player, UpgradeName) }
@@ -208,6 +209,17 @@ function UpgradeService:FindUpgradeByProductId(ProductId: number): string?
 		end
 	end
 	return nil
+end
+
+function UpgradeService:HandleDeveloperProduct(Player: Player, ProductId: number): boolean
+	local UpgradeName = self:FindUpgradeByProductId(ProductId)
+	if not UpgradeName then return false end
+	local Definition = GetDefinition(UpgradeName)
+	local MaxLevel = Definition and GetMaxLevel(Player, UpgradeName, Definition) or nil
+	if MaxLevel and self:GetLevel(Player, UpgradeName) >= MaxLevel then
+		return true
+	end
+	return self:GrantLevel(Player, UpgradeName)
 end
 
 function UpgradeService:Init()
@@ -240,27 +252,6 @@ function UpgradeService:Init()
 		return self:PurchaseWithCash(Player, UpgradeName)
 	end)
 
-	MarketplaceService.ProcessReceipt = function(ReceiptInfo)
-		local Player = Players:GetPlayerByUserId(ReceiptInfo.PlayerId)
-		if not Player then
-			return Enum.ProductPurchaseDecision.NotProcessedYet
-		end
-		local UpgradeName = self:FindUpgradeByProductId(ReceiptInfo.ProductId)
-		if not UpgradeName then
-			warn(string.format("UpgradeService: Developer Product inconnu (%d)", ReceiptInfo.ProductId))
-			return Enum.ProductPurchaseDecision.NotProcessedYet
-		end
-		local Definition = GetDefinition(UpgradeName)
-		local MaxLevel = Definition and GetMaxLevel(Player, UpgradeName, Definition) or nil
-		if MaxLevel and self:GetLevel(Player, UpgradeName) >= MaxLevel then
-			-- Le reçu est valide, mais l'achat est arrivé alors que l'upgrade est déjà au maximum.
-			return Enum.ProductPurchaseDecision.PurchaseGranted
-		end
-		if not self:GrantLevel(Player, UpgradeName) then
-			return Enum.ProductPurchaseDecision.NotProcessedYet
-		end
-		return Enum.ProductPurchaseDecision.PurchaseGranted
-	end
 end
 
 return UpgradeService

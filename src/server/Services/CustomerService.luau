@@ -28,6 +28,7 @@ type CustomerOffer = {
 	ObjectKey: string,
 	ObjectName: string,
 	ImageId: string,
+	BasePrice: number,
 	Price: number,
 	MaxValue: number,
 }
@@ -94,25 +95,12 @@ local function CanSpawnMoreCustomersToday(): boolean
 	return SpawnedCustomersToday < GetMaxCustomersPerDay()
 end
 
-local function FindAttachmentFolder(): Folder?
-	local Folder = Workspace:FindFirstChild(QueueFolderName)
-	if Folder and Folder:IsA("Folder") then
-		return Folder
-	end
-
-	warn(string.format("CustomerService: dossier Workspace.%s introuvable", QueueFolderName))
-	return nil
-end
-
 local function CollectQueueAttachments()
 	table.clear(AttachmentsByIndex)
 	table.clear(QueueIndexes)
 	HighestQueueIndex = 0
 
-	local Folder = FindAttachmentFolder()
-	if not Folder then
-		return
-	end
+	local Folder = Workspace:WaitForChild(QueueFolderName)
 
 	for _, Child in ipairs(Folder:GetChildren()) do
 		if Child:IsA("Attachment") then
@@ -131,25 +119,6 @@ local function CollectQueueAttachments()
 		return Left > Right
 	end)
 
-	if not AttachmentsByIndex[0] then
-		warn("CustomerService: attachment '0' manquant pour le despawn")
-	end
-
-	if HighestQueueIndex <= 0 then
-		warn("CustomerService: aucun attachment numéroté au-dessus de 0 pour la file")
-	end
-end
-
-local function FindCustomerTemplate(): Model?
-	local AssetFolder = ReplicatedStorage:FindFirstChild("Asset")
-	local CustomerFolder = AssetFolder and AssetFolder:FindFirstChild("Customer")
-	local Template = CustomerFolder and CustomerFolder:FindFirstChild("Normal")
-	if Template and Template:IsA("Model") then
-		return Template
-	end
-
-	warn("CustomerService: ReplicatedStorage.Asset.Customer.Normal introuvable ou invalide")
-	return nil
 end
 
 local function GetTargetCFrame(Attachment: Attachment): CFrame
@@ -209,7 +178,6 @@ end
 
 local function CreateCustomerInstance(): Model
 	local Template = CachedCustomerTemplate
-	assert(Template, "CustomerService: aucun template de customer disponible")
 	local Customer = Template:Clone()
 
 	CustomerSerial += 1
@@ -360,7 +328,6 @@ local function BroadcastOffer(Offer: CustomerOffer?)
 		Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", nil)
 		return
 	end
-	-- MaxValue reste côté serveur jusqu'à l'utilisation d'une estimation.
 	Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", {
 		Id = Offer.Id,
 		CustomerType = Offer.CustomerType,
@@ -398,7 +365,9 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer?
 		0
 	)
 	OfferSerial += 1
-	local DiscountPercent = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
+	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
+	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
+	local DiscountPercent = math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
 	local BasePrice = math.random(Minprice, math.max(Minprice, Maxprice))
 	local DiscountedPrice = math.max(math.round(BasePrice * (1 - DiscountPercent / 100)), 0)
 
@@ -408,9 +377,19 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer?
 		ObjectKey = ObjectKey,
 		ObjectName = Definition.Name or ObjectKey,
 		ImageId = tostring(Definition.IdImage or ""),
+		BasePrice = BasePrice,
 		Price = DiscountedPrice,
 		MaxValue = math.max(tonumber(Definition.MaxValue) or tonumber(Definition.MaxPrice) or Maxprice, 0),
 	}
+end
+
+function Customerservice:RefreshPendingOfferPrice(Player: Player)
+	if not PendingOffer then return end
+	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
+	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
+	local DiscountPercent = math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
+	PendingOffer.Price = math.max(math.round(PendingOffer.BasePrice * (1 - DiscountPercent / 100)), 0)
+	BroadcastOffer(PendingOffer)
 end
 
 local function AdvanceQueue()
@@ -509,7 +488,7 @@ end
 
 function Customerservice:Init()
 	CollectQueueAttachments()
-	CachedCustomerTemplate = FindCustomerTemplate()
+	CachedCustomerTemplate = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Customer"):WaitForChild("Normal")
 	SyncDayState()
 	Lighting:GetAttributeChangedSignal("Day"):Connect(SyncDayState)
 	Players.PlayerAdded:Connect(function()
@@ -559,7 +538,7 @@ function Customerservice:Init()
 				}
 			end
 			local Restorationservice = Core:GetService("RestorationService")
-			local Restorationobject = Restorationservice:PrepareObject(PendingOffer.ObjectKey)
+			local Restorationobject = Restorationservice:PrepareObject(PendingOffer.ObjectKey, Player)
 			Restorationobject:SetAttribute("PurchasePrice", PendingOffer.Price)
 			local ExitAttachment = AttachmentsByIndex[0]
 			OccupiedSlots[1] = nil

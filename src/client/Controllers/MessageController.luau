@@ -9,12 +9,6 @@ local Messagecontroller = {
 local Messagetweeninfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Messagelifetime = 3
 
-local function FindMessageFrame(Root: Instance): Frame
-	local MessageFrame = Root:FindFirstChild("Message", true)
-	assert(MessageFrame and MessageFrame:IsA("Frame"), "Frame 'Message' introuvable dans PlayerGui")
-	return MessageFrame
-end
-
 function Messagecontroller:Show(Text: string, Color: Color3?)
 	if not self.template then
 		return
@@ -53,9 +47,8 @@ end
 
 function Messagecontroller:Init()
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
-	self.frame = FindMessageFrame(Playergui)
-	self.template = self.frame:FindFirstChild("Template")
-	assert(self.template and self.template:IsA("TextLabel"), "TextLabel 'Template' introuvable dans Message")
+	self.frame = Playergui:WaitForChild("HUD"):WaitForChild("Message")
+	self.template = self.frame:WaitForChild("Template")
 
 	self.baseTextColor = self.template.TextColor3
 	self.messageId = 0

@@ -7,12 +7,6 @@ local Daynightcontroller = {
 	Priority = 7,
 }
 
-local function Findtext(Parent: Instance, Name: string): TextLabel | TextButton | TextBox
-	local Instance = Parent:FindFirstChild(Name, true)
-	assert(Instance and (Instance:IsA("TextLabel") or Instance:IsA("TextButton") or Instance:IsA("TextBox")), Name .. " introuvable dans DayFrame")
-	return Instance
-end
-
 local function Formattime(Clocktime: number): string
 	local Totalminutes = math.floor(Clocktime * 60) % 1440
 	local Hour24 = math.floor(Totalminutes / 60)
@@ -26,10 +20,9 @@ end
 function Daynightcontroller:Init()
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	local HUD = Playergui:WaitForChild("HUD")
-	local Dayframe = HUD:FindFirstChild("DayFrame", true)
-	assert(Dayframe, "DayFrame introuvable dans HUD")
-	self.DayText = Findtext(Dayframe, "DayText")
-	self.TimeText = Findtext(Dayframe, "TimeText")
+	local Dayframe = HUD:WaitForChild("DayFrame")
+	self.DayText = Dayframe:WaitForChild("DayText")
+	self.TimeText = Dayframe:WaitForChild("TimeText")
 end
 
 function Daynightcontroller:Update()

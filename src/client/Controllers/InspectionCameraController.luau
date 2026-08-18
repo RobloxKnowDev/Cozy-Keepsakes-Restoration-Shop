@@ -165,7 +165,7 @@ function Controller:IsDragging(): boolean
 end
 
 function Controller:IsIntroCameraReady(): boolean
-	local Campart = Workspace:FindFirstChild("CamPart")
+	local Campart = Workspace:WaitForChild("CamPart")
 	return Introcameraactive
 		and Introcameratween == nil
 		and Campart ~= nil
@@ -200,7 +200,7 @@ function Controller:SelectObject()
 end
 
 function Controller:ShowIntroCamera()
-	local Campart = Workspace:FindFirstChild("CamPart")
+	local Campart = Workspace:WaitForChild("CamPart")
 	if not Campart or not Campart:IsA("BasePart") then
 		warn("InspectionCameraController: Workspace.CamPart introuvable")
 		return

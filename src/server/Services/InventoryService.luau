@@ -56,6 +56,11 @@ local function CloneItem(Item: RestoredItem): RestoredItem
 	}
 end
 
+local function GetSaleValue(Player: Player, BaseValue: number): number
+	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
+	return math.round(BaseValue * Multiplier * 100) / 100
+end
+
 function Inventoryservice:EnsurePlayer(Player: Player): { RestoredItem }
 	local Items = ItemsByPlayer[Player]
 	if not Items then
@@ -96,7 +101,10 @@ function Inventoryservice:GetRestoredItems(Player: Player): { RestoredItem }
 	local Items = self:EnsurePlayer(Player)
 	local Result = {}
 	for Index, Item in ipairs(Items) do
-		Result[Index] = CloneItem(Item)
+		local DisplayItem = CloneItem(Item)
+		DisplayItem.CurrentValue = GetSaleValue(Player, Item.CurrentValue)
+		DisplayItem.NetProfit = math.round((DisplayItem.CurrentValue - DisplayItem.PurchasePrice) * 100) / 100
+		Result[Index] = DisplayItem
 	end
 	return Result
 end
@@ -151,10 +159,14 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	end
 
 	local Item = table.remove(Items, Index)
-	Core:GetService("CashService"):AddCash(Player, Item.CurrentValue)
+	local SaleValue = GetSaleValue(Player, Item.CurrentValue)
+	Core:GetService("CashService"):AddCash(Player, SaleValue)
 	Core:GetService("StatsService"):AddItemsSold(Player, 1)
 	self:PushItems(Player)
-	return CloneItem(Item)
+	local SoldItem = CloneItem(Item)
+	SoldItem.CurrentValue = SaleValue
+	SoldItem.NetProfit = math.round((SaleValue - SoldItem.PurchasePrice) * 100) / 100
+	return SoldItem
 end
 
 function Inventoryservice:SellAllRestoredItems(Player: Player)
@@ -165,7 +177,7 @@ function Inventoryservice:SellAllRestoredItems(Player: Player)
 	for Index = #Items, 1, -1 do
 		local Item = table.remove(Items, Index)
 		table.insert(SoldItems, 1, CloneItem(Item))
-		TotalValue += Item.CurrentValue
+		TotalValue += GetSaleValue(Player, Item.CurrentValue)
 	end
 
 	if #SoldItems > 0 then

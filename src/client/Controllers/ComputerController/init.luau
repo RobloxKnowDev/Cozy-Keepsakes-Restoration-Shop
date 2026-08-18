@@ -10,6 +10,7 @@ local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Home = require(script.Apps.Home)
 local Index = require(script.Apps.Index)
 local Sell = require(script.Apps.Sell)
+local Shop = require(script.Apps.Shop)
 local Shared = require(script.Apps.Shared)
 local Upgrades = require(script.Apps.Upgrades)
 
@@ -18,7 +19,7 @@ local ComputerController = {
 	Priority = 3,
 }
 
-local Applications = { Home, Index, Sell, Upgrades }
+local Applications = { Home, Index, Sell, Upgrades, Shop }
 local HighlightFillColor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
 local CameraTweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -36,29 +37,6 @@ local function FindComputerFromInstance(Target: Instance?): Instance?
 	while Current and Current ~= Workspace do
 		if Current.Name == "Computer" and (Current:IsA("BasePart") or Current:IsA("Model")) then return Current end
 		Current = Current.Parent
-	end
-	return nil
-end
-
-local function FindUpgradeNavigationButton(Frame: Frame, PageFrame: Frame): GuiButton?
-	local Preferred = Frame:FindFirstChild("UpgradesButton", true)
-	if Preferred and Preferred:IsA("GuiButton") and not Preferred:IsDescendantOf(PageFrame) then return Preferred end
-	for _, Descendant in ipairs(Frame:GetDescendants()) do
-		if Descendant.Name == "UpgradeButton" and Descendant:IsA("GuiButton") and not Descendant:IsDescendantOf(PageFrame) then
-			return Descendant
-		end
-	end
-	return nil
-end
-
-local function FindNavigationButton(Frame: Frame, PageFrame: Frame, Name: string): GuiButton?
-	for _, Descendant in ipairs(Frame:GetDescendants()) do
-		if Descendant.Name == Name
-			and Descendant:IsA("GuiButton")
-			and not Descendant:IsDescendantOf(PageFrame)
-		then
-			return Descendant
-		end
 	end
 	return nil
 end
@@ -225,32 +203,31 @@ function ComputerController:Init()
 	self.computer = Workspace:WaitForChild("Computer")
 	self.cameraPart = Workspace:WaitForChild("CamPartComputer") :: BasePart
 	self.surfaceGui = self.computer:WaitForChild("SurfaceGui") :: SurfaceGui
+	self.surfaceGui.Active = true
 	self.frame = self.surfaceGui:WaitForChild("Frame") :: Frame
 	self.header = self.frame:WaitForChild("Header") :: Frame
-	self.pageFrame = Shared.RequireFrame(self.frame, "PageFrame")
-	self.homeFrame = Shared.RequireFrame(self.pageFrame, "HomeFrame")
-	self.indexFrame = Shared.RequireFrame(self.pageFrame, "IndexFrame")
-	self.sellFrame = Shared.RequireFrame(self.pageFrame, "SellFrame")
-	self.upgradesFrame = Shared.FindFrame(self.pageFrame, "UpgradesFrame") or Shared.FindFrame(self.pageFrame, "UpgradeFrame")
-	assert(self.upgradesFrame, "UpgradesFrame (ou UpgradeFrame) introuvable dans PageFrame")
-	self.shopFrame = Shared.RequireFrame(self.pageFrame, "ShopFrame")
-	self.exitButton = Shared.RequireButton(self.header, "ExitButton")
-	self.homeButton = Shared.RequireButton(self.frame, "HomeButton")
-	self.indexButton = Shared.RequireButton(self.frame, "IndexButton")
-	self.sellNavButton = Shared.RequireButton(self.frame, "SellButton")
-	self.upgradesButton = FindUpgradeNavigationButton(self.frame, self.pageFrame)
-	assert(self.upgradesButton, "UpgradesButton introuvable dans l'interface computer")
-	self.shopButton = FindNavigationButton(self.frame, self.pageFrame, "ShopButton")
-	assert(self.shopButton, "ShopButton introuvable dans l'interface computer")
-	self.cashText = Shared.RequireText(self.header, "CashText")
-	self.dayText = Shared.RequireText(self.header, "DayText")
-	self.timeText = Shared.RequireText(self.header, "TimeText")
+	self.pageFrame = self.frame:WaitForChild("PageFrame")
+	self.homeFrame = self.pageFrame:WaitForChild("HomeFrame")
+	self.indexFrame = self.pageFrame:WaitForChild("IndexFrame")
+	self.sellFrame = self.pageFrame:WaitForChild("SellFrame")
+	self.upgradesFrame = self.pageFrame:WaitForChild("UpgradeFrame")
+	self.shopFrame = self.pageFrame:WaitForChild("ShopFrame")
+	self.LeftFrame = self.frame:WaitForChild("Left")
+	self.exitButton = self.header:WaitForChild("ExitButton")
+	self.homeButton = self.LeftFrame:WaitForChild("HomeButton")
+	self.indexButton = self.LeftFrame:WaitForChild("IndexButton")
+	self.sellNavButton = self.LeftFrame:WaitForChild("SellButton")
+	self.upgradesButton = self.LeftFrame:WaitForChild("UpgradeButton")
+	self.shopButton = self.LeftFrame:WaitForChild("ShopButton")
+	self.cashText = self.header:WaitForChild("CashFrame").CashText
+	self.dayText = self.header:WaitForChild("DayFrame").DayText
+	self.timeText = self.header:WaitForChild("DayFrame").TimeText
 	self.hud = PlayerGui:WaitForChild("HUD")
 	self.hudCashFrame = self.hud:WaitForChild("CashFrame") :: GuiObject
 	self.hudDayFrame = self.hud:WaitForChild("DayFrame") :: GuiObject
-	self.hudCashText = Shared.RequireText(self.hudCashFrame, "CashText")
-	self.hudDayText = Shared.RequireText(self.hudDayFrame, "DayText")
-	self.hudTimeText = Shared.RequireText(self.hudDayFrame, "TimeText")
+	self.hudCashText = self.hudCashFrame:WaitForChild("CashText")
+	self.hudDayText = self.hudDayFrame:WaitForChild("DayText")
+	self.hudTimeText = self.hudDayFrame:WaitForChild("TimeText")
 	self.activePage = "Home"
 	self.isOpen = false
 	self.navButtonDefaults = {}

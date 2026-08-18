@@ -26,51 +26,6 @@ function Shared.FormatProfit(Value: number): string
 	return string.format("+$%.2f", Rounded)
 end
 
-function Shared.FindText(Parent: Instance?, Name: string): (TextLabel | TextButton | TextBox)?
-	if not Parent then return nil end
-	local Object = Parent:FindFirstChild(Name, true)
-	if Object and (Object:IsA("TextLabel") or Object:IsA("TextButton") or Object:IsA("TextBox")) then
-		return Object
-	end
-	return nil
-end
-
-function Shared.RequireText(Parent: Instance, Name: string): TextLabel | TextButton | TextBox
-	local Object = Shared.FindText(Parent, Name)
-	assert(Object, Name .. " introuvable dans l'interface computer")
-	return Object
-end
-
-function Shared.FindButton(Parent: Instance?, Name: string): GuiButton?
-	if not Parent then return nil end
-	local Object = Parent:FindFirstChild(Name, true)
-	return if Object and Object:IsA("GuiButton") then Object else nil
-end
-
-function Shared.RequireButton(Parent: Instance, Name: string): GuiButton
-	local Object = Shared.FindButton(Parent, Name)
-	assert(Object, Name .. " introuvable dans l'interface computer")
-	return Object
-end
-
-function Shared.FindFrame(Parent: Instance?, Name: string): Frame?
-	if not Parent then return nil end
-	local Object = Parent:FindFirstChild(Name, true)
-	return if Object and Object:IsA("Frame") then Object else nil
-end
-
-function Shared.RequireFrame(Parent: Instance, Name: string): Frame
-	local Object = Shared.FindFrame(Parent, Name)
-	assert(Object, Name .. " introuvable dans l'interface computer")
-	return Object
-end
-
-function Shared.RequireScrollingFrame(Parent: Instance, Name: string): ScrollingFrame
-	local Object = Parent:FindFirstChild(Name, true)
-	assert(Object and Object:IsA("ScrollingFrame"), Name .. " introuvable dans l'interface computer")
-	return Object
-end
-
 function Shared.EnsureScale(Target: Instance): UIScale
 	local Existing = Target:FindFirstChildOfClass("UIScale")
 	if Existing then return Existing end

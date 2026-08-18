@@ -38,6 +38,7 @@ local Sessions: { [Player]: RestorationObject } = {}
 local Lastclean: { [Player]: number } = {}
 local Peeling: { [Player]: BasePart } = {}
 local Activeobject: RestorationObject? = nil
+local Grantedobjectqueue: { { Player: Player, Objectname: string } } = {}
 
 local function Destroyobject(Object: RestorationObject?)
 	if Object and Object.Parent then
@@ -71,59 +72,17 @@ local function Validsessionspot(Player: Player, Spot: any): (RestorationObject?,
 	return Object, Spots ~= nil and Spot:IsDescendantOf(Spots)
 end
 
-local function Isnamedobject(Instance: Instance): boolean
-	if not Instance:IsA("BasePart") and not Instance:IsA("Model") then
-		return false
-	end
-	if Instance:GetAttribute("RestorationObject") == true then
-		return true
-	end
-	for Assetname in pairs(Config.Object) do
-		if string.lower(Instance.Name) == string.lower(Assetname) then
-			return true
-		end
-	end
-	return false
-end
-
-local function Spawnconfiguredobject(Objectname: string?): RestorationObject?
-	local Spawnattachment = Workspace:FindFirstChild("Spawn", true)
-	if not Spawnattachment or not Spawnattachment:IsA("Attachment") then
-		warn("RestorationService: attachment Workspace.Spawn introuvable")
-		return nil
-	end
-
-	local Assetname = Objectname
-	if not Assetname then
-		for Name in pairs(Config.Object) do
-			Assetname = Name
-			break
-		end
-	end
-	if not Assetname then
-		return nil
-	end
-
-	local Definition = Config.Object[Assetname]
-	if not Definition then
-		warn(string.format("RestorationService: config objet '%s' introuvable", Assetname))
-		return nil
-	end
-
-	local Objectassets = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object")
-	local Asset = Objectassets:FindFirstChild(Assetname)
-	if not Asset or (not Asset:IsA("Model") and not Asset:IsA("BasePart")) then
-		warn(string.format("RestorationService: Asset/Object/%s introuvable ou invalide", Assetname))
-		return nil
-	end
-
+local function Spawnconfiguredobject(Objectname: string): RestorationObject
+	local Spawnattachment = Workspace:WaitForChild("Spawn") :: Attachment
+	local Definition = Config.Object[Objectname]
+	local Asset = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object"):WaitForChild(Objectname)
 	local Object = Asset:Clone() :: RestorationObject
 	local Maxvalue = tonumber(Definition.MaxValue) or tonumber(Definition.MaxPrice) or 0
-	Object.Name = Assetname
+	Object.Name = Objectname
 	Object:SetAttribute("RestorationObject", true)
 	Object:SetAttribute("KeepSpawnPosition", true)
 	Object:SetAttribute("SpawnFloorY", Spawnattachment.WorldPosition.Y)
-	Object:SetAttribute("DisplayName", Definition.Name or Assetname)
+	Object:SetAttribute("DisplayName", Definition.Name or Objectname)
 	Object:SetAttribute("MaxPrice", Maxvalue)
 	Object:SetAttribute("MaxValue", Maxvalue)
 	Object:SetAttribute("Rarity", Definition.Rarity or Definition.Rarety or "Common")
@@ -150,40 +109,6 @@ local function Spawnconfiguredobject(Objectname: string?): RestorationObject?
 	end
 
 	return Object
-end
-
-local function Findobject(Objectname: string?): RestorationObject
-	local Spawnedobject = Spawnconfiguredobject(Objectname)
-	if Spawnedobject then
-		return Spawnedobject
-	end
-
-	for _, Descendant in ipairs(Workspace:GetChildren()) do
-		if Isnamedobject(Descendant) then
-			return Descendant :: RestorationObject
-		end
-	end
-	for _, Descendant in ipairs(Workspace:GetDescendants()) do
-		if Isnamedobject(Descendant) then
-			return Descendant :: RestorationObject
-		end
-	end
-	for _, Child in ipairs(Workspace:GetChildren()) do
-		if Child:IsA("BasePart") and Child.Name == "Part" and Child.Size.Magnitude <= 30 then
-			return Child
-		end
-	end
-
-	local Demo = Instance.new("Part")
-	Demo.Name = Objectname or "RestorationObject"
-	Demo.Size = Vector3.new(5.5, 1.1, 3.6)
-	Demo.CFrame = CFrame.new(0, 4, 0) * CFrame.Angles(0, math.rad(20), 0)
-	Demo.Color = Color3.fromRGB(109, 116, 107)
-	Demo.Material = Enum.Material.SmoothPlastic
-	Demo.Anchored = true
-	Demo:SetAttribute("RestorationObject", true)
-	Demo.Parent = Workspace
-	return Demo
 end
 
 local function Randompointonsurface(Size: Vector3): (Vector3, Vector3)
@@ -298,9 +223,9 @@ local function Createspots(Object: RestorationObject)
 	Object:SetAttribute("CleanedSpots", 0)
 end
 
-function Restorationservice:PrepareObject(Objectname: string): RestorationObject
+function Restorationservice:PrepareObject(Objectname: string, Owner: Player?): RestorationObject
 	Destroyobject(Activeobject)
-	local Object = Findobject(Objectname)
+	local Object = Spawnconfiguredobject(Objectname)
 	if Object:IsA("BasePart") then
 		Object.Anchored = true
 	else
@@ -311,9 +236,34 @@ function Restorationservice:PrepareObject(Objectname: string): RestorationObject
 		end
 	end
 	Object:SetAttribute("RestorationObject", true)
+	Object:SetAttribute("AwardedUserId", if Owner then Owner.UserId else nil)
 	Createspots(Object)
 	Activeobject = Object
 	return Object
+end
+
+function Restorationservice:TryPrepareNextGrantedObject(): RestorationObject?
+	if self:HasActiveObject() or self:HasActiveSession() then return nil end
+	while #Grantedobjectqueue > 0 do
+		local Entry = table.remove(Grantedobjectqueue, 1)
+		if Entry.Player.Parent then
+			local Object = self:PrepareObject(Entry.Objectname, Entry.Player)
+			Core:GetService("MonetizationService"):StarterPackObjectReady(Entry.Player)
+			return Object
+		end
+	end
+	return nil
+end
+
+function Restorationservice:GrantObject(Player: Player, Objectname: string): (boolean, boolean)
+	if Config.Object[Objectname] == nil then return false, false end
+	if not self:HasActiveObject() and not self:HasActiveSession() then
+		self:PrepareObject(Objectname, Player)
+		return true, true
+	else
+		table.insert(Grantedobjectqueue, { Player = Player, Objectname = Objectname })
+		return true, false
+	end
 end
 
 function Restorationservice:HasActiveSession(): boolean
@@ -330,6 +280,8 @@ function Restorationservice:Init()
 		if not Object or not Object.Parent then
 			return nil
 		end
+		local AwardedUserId = tonumber(Object:GetAttribute("AwardedUserId"))
+		if AwardedUserId and AwardedUserId ~= Player.UserId then return nil end
 		Sessions[Player] = Object
 		return Object
 	end)
@@ -390,6 +342,7 @@ function Restorationservice:Init()
 		end
 		Destroyobject(Sessionobject)
 		Cleanupactiveobjectifidle()
+		task.defer(function() self:TryPrepareNextGrantedObject() end)
 
 		return Restoreditem
 	end)
@@ -478,6 +431,7 @@ function Restorationservice:Init()
 	Remotemanager:OnServerEvent(self.Name, "SessionEnded", function(Player)
 		Sessions[Player] = nil
 		Cleanupactiveobjectifidle()
+		task.defer(function() self:TryPrepareNextGrantedObject() end)
 	end)
 
 	Players.PlayerRemoving:Connect(function(Player)
@@ -488,7 +442,11 @@ function Restorationservice:Init()
 		Peeling[Player] = nil
 		Sessions[Player] = nil
 		Lastclean[Player] = nil
+		for Index = #Grantedobjectqueue, 1, -1 do
+			if Grantedobjectqueue[Index].Player == Player then table.remove(Grantedobjectqueue, Index) end
+		end
 		Cleanupactiveobjectifidle()
+		task.defer(function() self:TryPrepareNextGrantedObject() end)
 	end)
 end
 

@@ -38,10 +38,10 @@ function Cashservice:GetCash(Player: Player): number
 	return self:EnsurePlayer(Player)
 end
 
-function Cashservice:AddCash(Player: Player, Amount: number): number
+function Cashservice:AddCash(Player: Player, Amount: number, TrackProfit: boolean?): number
 	local Currentcash = self:EnsurePlayer(Player)
 	Cashbyplayer[Player] = Normalizecash(Currentcash + Amount)
-	Core:GetService("StatsService"):AddDailyProfit(Player, Amount)
+	if TrackProfit ~= false then Core:GetService("StatsService"):AddDailyProfit(Player, Amount) end
 	self:PushCash(Player)
 	return Cashbyplayer[Player]
 end
