@@ -1,21 +1,24 @@
 {
-  "name": "Toy Game Restoration",
+  "name": "Cozy Keepsakes: Restoration Shop",
   "tree": {
     "$className": "DataModel",
 
     "ReplicatedStorage": {
       "Shared": {
-        "$path": "src/shared"
+        "$path": "src/shared",
+        "$ignoreUnknownInstances": true
       }
     },
 
     "ServerScriptService": {
-      "$path": "src/server"
+      "$path": "src/server",
+      "$ignoreUnknownInstances": true
     },
 
     "StarterPlayer": {
       "StarterPlayerScripts": {
-        "$path": "src/client"
+        "$path": "src/client",
+        "$ignoreUnknownInstances": true
       }
     }
   }

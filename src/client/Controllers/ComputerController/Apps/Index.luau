@@ -41,8 +41,8 @@ function Index.ApplyEntries(Controller, Entries)
 		local RarityText = RootButton:WaitForChild("RarityText")
 		local Icon = RootButton:WaitForChild("Icon")
 		local IsUnlocked = Entry.Unlocked == true
-		NameText.Text = tostring(Entry.Name or "")
-		NameText.Visible = IsUnlocked
+		NameText.Text = if IsUnlocked then tostring(Entry.Name or "") else "???"
+		NameText.Visible = true
 		RarityText.Text = tostring(Entry.Rarity or "Common")
 		local DefaultColor = Icon.ImageColor3
 		local DefaultTransparency = Icon.ImageTransparency

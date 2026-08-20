@@ -18,7 +18,12 @@ for _, Module in ipairs(script:GetChildren()) do
 	end
 end
 
-local Controller = { Name = "RestorationController", Priority = 1 }
+local Controller = {
+	Name = "RestorationController",
+	Priority = 5,
+	pendingEnter = false,
+	entering = false,
+}
 local Interface = Interfacemodule.new(Tools)
 local Runtime = Toolruntime.new(Tools, Interface)
 local Activeobject: (Model | BasePart)? = nil
@@ -74,6 +79,7 @@ local function Showcompletion()
 		Runtime:SetObject(nil)
 		Interface:ShowIntro()
 		Completion:Hide()
+		Core:GetController("ExpositionController"):CompleteRestoration()
 	end)
 end
 
@@ -88,13 +94,35 @@ function Controller:SelectTool(Name: string)
 end
 
 function Controller:IsEditingObject(): boolean
-	return Activeobject ~= nil
+	return Activeobject ~= nil or self.pendingEnter or self.entering
+end
+
+function Controller:CanEnter(): boolean
+	return not Core:GetController("DailyRewardController"):IsOpen()
+		and not Core:GetController("ComputerController"):IsOpen()
+		and not Core:GetController("CustomerController"):IsVisible()
+		and not Core:GetController("CompletionController"):IsVisible()
 end
 
 function Controller:Enter()
-	if Activeobject then return end
+	if Activeobject or self.entering then
+		self.pendingEnter = true
+		return
+	end
+	local Expositioncontroller = Core:GetController("ExpositionController")
+	Expositioncontroller:PrepareForRestoration()
+	if not self:CanEnter() then
+		self.pendingEnter = true
+		return
+	end
+	self.pendingEnter = false
+	self.entering = true
 	local Object = Remotemanager:InvokeServer("RestorationService", "BeginSession")
-	if not Object or (not Object:IsA("BasePart") and not Object:IsA("Model")) then return end
+	self.entering = false
+	if not Object or (not Object:IsA("BasePart") and not Object:IsA("Model")) then
+		Expositioncontroller:CancelRestoration()
+		return
+	end
 	Activeobject = Object
 	Runtime:SetObject(Object)
 	Core:GetController("CompletionController"):Hide()
@@ -105,6 +133,10 @@ function Controller:Enter()
 	Userinputservice.MouseBehavior = Enum.MouseBehavior.Default
 	Updateprogress()
 	Runtime:Select("Transform")
+end
+
+function Controller:ResumePendingEnter()
+	if self.pendingEnter then self:Enter() end
 end
 
 function Controller:Start()
@@ -130,6 +162,7 @@ function Controller:Start()
 		if Input.UserInputType == Enum.UserInputType.MouseButton1 then Runtime:InputEnded() end
 	end)
 	Runservice.RenderStepped:Connect(function(Deltatime)
+		if self.pendingEnter then self:Enter() end
 		local Mouse = Userinputservice:GetMouseLocation()
 		if not Interface.Hud.IgnoreGuiInset then Mouse -= Guiservice:GetGuiInset() end
 		Interface.Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y)

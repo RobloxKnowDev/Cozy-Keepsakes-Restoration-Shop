@@ -7,6 +7,7 @@ return {
 			PriceMaxValue = 90,
 			IdImage = "rbxassetid://102276550411027",
 			Rarity = "Common",
+			Reputation = 5,
 		},
 	},
 }

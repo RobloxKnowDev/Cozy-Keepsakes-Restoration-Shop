@@ -199,13 +199,16 @@ function Controller:SelectObject()
 	end
 end
 
-function Controller:ShowIntroCamera()
-	local Campart = Workspace:WaitForChild("CamPart")
-	if not Campart or not Campart:IsA("BasePart") then
-		warn("InspectionCameraController: Workspace.CamPart introuvable")
-		return
-	end
+local function CancelIntroCameraTween()
+	local Tween = Introcameratween
+	if not Tween then return end
+	Introcameratween = nil
+	Tween:Cancel()
+	Tween:Destroy()
+end
 
+local function ShowCameraPart(CameraPart: BasePart): boolean
+	if Target then return false end
 	if not Introcameraactive then
 		Previouscameratype = Camera.CameraType
 		Previouscamerasubject = Camera.CameraSubject
@@ -213,15 +216,12 @@ function Controller:ShowIntroCamera()
 
 	Introcameraactive = true
 	Camera.CameraType = Enum.CameraType.Scriptable
-	if Introcameratween then
-		Introcameratween:Cancel()
-		Introcameratween = nil
-	end
+	CancelIntroCameraTween()
 
 	local Newtween = Tweenservice:Create(
 		Camera,
 		TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{ CFrame = Campart.CFrame }
+		{ CFrame = CameraPart.CFrame }
 	)
 	Introcameratween = Newtween
 	Newtween:Play()
@@ -231,15 +231,24 @@ function Controller:ShowIntroCamera()
 			Introcameratween = nil
 		end
 	end)
+	return true
+end
+
+function Controller:ShowIntroCamera(): boolean
+	return ShowCameraPart(Workspace:WaitForChild("CamPart") :: BasePart)
+end
+
+function Controller:ShowExpositionCamera(): boolean
+	return ShowCameraPart(Workspace:WaitForChild("CamPartExposition") :: BasePart)
+end
+
+function Controller:ShowComputerCamera(): boolean
+	return ShowCameraPart(Workspace:WaitForChild("CamPartComputer") :: BasePart)
 end
 
 function Controller:Begin(Object: InspectionTarget)
 	local Shouldtransition = Introcameraactive
-	if Introcameratween then
-		Introcameratween:Cancel()
-		Introcameratween:Destroy()
-		Introcameratween = nil
-	end
+	CancelIntroCameraTween()
 	Target = Object
 	Objectselected = false
 	Focusoffset = Vector3.zero
@@ -249,7 +258,7 @@ function Controller:Begin(Object: InspectionTarget)
 	Objectrotationgoal = nil
 	Completionview = false
 	Groundy = Object:GetAttribute("SpawnFloorY") or Findgroundy(Object)
-	Yaw = 0
+	Yaw = math.pi
 	Pitch = math.rad(-38)
 
 	local Radius = math.max(Objectsize(Object).Magnitude * 0.5, 1)
@@ -286,11 +295,7 @@ function Controller:End()
 	Completionview = false
 	Introcameraactive = false
 	Cameratransitionactive = false
-	if Introcameratween then
-		Introcameratween:Cancel()
-		Introcameratween:Destroy()
-		Introcameratween = nil
-	end
+	CancelIntroCameraTween()
 	Enddrag()
 	Setobjectselected(false)
 	Target = nil

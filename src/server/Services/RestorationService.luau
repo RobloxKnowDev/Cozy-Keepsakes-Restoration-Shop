@@ -38,7 +38,7 @@ local Sessions: { [Player]: RestorationObject } = {}
 local Lastclean: { [Player]: number } = {}
 local Peeling: { [Player]: BasePart } = {}
 local Activeobject: RestorationObject? = nil
-local Grantedobjectqueue: { { Player: Player, Objectname: string } } = {}
+local Grantedobjectqueue: { { Player: Player, Objectname: string, OnReady: (() -> ())? } } = {}
 
 local function Destroyobject(Object: RestorationObject?)
 	if Object and Object.Parent then
@@ -248,20 +248,20 @@ function Restorationservice:TryPrepareNextGrantedObject(): RestorationObject?
 		local Entry = table.remove(Grantedobjectqueue, 1)
 		if Entry.Player.Parent then
 			local Object = self:PrepareObject(Entry.Objectname, Entry.Player)
-			Core:GetService("MonetizationService"):StarterPackObjectReady(Entry.Player)
+			if Entry.OnReady then Entry.OnReady() end
 			return Object
 		end
 	end
 	return nil
 end
 
-function Restorationservice:GrantObject(Player: Player, Objectname: string): (boolean, boolean)
+function Restorationservice:GrantObject(Player: Player, Objectname: string, OnReady: (() -> ())?): (boolean, boolean)
 	if Config.Object[Objectname] == nil then return false, false end
 	if not self:HasActiveObject() and not self:HasActiveSession() then
 		self:PrepareObject(Objectname, Player)
 		return true, true
 	else
-		table.insert(Grantedobjectqueue, { Player = Player, Objectname = Objectname })
+		table.insert(Grantedobjectqueue, { Player = Player, Objectname = Objectname, OnReady = OnReady })
 		return true, false
 	end
 end
@@ -342,7 +342,6 @@ function Restorationservice:Init()
 		end
 		Destroyobject(Sessionobject)
 		Cleanupactiveobjectifidle()
-		task.defer(function() self:TryPrepareNextGrantedObject() end)
 
 		return Restoreditem
 	end)

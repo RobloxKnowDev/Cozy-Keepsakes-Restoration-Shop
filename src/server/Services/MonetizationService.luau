@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Config = require(ReplicatedStorage.Shared.Config.Monetization)
+local DailyRewardsConfig = require(ReplicatedStorage.Shared.Config.DailyRewards)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 
 local MonetizationService = {
@@ -72,6 +73,7 @@ function MonetizationService:GetSaleMultiplier(Player: Player): number
 	if self:OwnsGamePass(Player, "VIP") then
 		Multiplier *= 1 + (tonumber(Config.VIP.SaleBonusPercent) or 0) / 100
 	end
+	Multiplier *= Core:GetService("DailyRewardService"):GetSaleMultiplier(Player)
 	return Multiplier
 end
 
@@ -135,7 +137,9 @@ function MonetizationService:StarterPackObjectReady(Player: Player)
 end
 
 function MonetizationService:GrantStarterPack(Player: Player): boolean
-	local Granted, Ready = Core:GetService("RestorationService"):GrantObject(Player, tostring(Config.StarterPack.ObjectKey))
+	local Granted, Ready = Core:GetService("RestorationService"):GrantObject(Player, tostring(Config.StarterPack.ObjectKey), function()
+		self:StarterPackObjectReady(Player)
+	end)
 	if not Granted then
 		return false
 	end
@@ -167,7 +171,10 @@ function MonetizationService:GrantServerLuck(Level: number): boolean
 	return true
 end
 
-function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: number): boolean
+function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: number, PurchaseId: string?): boolean
+	if ProductId > 0 and tonumber(DailyRewardsConfig.SkipProductId) == ProductId then
+		return Core:GetService("DailyRewardService"):HandleDeveloperProduct(Player, ProductId, PurchaseId or "")
+	end
 	for _, Product in pairs(Config.CashProducts) do
 		if ProductId > 0 and tonumber(Product.Id) == ProductId then
 			Core:GetService("CashService"):AddCash(Player, tonumber(Product.Amount) or 0, false)
@@ -240,7 +247,7 @@ function MonetizationService:Init()
 		local Player = Players:GetPlayerByUserId(ReceiptInfo.PlayerId)
 		if not Player then return Enum.ProductPurchaseDecision.NotProcessedYet end
 		local Success, Granted = pcall(function()
-			return self:HandleDeveloperProduct(Player, ReceiptInfo.ProductId)
+			return self:HandleDeveloperProduct(Player, ReceiptInfo.ProductId, tostring(ReceiptInfo.PurchaseId))
 		end)
 		if not Success then
 			warn("MonetizationService: erreur de reçu: " .. tostring(Granted))

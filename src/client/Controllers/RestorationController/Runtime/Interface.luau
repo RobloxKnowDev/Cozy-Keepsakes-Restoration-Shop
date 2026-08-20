@@ -87,7 +87,7 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 	self.LockButton.Activated:Connect(function() Locked = not Locked Setmode(Locked and "Locked" or "Rotate") Refreshlock() end)
 	self.ReturnButton.Activated:Connect(Flipobject)
 	self.ContinueButton.Activated:Connect(Continue)
-	self.Gui.Enabled = false
+	self.Gui.Enabled = true
 	self.TransformFrame.Visible, self.ProgressFrame.Visible = false, false
 	self.Cursor.Visible, self.Cursor.AnchorPoint = true, Vector2.new(0.5, 0.5)
 	Refreshlock()
@@ -107,7 +107,8 @@ function Interface:ShowForRestoration()
 end
 
 function Interface:ShowIntro()
-	self.Gui.Enabled = false
+	self.Gui.Enabled = true
+	self:HideForCompletion()
 	self.Cursor.Visible = true
 end
 

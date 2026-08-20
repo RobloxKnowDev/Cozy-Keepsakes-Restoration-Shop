@@ -164,9 +164,13 @@ end
 function Customercontroller:CanInteract(): boolean
 	local Computercontroller = Core:GetController("ComputerController")
 	local Cameracontroller = Core:GetController("InspectionCameraController")
+	local Dailyrewardcontroller = Core:GetController("DailyRewardController")
+	local Restorationcontroller = Core:GetController("RestorationController")
 	return not self:IsVisible()
 		and not Computercontroller:IsOpen()
 		and Cameracontroller:IsIntroCameraReady()
+		and not Dailyrewardcontroller:IsOpen()
+		and not Restorationcontroller:IsEditingObject()
 end
 
 function Customercontroller:SetHoveredCustomer(Customer: Model?)

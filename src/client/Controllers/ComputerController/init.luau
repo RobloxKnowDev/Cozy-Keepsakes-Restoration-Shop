@@ -22,7 +22,6 @@ local ComputerController = {
 local Applications = { Home, Index, Sell, Upgrades, Shop }
 local HighlightFillColor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
-local CameraTweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ButtonTweenInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ActiveButtonColor = Color3.fromRGB(231, 248, 222)
 local ActiveContentColor = Color3.fromRGB(0, 0, 0)
@@ -32,15 +31,6 @@ local PulseInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirectio
 local GainColor = Color3.fromRGB(126, 255, 145)
 local LossColor = Color3.fromRGB(255, 138, 138)
 
-local function FindComputerFromInstance(Target: Instance?): Instance?
-	local Current = Target
-	while Current and Current ~= Workspace do
-		if Current.Name == "Computer" and (Current:IsA("BasePart") or Current:IsA("Model")) then return Current end
-		Current = Current.Parent
-	end
-	return nil
-end
-
 function ComputerController:IsOpen(): boolean
 	return self.isOpen == true
 end
@@ -49,10 +39,12 @@ function ComputerController:CanOpen(): boolean
 	local CameraController = Core:GetController("InspectionCameraController")
 	local RestorationController = Core:GetController("RestorationController")
 	local CustomerController = Core:GetController("CustomerController")
+	local DailyRewardController = Core:GetController("DailyRewardController")
 	return not self:IsOpen()
 		and CameraController:IsIntroCameraReady()
 		and not RestorationController:IsEditingObject()
 		and not CustomerController:IsVisible()
+		and not DailyRewardController:IsOpen()
 end
 
 function ComputerController:SetHoveredComputer(Computer: Instance?)
@@ -67,13 +59,13 @@ function ComputerController:UpdateHoveredComputer()
 		self:SetHoveredComputer(nil)
 		return
 	end
-	self:SetHoveredComputer(FindComputerFromInstance(if self.mouse then self.mouse.Target else nil))
+	local Target = if self.mouse then self.mouse.Target else nil
+	local Computer = if Target and (Target == self.computer or Target:IsDescendantOf(self.computer)) then self.computer else nil
+	self:SetHoveredComputer(Computer)
 end
 
 function ComputerController:FocusCamera()
-	local Camera = Workspace.CurrentCamera
-	Camera.CameraType = Enum.CameraType.Scriptable
-	TweenService:Create(Camera, CameraTweenInfo, { CFrame = self.cameraPart.CFrame }):Play()
+	Core:GetController("InspectionCameraController"):ShowComputerCamera()
 end
 
 function ComputerController:SetHudVisible(IsVisible: boolean)
@@ -158,6 +150,7 @@ function ComputerController:Open()
 	self:SetHoveredComputer(nil)
 	self:SyncHeader()
 	self:SetHudVisible(false)
+	Core:GetController("ExpositionController"):SetBlocker("Computer", "Hidden")
 	self.surfaceGui.Enabled = true
 	self.frame.Visible = true
 	self:SetPage("Home")
@@ -171,6 +164,7 @@ function ComputerController:Close()
 	self.frame.Visible = false
 	self:SetHudVisible(true)
 	Core:GetController("InspectionCameraController"):ShowIntroCamera()
+	Core:GetController("ExpositionController"):SetBlocker("Computer", nil)
 	self:UpdateHoveredComputer()
 end
 
@@ -200,9 +194,8 @@ end
 function ComputerController:Init()
 	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.mouse = Players.LocalPlayer:GetMouse()
-	self.computer = Workspace:WaitForChild("Computer")
-	self.cameraPart = Workspace:WaitForChild("CamPartComputer") :: BasePart
-	self.surfaceGui = self.computer:WaitForChild("SurfaceGui") :: SurfaceGui
+	self.computer = Workspace:WaitForChild("Work"):WaitForChild("Ordi")
+	self.surfaceGui = self.computer:WaitForChild("Gui"):WaitForChild("Computer"):WaitForChild("SurfaceGui") :: SurfaceGui
 	self.surfaceGui.Active = true
 	self.frame = self.surfaceGui:WaitForChild("Frame") :: Frame
 	self.header = self.frame:WaitForChild("Header") :: Frame
