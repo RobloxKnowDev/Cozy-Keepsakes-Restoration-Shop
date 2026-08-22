@@ -90,13 +90,16 @@ function Statsservice:AddDailyProfit(Player: Player, Amount: number)
 	self:PushStats(Player)
 end
 
-function Statsservice:AddReputation(Player: Player, Amount: number): number
-	local Stats = self:EnsurePlayer(Player)
+function Statsservice:GetReputationContribution(Player: Player, Amount: number): number
 	local Multiplier = Core:GetService("MonetizationService"):GetReputationMultiplier(Player)
-	local Granted = math.max(Amount, 0) * Multiplier
-	Stats.Reputation = math.max(math.round((Stats.Reputation + Granted) * 100) / 100, 0)
+	return RoundCurrency(math.max(Amount, 0) * Multiplier)
+end
+
+function Statsservice:SetReputation(Player: Player, Amount: number): number
+	local Stats = self:EnsurePlayer(Player)
+	Stats.Reputation = math.max(RoundCurrency(Amount), 0)
 	self:PushStats(Player)
-	return Granted
+	return Stats.Reputation
 end
 
 function Statsservice:Init()

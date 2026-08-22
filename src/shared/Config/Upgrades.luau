@@ -22,4 +22,12 @@ return {
 		DeveloperProductId = Monetization.UpgradeDeveloperProducts.PurchaseDiscount,
 		CashPriceLevel1 = 500,
 	},
+
+	DisplaySpace = {
+		DisplayName = "Display Space",
+		DefaultLevel = 2,
+		MaxLevel = 9,
+		DeveloperProductId = Monetization.UpgradeDeveloperProducts.DisplaySpace,
+		CashPriceLevel1 = 100,
+	},
 }

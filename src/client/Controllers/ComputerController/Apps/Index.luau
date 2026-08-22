@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
@@ -41,9 +42,11 @@ function Index.ApplyEntries(Controller, Entries)
 		local RarityText = RootButton:WaitForChild("RarityText")
 		local Icon = RootButton:WaitForChild("Icon")
 		local IsUnlocked = Entry.Unlocked == true
+		local Rarity = Rarityconfig[tostring(Entry.Rarity or "Common")]
 		NameText.Text = if IsUnlocked then tostring(Entry.Name or "") else "???"
 		NameText.Visible = true
-		RarityText.Text = tostring(Entry.Rarity or "Common")
+		RarityText.Text = Rarity.Name
+		RarityText.TextColor3 = Rarity.Color
 		local DefaultColor = Icon.ImageColor3
 		local DefaultTransparency = Icon.ImageTransparency
 		Icon.Image = tostring(Entry.ImageId or "")

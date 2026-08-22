@@ -35,6 +35,10 @@ local function GetDefinition(UpgradeName: string)
 end
 
 local function GetMaxLevel(Player: Player, UpgradeName: string, Definition): number?
+	local ConfiguredMaxLevel = tonumber(Definition.MaxLevel)
+	if ConfiguredMaxLevel then
+		return math.max(math.floor(ConfiguredMaxLevel), Definition.DefaultLevel)
+	end
 	if UpgradeName == "PurchaseDiscount" then
 		return math.max(math.floor(tonumber(Definition.MaxPercent) or 0), Definition.DefaultLevel)
 	end

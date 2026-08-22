@@ -34,11 +34,35 @@ local Toolsforspot = {
 
 type RestorationObject = Model | BasePart
 
+type ObjectMaximums = {
+	MaxValue: number,
+	MaxReputation: number,
+}
+
 local Sessions: { [Player]: RestorationObject } = {}
 local Lastclean: { [Player]: number } = {}
 local Peeling: { [Player]: BasePart } = {}
 local Activeobject: RestorationObject? = nil
 local Grantedobjectqueue: { { Player: Player, Objectname: string, OnReady: (() -> ())? } } = {}
+local Randomgenerator = Random.new()
+
+local function Roundtwodecimals(Value: number): number
+	return math.round(Value * 100) / 100
+end
+
+local function Randomizemaximum(Value: number): number
+	local Minimum = Config.Variation.MinimumPercent / 100
+	local Maximum = Config.Variation.MaximumPercent / 100
+	return Roundtwodecimals(Value * Randomgenerator:NextNumber(Minimum, Maximum))
+end
+
+local function Generateobjectmaximums(Objectname: string): ObjectMaximums
+	local Definition = Config.Object[Objectname]
+	return {
+		MaxValue = Randomizemaximum(Definition.MaxValue),
+		MaxReputation = Randomizemaximum(Definition.Reputation),
+	}
+end
 
 local function Destroyobject(Object: RestorationObject?)
 	if Object and Object.Parent then
@@ -72,21 +96,25 @@ local function Validsessionspot(Player: Player, Spot: any): (RestorationObject?,
 	return Object, Spots ~= nil and Spot:IsDescendantOf(Spots)
 end
 
-local function Spawnconfiguredobject(Objectname: string): RestorationObject
+local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximums?): RestorationObject
 	local Spawnattachment = Workspace:WaitForChild("Spawn") :: Attachment
 	local Definition = Config.Object[Objectname]
 	local Asset = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object"):WaitForChild(Objectname)
 	local Object = Asset:Clone() :: RestorationObject
-	local Maxvalue = tonumber(Definition.MaxValue) or tonumber(Definition.MaxPrice) or 0
+	local Objectmaximums = Maximums or Generateobjectmaximums(Objectname)
+	local Maxvalue = Objectmaximums.MaxValue
+	local Maxreputation = Objectmaximums.MaxReputation
 	Object.Name = Objectname
 	Object:SetAttribute("RestorationObject", true)
 	Object:SetAttribute("KeepSpawnPosition", true)
+	Object:SetAttribute("ObjectKey", Objectname)
 	Object:SetAttribute("SpawnFloorY", Spawnattachment.WorldPosition.Y)
 	Object:SetAttribute("DisplayName", Definition.Name or Objectname)
 	Object:SetAttribute("MaxPrice", Maxvalue)
 	Object:SetAttribute("MaxValue", Maxvalue)
 	Object:SetAttribute("Rarity", Definition.Rarity or Definition.Rarety or "Common")
 	Object:SetAttribute("ImageId", Definition.IdImage or "")
+	Object:SetAttribute("MaxReputation", Maxreputation)
 	Object.Parent = Workspace
 	if Object:IsA("Model") then
 		Object:PivotTo(Spawnattachment.WorldCFrame)
@@ -223,9 +251,13 @@ local function Createspots(Object: RestorationObject)
 	Object:SetAttribute("CleanedSpots", 0)
 end
 
-function Restorationservice:PrepareObject(Objectname: string, Owner: Player?): RestorationObject
+function Restorationservice:GenerateObjectMaximums(Objectname: string): ObjectMaximums
+	return Generateobjectmaximums(Objectname)
+end
+
+function Restorationservice:PrepareObject(Objectname: string, Owner: Player?, Maximums: ObjectMaximums?): RestorationObject
 	Destroyobject(Activeobject)
-	local Object = Spawnconfiguredobject(Objectname)
+	local Object = Spawnconfiguredobject(Objectname, Maximums)
 	if Object:IsA("BasePart") then
 		Object.Anchored = true
 	else
@@ -280,6 +312,7 @@ function Restorationservice:Init()
 		if not Object or not Object.Parent then
 			return nil
 		end
+		if Object:GetAttribute("CompletingRestoration") then return nil end
 		local AwardedUserId = tonumber(Object:GetAttribute("AwardedUserId"))
 		if AwardedUserId and AwardedUserId ~= Player.UserId then return nil end
 		Sessions[Player] = Object
@@ -305,14 +338,21 @@ function Restorationservice:Init()
 		if not Sessionobject or not Sessionobject.Parent then
 			return nil
 		end
+		if Sessionobject:GetAttribute("CompletingRestoration") then return nil end
+		Sessionobject:SetAttribute("CompletingRestoration", true)
+		Sessions[Player] = nil
 
 		local Inventoryservice = Core:GetService("InventoryService")
 		local Completionratio = Getcompletionratio(Sessionobject)
 		local Maxvalue = tonumber(Sessionobject:GetAttribute("MaxValue")) or tonumber(Sessionobject:GetAttribute("MaxPrice")) or 0
-		local Salevalue = math.round(Maxvalue * Completionratio * 100) / 100
+		local Maxreputation = tonumber(Sessionobject:GetAttribute("MaxReputation")) or 0
+		local Salevalue = Roundtwodecimals(Maxvalue * Completionratio)
+		local Reputation = Roundtwodecimals(Maxreputation * Completionratio)
 		local Purchaseprice = tonumber(Sessionobject:GetAttribute("PurchasePrice")) or 0
-		local Restoreditem = Inventoryservice:AddRestoredItem(Player, {
+		local Objectkey = tostring(Sessionobject:GetAttribute("ObjectKey") or Sessionobject.Name)
+		local Itemdata = {
 			Id = 0,
+			ObjectKey = Objectkey,
 			Name = tostring(Sessionobject:GetAttribute("DisplayName") or Sessionobject.Name),
 			ImageId = tostring(Sessionobject:GetAttribute("ImageId") or ""),
 			Rarity = tostring(Sessionobject:GetAttribute("Rarity") or "Common"),
@@ -320,12 +360,9 @@ function Restorationservice:Init()
 			PurchasePrice = Purchaseprice,
 			CurrentValue = Salevalue,
 			MaxValue = Maxvalue,
-			NetProfit = math.round((Salevalue - Purchaseprice) * 100) / 100,
-		})
-
-		if Completionratio >= 0.5 then
-			Inventoryservice:UnlockIndexEntry(Player, Sessionobject.Name)
-		end
+			NetProfit = Roundtwodecimals(Salevalue - Purchaseprice),
+			Reputation = Reputation,
+		}
 
 		Sessionobject:SetAttribute("SaleValue", Salevalue)
 
@@ -334,14 +371,18 @@ function Restorationservice:Init()
 			Spot:SetAttribute("PeelingBy", nil)
 		end
 		Peeling[Player] = nil
-		Sessions[Player] = nil
 		Lastclean[Player] = nil
 
 		if Activeobject == Sessionobject then
 			Activeobject = nil
 		end
 		Destroyobject(Sessionobject)
-		Cleanupactiveobjectifidle()
+
+		local Restoreditem = Inventoryservice:AddRestoredItem(Player, Itemdata)
+		if Completionratio >= 0.5 and Player.Parent then
+			Inventoryservice:UnlockIndexEntry(Player, Objectkey)
+		end
+		task.defer(function() self:TryPrepareNextGrantedObject() end)
 
 		return Restoreditem
 	end)
@@ -428,12 +469,14 @@ function Restorationservice:Init()
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "SessionEnded", function(Player)
+		local Sessionobject = Sessions[Player]
 		Sessions[Player] = nil
-		Cleanupactiveobjectifidle()
+		if Sessionobject and Activeobject == Sessionobject then Cleanupactiveobjectifidle() end
 		task.defer(function() self:TryPrepareNextGrantedObject() end)
 	end)
 
 	Players.PlayerRemoving:Connect(function(Player)
+		local Sessionobject = Sessions[Player]
 		local Spot = Peeling[Player]
 		if Spot and Spot.Parent then
 			Spot:SetAttribute("PeelingBy", nil)
@@ -444,7 +487,11 @@ function Restorationservice:Init()
 		for Index = #Grantedobjectqueue, 1, -1 do
 			if Grantedobjectqueue[Index].Player == Player then table.remove(Grantedobjectqueue, Index) end
 		end
-		Cleanupactiveobjectifidle()
+		local Activeowneruserid = if Activeobject then tonumber(Activeobject:GetAttribute("AwardedUserId")) else nil
+		if next(Sessions) == nil and (Activeobject == Sessionobject or Activeowneruserid == Player.UserId) then
+			Destroyobject(Activeobject)
+			Activeobject = nil
+		end
 		task.defer(function() self:TryPrepareNextGrantedObject() end)
 	end)
 end

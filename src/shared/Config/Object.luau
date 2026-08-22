@@ -1,4 +1,9 @@
 return {
+	Variation = {
+		MinimumPercent = 70,
+		MaximumPercent = 130,
+	},
+
 	Object = {
 		OldSuitcase = {
 			Name = "Old suitcase",
@@ -7,7 +12,7 @@ return {
 			PriceMaxValue = 90,
 			IdImage = "rbxassetid://102276550411027",
 			Rarity = "Common",
-			Reputation = 5,
+			Reputation = 2,
 		},
 	},
 }

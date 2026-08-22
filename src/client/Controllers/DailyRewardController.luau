@@ -38,6 +38,7 @@ function DailyRewardController:CanOpen(): boolean
 	return not self:IsOpen()
 		and not Core:GetController("ComputerController"):IsOpen()
 		and not Core:GetController("CustomerController"):IsVisible()
+		and not Core:GetController("ExpositionController"):IsSelectionOpen()
 		and not Core:GetController("RestorationController"):IsEditingObject()
 		and not Core:GetController("CompletionController"):IsVisible()
 end

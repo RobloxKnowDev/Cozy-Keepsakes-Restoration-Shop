@@ -22,6 +22,14 @@ local HighlightOutlinecolor = Color3.fromRGB(255, 255, 255)
 local ErrorMessageColor = Color3.fromRGB(255, 92, 92)
 local DisabledEstimateColor = Color3.fromRGB(115, 115, 115)
 
+local function Formatcurrency(Value: number): string
+	local Rounded = math.round(Value * 100) / 100
+	if math.abs(Rounded - math.round(Rounded)) < 0.005 then
+		return string.format("$%d", math.round(Rounded))
+	end
+	return string.format("$%.2f", Rounded)
+end
+
 local function GetOrCreateCloseButton(CustomerFrame: Frame): GuiButton
 	local Existing = CustomerFrame:FindFirstChild("CloseButton")
 	if Existing and Existing:IsA("GuiButton") then
@@ -60,7 +68,7 @@ end
 
 function Customercontroller:RevealEstimate(MaxPrice: number)
 	self.estimateAnimationId += 1
-	self.estimatePriceText.Text = string.format("$%d", MaxPrice)
+	self.estimatePriceText.Text = Formatcurrency(MaxPrice)
 	self.estimatePriceText.Visible = true
 	self.estimatePriceText.TextTransparency = 1
 	self.estimatePriceText.TextStrokeTransparency = 1
@@ -260,11 +268,16 @@ function Customercontroller:RequestPriceEstimate()
 		Core:GetController("MessageController"):Show("Upgrade Price Estimation to get more estimates", ErrorMessageColor)
 		return
 	end
+	local Offerid = self.activeOfferId
 	self.isEstimating = true
-	local Response = Remotemanager:InvokeServer(Customerservicename, "RequestPriceEstimate", self.activeOfferId)
+	local Response = Remotemanager:InvokeServer(Customerservicename, "RequestPriceEstimate", Offerid)
 	self.isEstimating = false
+	if self.activeOfferId ~= Offerid then
+		self:UpdateEstimateButtonAppearance()
+		return
+	end
 	if type(Response) == "table" and Response.Success == true then
-		self.estimatedOfferId = self.activeOfferId
+		self.estimatedOfferId = Offerid
 		self.estimatedMaxPrice = tonumber(Response.MaxPrice) or 0
 		self:RevealEstimate(self.estimatedMaxPrice)
 		self:UpdateEstimateButtonAppearance()

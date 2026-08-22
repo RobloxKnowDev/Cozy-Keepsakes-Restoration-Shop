@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
@@ -14,6 +15,7 @@ function Sell.ShowDetails(Controller, Item)
 		Controller.sellDetailsNameText.Text = "No item selected"
 		Controller.sellDetailsBoughtText.Text = "$0"
 		Controller.sellDetailsRarityText.Text = "-"
+		Controller.sellDetailsRarityText.TextColor3 = Color3.fromRGB(255, 255, 255)
 		Controller.sellDetailsRestorationText.Text = "0%"
 		Controller.sellDetailsValueText.Text = "$0"
 		Controller.sellDetailsProfitText.Text = "$0"
@@ -27,9 +29,11 @@ function Sell.ShowDetails(Controller, Item)
 
 	Controller.selectedRestoredItemId = Item.Id
 	local Profit = Item.NetProfit or 0
+	local Rarity = Rarityconfig[tostring(Item.Rarity or "Common")]
 	Controller.sellDetailsNameText.Text = tostring(Item.Name or "")
 	Controller.sellDetailsBoughtText.Text = Shared.FormatCurrency(Item.PurchasePrice or 0)
-	Controller.sellDetailsRarityText.Text = tostring(Item.Rarity or "Common")
+	Controller.sellDetailsRarityText.Text = Rarity.Name
+	Controller.sellDetailsRarityText.TextColor3 = Rarity.Color
 	Controller.sellDetailsRestorationText.Text = string.format("%d%%", Item.RestorationPercent or 0)
 	Controller.sellDetailsValueText.Text = Shared.FormatCurrency(Item.CurrentValue or 0)
 	Controller.sellDetailsProfitText.Text = Shared.FormatProfit(Profit)

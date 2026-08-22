@@ -20,6 +20,7 @@ local Inventoryservice = {
 
 type RestoredItem = {
 	Id: number,
+	ObjectKey: string,
 	Name: string,
 	ImageId: string,
 	Rarity: string,
@@ -28,6 +29,7 @@ type RestoredItem = {
 	CurrentValue: number,
 	MaxValue: number,
 	NetProfit: number,
+	Reputation: number,
 }
 
 type IndexEntry = {
@@ -45,6 +47,7 @@ local NextItemId = 0
 local function CloneItem(Item: RestoredItem): RestoredItem
 	return {
 		Id = Item.Id,
+		ObjectKey = Item.ObjectKey,
 		Name = Item.Name,
 		ImageId = Item.ImageId,
 		Rarity = Item.Rarity,
@@ -53,11 +56,11 @@ local function CloneItem(Item: RestoredItem): RestoredItem
 		CurrentValue = Item.CurrentValue,
 		MaxValue = Item.MaxValue,
 		NetProfit = Item.NetProfit,
+		Reputation = Item.Reputation,
 	}
 end
 
-local function GetSaleValue(Player: Player, BaseValue: number): number
-	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
+local function ApplySaleMultiplier(BaseValue: number, Multiplier: number): number
 	return math.round(BaseValue * Multiplier * 100) / 100
 end
 
@@ -98,11 +101,13 @@ function Inventoryservice:GetIndexEntries(Player: Player): { IndexEntry }
 end
 
 function Inventoryservice:GetRestoredItems(Player: Player): { RestoredItem }
+	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
+	if not Player.Parent then return {} end
 	local Items = self:EnsurePlayer(Player)
 	local Result = {}
 	for Index, Item in ipairs(Items) do
 		local DisplayItem = CloneItem(Item)
-		DisplayItem.CurrentValue = GetSaleValue(Player, Item.CurrentValue)
+		DisplayItem.CurrentValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 		DisplayItem.NetProfit = math.round((DisplayItem.CurrentValue - DisplayItem.PurchasePrice) * 100) / 100
 		Result[Index] = DisplayItem
 	end
@@ -110,7 +115,9 @@ function Inventoryservice:GetRestoredItems(Player: Player): { RestoredItem }
 end
 
 function Inventoryservice:PushItems(Player: Player)
-	Remotemanager:FireClient(self.Name, "RestoredItemsUpdated", Player, self:GetRestoredItems(Player))
+	local Items = self:GetRestoredItems(Player)
+	if not Player.Parent then return end
+	Remotemanager:FireClient(self.Name, "RestoredItemsUpdated", Player, Items)
 end
 
 function Inventoryservice:PushIndex(Player: Player)
@@ -125,6 +132,34 @@ function Inventoryservice:AddRestoredItem(Player: Player, Item: RestoredItem): R
 	Stored.Id = NextItemId
 	table.insert(Items, 1, Stored)
 	self:PushItems(Player)
+	return CloneItem(Stored)
+end
+
+function Inventoryservice:GetRestoredItem(Player: Player, ItemId: number): RestoredItem?
+	local Items = self:EnsurePlayer(Player)
+	for _, Item in ipairs(Items) do
+		if Item.Id == ItemId then
+			return CloneItem(Item)
+		end
+	end
+	return nil
+end
+
+function Inventoryservice:TakeRestoredItem(Player: Player, ItemId: number): RestoredItem?
+	local Items = self:EnsurePlayer(Player)
+	for Index, Item in ipairs(Items) do
+		if Item.Id == ItemId then
+			table.remove(Items, Index)
+			return CloneItem(Item)
+		end
+	end
+	return nil
+end
+
+function Inventoryservice:ReturnRestoredItem(Player: Player, Item: RestoredItem): RestoredItem
+	local Items = self:EnsurePlayer(Player)
+	local Stored = CloneItem(Item)
+	table.insert(Items, 1, Stored)
 	return CloneItem(Stored)
 end
 
@@ -146,6 +181,7 @@ function Inventoryservice:UnlockIndexEntry(Player: Player, ObjectKey: string): b
 end
 
 function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
+	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
 	local Items = self:EnsurePlayer(Player)
 	local Index = nil
 	for CurrentIndex, Item in ipairs(Items) do
@@ -159,7 +195,7 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	end
 
 	local Item = table.remove(Items, Index)
-	local SaleValue = GetSaleValue(Player, Item.CurrentValue)
+	local SaleValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 	Core:GetService("CashService"):AddCash(Player, SaleValue)
 	Core:GetService("StatsService"):AddItemsSold(Player, 1)
 	self:PushItems(Player)
@@ -170,6 +206,7 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 end
 
 function Inventoryservice:SellAllRestoredItems(Player: Player)
+	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
 	local Items = self:EnsurePlayer(Player)
 	local SoldItems = {}
 	local TotalValue = 0
@@ -177,7 +214,7 @@ function Inventoryservice:SellAllRestoredItems(Player: Player)
 	for Index = #Items, 1, -1 do
 		local Item = table.remove(Items, Index)
 		table.insert(SoldItems, 1, CloneItem(Item))
-		TotalValue += GetSaleValue(Player, Item.CurrentValue)
+		TotalValue += ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 	end
 
 	if #SoldItems > 0 then

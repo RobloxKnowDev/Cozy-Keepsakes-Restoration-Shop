@@ -31,6 +31,7 @@ type CustomerOffer = {
 	BasePrice: number,
 	Price: number,
 	MaxValue: number,
+	MaxReputation: number,
 }
 
 local AttachmentsByIndex: { [number]: Attachment } = {}
@@ -370,6 +371,7 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer?
 	local DiscountPercent = math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
 	local BasePrice = math.random(Minprice, math.max(Minprice, Maxprice))
 	local DiscountedPrice = math.max(math.round(BasePrice * (1 - DiscountPercent / 100)), 0)
+	local Maximums = Core:GetService("RestorationService"):GenerateObjectMaximums(ObjectKey)
 
 	return {
 		Id = OfferSerial,
@@ -379,7 +381,8 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer?
 		ImageId = tostring(Definition.IdImage or ""),
 		BasePrice = BasePrice,
 		Price = DiscountedPrice,
-		MaxValue = math.max(tonumber(Definition.MaxValue) or tonumber(Definition.MaxPrice) or Maxprice, 0),
+		MaxValue = Maximums.MaxValue,
+		MaxReputation = Maximums.MaxReputation,
 	}
 end
 
@@ -538,7 +541,10 @@ function Customerservice:Init()
 				}
 			end
 			local Restorationservice = Core:GetService("RestorationService")
-			local Restorationobject = Restorationservice:PrepareObject(PendingOffer.ObjectKey, Player)
+			local Restorationobject = Restorationservice:PrepareObject(PendingOffer.ObjectKey, Player, {
+				MaxValue = PendingOffer.MaxValue,
+				MaxReputation = PendingOffer.MaxReputation,
+			})
 			Restorationobject:SetAttribute("PurchasePrice", PendingOffer.Price)
 			local ExitAttachment = AttachmentsByIndex[0]
 			OccupiedSlots[1] = nil

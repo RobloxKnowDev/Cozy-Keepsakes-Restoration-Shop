@@ -1,8 +1,11 @@
 local Players = game:GetService("Players")
+local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
 local Tweenservice = game:GetService("TweenService")
 local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+
+local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 
 type RestorationObject = Model | BasePart
 
@@ -78,7 +81,8 @@ function Completioncontroller:Init()
 	self.viewport = if self.preview:IsA("ViewportFrame") then self.preview else nil
 	self.nextButton = self.frame:WaitForChild("NextButton") :: GuiButton
 	self.objectNameText = self.frame:WaitForChild("ObjectName")
-	self.rarityText = self.frame.RarityFrame:WaitForChild("Rarity")
+	self.rarityFrame = self.frame:WaitForChild("RarityFrame") :: GuiObject
+	self.rarityText = self.rarityFrame:WaitForChild("Rarity")
 	self.totalProgressText = self.frame:WaitForChild("TotalProgress")
 	self.valueText = self.frame:WaitForChild("Value")
 	self.maxValueText = self.frame:WaitForChild("MaxValue")
@@ -129,9 +133,11 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 	local Overallratio = Progressfromattributes(Object)
 	local Maxvalue = tonumber(Object:GetAttribute("MaxValue")) or tonumber(Object:GetAttribute("MaxPrice")) or 0
 	local Currentvalue = Maxvalue * Overallratio
+	local Rarity = Rarityconfig[tostring(Object:GetAttribute("Rarity") or "Common")]
 
 	self.objectNameText.Text = tostring(Object:GetAttribute("DisplayName") or Object.Name)
-	self.rarityText.Text = tostring(Object:GetAttribute("Rarity") or "Common")
+	self.rarityText.Text = Rarity.Name
+	self.rarityFrame.BackgroundColor3 = Rarity.Color
 	self.totalProgressText.Text = string.format("%d%%", math.floor(Overallratio * 100 + 0.5))
 	self.valueText.Text = Formatcurrency(Currentvalue)
 	self.maxValueText.Text = Formatcurrency(Maxvalue)

@@ -45,6 +45,16 @@ local Cameratransitionelapsed = 0
 local Cameratransitionduration = 2
 local Cameratransitionstart = CFrame.identity
 local Cameratransitionlooktarget = Vector3.zero
+local Staticcameraduration = 0.45
+local Expositioncameraduration = 0.45
+local Expositionbuttonleadtime = 0.1
+
+type CameraPartOptions = {
+	Duration: number?,
+	LeadTime: number?,
+	OnLead: (() -> ())?,
+	OnArrived: (() -> ())?,
+}
 
 local function Pointerposition(Input: InputObject): Vector2
 	return Vector2.new(Input.Position.X, Input.Position.Y)
@@ -207,7 +217,7 @@ local function CancelIntroCameraTween()
 	Tween:Destroy()
 end
 
-local function ShowCameraPart(CameraPart: BasePart): boolean
+local function ShowCameraPart(CameraPart: BasePart, Options: CameraPartOptions?): boolean
 	if Target then return false end
 	if not Introcameraactive then
 		Previouscameratype = Camera.CameraType
@@ -217,18 +227,26 @@ local function ShowCameraPart(CameraPart: BasePart): boolean
 	Introcameraactive = true
 	Camera.CameraType = Enum.CameraType.Scriptable
 	CancelIntroCameraTween()
+	local Duration = if Options and Options.Duration then Options.Duration else Staticcameraduration
 
 	local Newtween = Tweenservice:Create(
 		Camera,
-		TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		TweenInfo.new(Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ CFrame = CameraPart.CFrame }
 	)
 	Introcameratween = Newtween
 	Newtween:Play()
-	Newtween.Completed:Once(function()
+	if Options and Options.OnLead then
+		local OnLead = Options.OnLead
+		task.delay(math.max(Duration - (Options.LeadTime or 0), 0), function()
+			if Introcameratween == Newtween then OnLead() end
+		end)
+	end
+	Newtween.Completed:Once(function(State)
 		if Introcameratween == Newtween then
 			Newtween:Destroy()
 			Introcameratween = nil
+			if State == Enum.PlaybackState.Completed and Options and Options.OnArrived then Options.OnArrived() end
 		end
 	end)
 	return true
@@ -238,8 +256,19 @@ function Controller:ShowIntroCamera(): boolean
 	return ShowCameraPart(Workspace:WaitForChild("CamPart") :: BasePart)
 end
 
-function Controller:ShowExpositionCamera(): boolean
-	return ShowCameraPart(Workspace:WaitForChild("CamPartExposition") :: BasePart)
+function Controller:ShowIntroCameraFromExposition(): boolean
+	return ShowCameraPart(Workspace:WaitForChild("CamPart") :: BasePart, {
+		Duration = Expositioncameraduration,
+	})
+end
+
+function Controller:ShowExpositionCamera(OnLead: (() -> ())?, OnArrived: (() -> ())?): boolean
+	return ShowCameraPart(Workspace:WaitForChild("CamPartExposition") :: BasePart, {
+		Duration = Expositioncameraduration,
+		LeadTime = Expositionbuttonleadtime,
+		OnLead = OnLead,
+		OnArrived = OnArrived,
+	})
 end
 
 function Controller:ShowComputerCamera(): boolean

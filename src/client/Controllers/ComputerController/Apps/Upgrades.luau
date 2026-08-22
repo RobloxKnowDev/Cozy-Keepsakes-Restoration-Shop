@@ -15,6 +15,7 @@ local function FormatValue(UpgradeName: string, Value: number?): string
 	if UpgradeName == "PurchaseDiscount" then return string.format("%d%%", Value) end
 	if UpgradeName == "PriceEstimation" then return string.format("%d estimated / day", Value) end
 	if UpgradeName == "DailyCustomers" then return string.format("%d / day", Value) end
+	if UpgradeName == "DisplaySpace" then return string.format("%d slots", Value) end
 	return tostring(Value)
 end
 
@@ -108,7 +109,7 @@ function Upgrades.Init(Controller)
 	Controller.upgradesGridLayout = Controller.upgradesScrollingFrame:WaitForChild("UIGridLayout")
 	Controller.upgradeCards = {}
 	Controller.upgradeState = {}
-	for _, Name in ipairs({ "PriceEstimation", "DailyCustomers", "PurchaseDiscount" }) do BindCard(Controller, Name) end
+	for _, Name in ipairs({ "PriceEstimation", "DailyCustomers", "PurchaseDiscount", "DisplaySpace" }) do BindCard(Controller, Name) end
 	Upgrades.Apply(Controller, RemoteManager:InvokeServer("UpgradeService", "GetUpgrades"))
 end
 

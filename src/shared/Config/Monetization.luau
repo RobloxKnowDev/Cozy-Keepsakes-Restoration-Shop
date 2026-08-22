@@ -33,6 +33,7 @@ return {
 		PriceEstimation = 3708293655,
 		DailyCustomers = 3708293711,
 		PurchaseDiscount = 3708293785,
+		DisplaySpace = 3708293275,
 	},
 
 	VIP = {
