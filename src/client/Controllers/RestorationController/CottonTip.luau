@@ -9,15 +9,20 @@ local Cottontip = {
 
 function Cottontip.OnInputBegan(Context)
 	if Context.Display.Instance and not Context.Display.OnObject then return end
+	local Cleaningcontroller = Core:GetController("CleaningController")
 	Context.SetUsing(true)
-	if Context.Object then Core:GetController("CleaningController"):TryClean(Context.Object, Cottontip.Name) end
+	if Context.Object then Cleaningcontroller:TryCleanCotton(Context.Object) end
 end
 
 function Cottontip.OnUpdate(Context)
-	if Context.IsUsing and Context.Object then Core:GetController("CleaningController"):TryClean(Context.Object, Cottontip.Name) end
+	if Context.IsUsing and Context.Object then Core:GetController("CleaningController"):TryCleanCotton(Context.Object) end
 end
 
 function Cottontip.OnInputEnded(Context)
+	Context.SetUsing(false)
+end
+
+function Cottontip.OnDeselected(Context)
 	Context.SetUsing(false)
 end
 

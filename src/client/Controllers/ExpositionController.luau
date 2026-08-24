@@ -4,7 +4,6 @@ local Runservice = game:GetService("RunService")
 local Tweenservice = game:GetService("TweenService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
-local Monetizationconfig = require(Replicatedstorage.Shared.Config.Monetization)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
@@ -40,21 +39,8 @@ function Controller:IsSelectionOpen(): boolean
 	return self.selectFrame.Visible
 end
 
-function Controller:GetCurrentReputationMultiplier(): number
-	local State = self.computerController and self.computerController.shopState
-	if not State then return 1 end
-	local Currenttime = workspace:GetServerTimeNow()
-	local Personalmultiplier = if (tonumber(State.PersonalReputationBoostEndsAt) or 0) > Currenttime
-		then tonumber(Monetizationconfig.StarterPack.ReputationMultiplier) or 2
-		else 1
-	local Servermultiplier = if (tonumber(State.ServerLuckEndsAt) or 0) > Currenttime
-		then tonumber(State.ServerLuckMultiplier) or 1
-		else 1
-	return Personalmultiplier * Servermultiplier
-end
-
-function Controller:GetDisplayedReputation(Item): number
-	return math.round(math.max(tonumber(Item.Reputation) or 0, 0) * self.reputationMultiplier * 100) / 100
+function Controller:GetBaseReputation(Item): number
+	return math.round(math.max(tonumber(Item.Reputation) or 0, 0) * 100) / 100
 end
 
 function Controller:TweenButton(Button: GuiButton, Info: TweenInfo, ScaleValue: number): Tween
@@ -268,7 +254,7 @@ function Controller:ShowSelectionDetails(Item, Animate: boolean?)
 	self.selectDetailsRarityText.TextColor3 = Rarity.Color
 	self.selectDetailsRestorationText.Text = string.format("%d%%", Item.RestorationPercent or 0)
 	self.selectDetailsValueText.Text = Shared.FormatCurrency(Item.CurrentValue or 0)
-	self.selectDetailsReputationText.Text = "+" .. FormatReputation(self:GetDisplayedReputation(Item))
+	self.selectDetailsReputationText.Text = "+" .. FormatReputation(self:GetBaseReputation(Item))
 	self.selectDetailsIcon.Image = tostring(Item.ImageId or "")
 	local Targetsize = UDim2.fromScale(math.clamp((Item.RestorationPercent or 0) / 100, 0, 1), 1)
 	self.selectProgressTween = Tweenservice:Create(self.selectDetailsProgressBar, Detailstweeninfo, { Size = Targetsize })
@@ -284,8 +270,8 @@ function Controller:ApplySelectionItems(Items)
 	local Sorteditems = {}
 	for _, Item in ipairs(Items or {}) do table.insert(Sorteditems, Item) end
 	table.sort(Sorteditems, function(Left, Right)
-		local Leftreputation = self:GetDisplayedReputation(Left)
-		local Rightreputation = self:GetDisplayedReputation(Right)
+		local Leftreputation = self:GetBaseReputation(Left)
+		local Rightreputation = self:GetBaseReputation(Right)
 		if Leftreputation == Rightreputation then return (tonumber(Left.Id) or 0) > (tonumber(Right.Id) or 0) end
 		return Leftreputation > Rightreputation
 	end)
@@ -305,7 +291,7 @@ function Controller:ApplySelectionItems(Items)
 		local Button = Card:WaitForChild("Button") :: GuiButton
 		local Selectbutton = Button:WaitForChild("SelectButton") :: GuiButton
 		Button:WaitForChild("NameText").Text = tostring(Item.Name or "")
-		Button:WaitForChild("ReputationText").Text = "+" .. FormatReputation(self:GetDisplayedReputation(Item)) .. " Reputation"
+		Button:WaitForChild("ReputationText").Text = "+" .. FormatReputation(self:GetBaseReputation(Item)) .. " Reputation"
 		Button:WaitForChild("Icon").Image = tostring(Item.ImageId or "")
 		local Carddata = { Button = Button, SelectButton = Selectbutton }
 		table.insert(self.selectCards, Carddata)
@@ -666,7 +652,6 @@ function Controller:Init()
 	self.blockers = {}
 	self.blockerMode = nil
 	self.displaySpaceLevel = 0
-	self.reputationMultiplier = 1
 	self.slotsVisible = false
 	self.slotsRevealReached = false
 	self.expositionRequestId = 0
@@ -730,7 +715,6 @@ function Controller:Start()
 	self.customerController = Core:GetController("CustomerController")
 	self.dailyRewardController = Core:GetController("DailyRewardController")
 	self.completionController = Core:GetController("CompletionController")
-	self.reputationMultiplier = self:GetCurrentReputationMultiplier()
 	for _, Button in ipairs(self.animatedButtons) do self:BindButtonAnimation(Button) end
 	Shared.AnimateButton(self.selectCloseButton, function() return not self.selectCloseButton.Active end)
 	Shared.AnimateButton(self.selectDetailsSelectButton, function() return not self.selectDetailsSelectButton.Active end)
@@ -777,11 +761,6 @@ function Controller:Start()
 	self:SyncFrameBlockers()
 	self:UpdateButtonAvailability()
 	Runservice.RenderStepped:Connect(function()
-		local Reputationmultiplier = self:GetCurrentReputationMultiplier()
-		if self.reputationMultiplier ~= Reputationmultiplier then
-			self.reputationMultiplier = Reputationmultiplier
-			self:ApplySelectionItems(self.selectItems)
-		end
 		self:SyncFrameBlockers()
 		self:UpdateButtonAvailability()
 	end)

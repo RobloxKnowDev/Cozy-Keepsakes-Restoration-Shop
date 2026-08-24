@@ -22,7 +22,6 @@ type DisplayPlacement = {
 	Player: Player,
 	Object: DisplayObject,
 	Item: any,
-	ReputationContribution: number,
 }
 
 type DisplayEntry = {
@@ -42,6 +41,14 @@ local Busyplayers: { [Player]: boolean } = {}
 local Displayrevision = 0
 local Displayedobjects: Folder
 local Objecttemplates: Folder
+local Dirtsurfacenames = {
+	UiTop = true,
+	UiBottom = true,
+	UiLeft = true,
+	UiRight = true,
+	UiFront = true,
+	UiBack = true,
+}
 
 local function Ispositiveinteger(Value: any): boolean
 	return type(Value) == "number"
@@ -59,6 +66,14 @@ local function Anchordisplayobject(Object: DisplayObject)
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("BasePart") then
 			Descendant.Anchored = true
+		end
+	end
+end
+
+local function Cleandisplayobject(Object: DisplayObject)
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("SurfaceGui") and Dirtsurfacenames[Descendant.Name] then
+			Descendant.Enabled = false
 		end
 	end
 end
@@ -94,9 +109,10 @@ end
 
 local function Getdisplayreputation(Player: Player): number
 	local Reputation = 0
+	local Statsservice = Core:GetService("StatsService")
 	for _, Placement in pairs(Occupiedslots) do
 		if Placement.Player == Player then
-			Reputation += Placement.ReputationContribution
+			Reputation += Statsservice:GetReputationContribution(Player, Placement.Item.Reputation)
 		end
 	end
 	return Reputation
@@ -158,6 +174,16 @@ function Expositionservice:GetDisplayItems(): DisplaySnapshot
 	return Buildsnapshot()
 end
 
+function Expositionservice:RefreshPlayerReputation(Player: Player): number
+	return Refreshdisplayreputation(Player)
+end
+
+function Expositionservice:RefreshAllReputations()
+	for _, Player in ipairs(Players:GetPlayers()) do
+		Refreshdisplayreputation(Player)
+	end
+end
+
 function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Itemid: any)
 	if not Ispositiveinteger(Slotindex) or Slotindex > 9 then
 		return { Success = false, Reason = "InvalidSlot" }
@@ -191,6 +217,7 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 		error("ExpositionService: le modèle '" .. Item.ObjectKey .. "' doit être un Model ou une BasePart")
 	end
 	local Object = Template:Clone() :: DisplayObject
+	Cleandisplayobject(Object)
 	Anchordisplayobject(Object)
 	Pivotdisplayobject(Object, Slotattachments[Slotindex].WorldCFrame)
 
@@ -212,12 +239,11 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 	Object:SetAttribute("SlotIndex", Slotindex)
 	Object:SetAttribute("ItemId", Removeditem.Id)
 	Object:SetAttribute("ObjectKey", Removeditem.ObjectKey)
-	local Reputationcontribution = Core:GetService("StatsService"):GetReputationContribution(Player, Removeditem.Reputation)
+	local Basereputation = math.max(tonumber(Removeditem.Reputation) or 0, 0)
 	Occupiedslots[Slotindex] = {
 		Player = Player,
 		Object = Object,
 		Item = Removeditem,
-		ReputationContribution = Reputationcontribution,
 	}
 	Object.Parent = Displayedobjects
 	Refreshdisplayreputation(Player)
@@ -230,7 +256,7 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 		SlotIndex = Slotindex,
 		ItemId = Removeditem.Id,
 		ObjectKey = Removeditem.ObjectKey,
-		GrantedReputation = Reputationcontribution,
+		GrantedReputation = Basereputation,
 		DisplayItems = Displaysnapshot,
 	}
 end
@@ -253,6 +279,7 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 
 	Busyplayers[Player] = true
 	Occupiedslots[Slotindex] = nil
+	local Basereputation = math.max(tonumber(Placement.Item.Reputation) or 0, 0)
 	if Placement.Object.Parent then
 		Placement.Object:Destroy()
 	end
@@ -265,7 +292,7 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 	Inventoryservice:PushItems(Player)
 	return {
 		Success = true,
-		RemovedReputation = Placement.ReputationContribution,
+		RemovedReputation = Basereputation,
 		DisplayItems = Displaysnapshot,
 	}
 end

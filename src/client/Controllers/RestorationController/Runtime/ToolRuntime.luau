@@ -64,6 +64,8 @@ function Toolruntime:Update(Deltatime: number)
 end
 
 function Toolruntime:Destroy()
+	local Definition = self.Tools[self.SelectedName]
+	if Definition and Definition.OnDeselected then Definition.OnDeselected(self:Context()) end
 	self.Cleaning = false
 	self.Display:Destroy()
 end

@@ -119,7 +119,7 @@ end
 local function Ratiofromattributes(Object: RestorationObject, Kind: string): number
 	local Total = Object:GetAttribute("Total_" .. Kind) or 0
 	local Cleaned = Object:GetAttribute("Cleaned_" .. Kind) or 0
-	return Total > 0 and math.clamp(Cleaned / Total, 0, 1) or 1
+	return Total > 0 and math.clamp(Cleaned / Total, 0, 1) or 0
 end
 
 local function Progressfromattributes(Object: RestorationObject): number

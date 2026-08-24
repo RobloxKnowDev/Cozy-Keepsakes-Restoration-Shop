@@ -11,6 +11,8 @@ return {
 		Cash4 = { Id = 3708631522, Amount = 1_000_000 },
 	},
 
+	SkipDayProductId = 3709374250,
+
 	StarterPack = {
 		Id =  1949649693, 
 		PurchaseType = "GamePass",

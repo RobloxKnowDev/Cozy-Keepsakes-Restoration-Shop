@@ -98,13 +98,14 @@ end
 
 function MonetizationService:GetShopState(Player: Player)
 	local CurrentTime = Now()
-	if ServerLuckEndsAt <= CurrentTime then
-		ServerLuckLevel = 0
-		ServerLuckEndsAt = 0
-	end
-	local NextLevel = ServerLuckLevel + 1
+	local EffectiveServerLuckLevel = if ServerLuckEndsAt > CurrentTime then ServerLuckLevel else 0
+	local EffectiveServerLuckEndsAt = if EffectiveServerLuckLevel > 0 then ServerLuckEndsAt else 0
+	local EffectivePersonalBoostEndsAt = if (PersonalReputationBoostEndsAt[Player] or 0) > CurrentTime
+		then PersonalReputationBoostEndsAt[Player]
+		else 0
+	local NextLevel = EffectiveServerLuckLevel + 1
 	local NextDefinition = if NextLevel <= #Config.ServerReputationLuck.Levels then Config.ServerReputationLuck.Levels[NextLevel] else nil
-	local CurrentDefinition = Config.ServerReputationLuck.Levels[ServerLuckLevel]
+	local CurrentDefinition = Config.ServerReputationLuck.Levels[EffectiveServerLuckLevel]
 	return {
 		GamePasses = Config.GamePasses,
 		CashProducts = Config.CashProducts,
@@ -113,10 +114,11 @@ function MonetizationService:GetShopState(Player: Player)
 		OwnsStarterPack = if Config.StarterPack.PurchaseType == "GamePass" then self:OwnsGamePass(Player, "StarterPack") else false,
 		OwnsVIP = self:OwnsGamePass(Player, "VIP"),
 		OwnsDoubleMoney = self:OwnsGamePass(Player, "DoubleMoney"),
-		PersonalReputationBoostEndsAt = PersonalReputationBoostEndsAt[Player] or 0,
-		ServerLuckLevel = ServerLuckLevel,
+		PersonalReputationBoostEndsAt = EffectivePersonalBoostEndsAt,
+		ReputationMultiplier = self:GetReputationMultiplier(Player),
+		ServerLuckLevel = EffectiveServerLuckLevel,
 		ServerLuckMultiplier = if CurrentDefinition then CurrentDefinition.Multiplier else 1,
-		ServerLuckEndsAt = ServerLuckEndsAt,
+		ServerLuckEndsAt = EffectiveServerLuckEndsAt,
 		ServerLuckNextMultiplier = if NextDefinition then NextDefinition.Multiplier else nil,
 		ServerLuckNextProductId = if NextDefinition then tonumber(NextDefinition.Id) or 0 else 0,
 	}
@@ -147,6 +149,7 @@ function MonetizationService:GrantStarterPack(Player: Player): boolean
 	local CurrentTime = Now()
 	PersonalReputationBoostEndsAt[Player] = math.max(PersonalReputationBoostEndsAt[Player] or 0, CurrentTime) + (tonumber(Config.StarterPack.ReputationDurationSeconds) or 0)
 	self:PushState(Player)
+	Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
 	if Ready then self:StarterPackObjectReady(Player) end
 	return true
 end
@@ -165,15 +168,23 @@ function MonetizationService:GrantServerLuck(Level: number): boolean
 	if Level < 1 or Level > #Config.ServerReputationLuck.Levels then
 		return false
 	end
+	if ServerLuckEndsAt <= Now() then
+		ServerLuckLevel = 0
+		ServerLuckEndsAt = 0
+	end
 	ServerLuckLevel = math.max(ServerLuckLevel, Level)
 	ServerLuckEndsAt = math.max(ServerLuckEndsAt, Now()) + (tonumber(Config.ServerReputationLuck.DurationPerPurchaseSeconds) or 0)
 	self:PushAllStates()
+	Core:GetService("ExpositionService"):RefreshAllReputations()
 	return true
 end
 
 function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: number, PurchaseId: string?): boolean
 	if ProductId > 0 and tonumber(DailyRewardsConfig.SkipProductId) == ProductId then
 		return Core:GetService("DailyRewardService"):HandleDeveloperProduct(Player, ProductId, PurchaseId or "")
+	end
+	if ProductId > 0 and tonumber(Config.SkipDayProductId) == ProductId then
+		return Core:GetService("DayNightService"):SkipToNextDayStart()
 	end
 	for _, Product in pairs(Config.CashProducts) do
 		if ProductId > 0 and tonumber(Product.Id) == ProductId then
@@ -263,7 +274,31 @@ function MonetizationService:Init()
 	task.spawn(function()
 		while true do
 			task.wait(1)
-			if ServerLuckEndsAt > 0 then self:PushAllStates() end
+			local CurrentTime = Now()
+			local ServerBoostExpired = ServerLuckEndsAt > 0 and ServerLuckEndsAt <= CurrentTime
+			local ExpiredPersonalBoosts = {}
+			if ServerBoostExpired then
+				ServerLuckLevel = 0
+				ServerLuckEndsAt = 0
+			end
+			for Player, EndsAt in pairs(PersonalReputationBoostEndsAt) do
+				if EndsAt <= CurrentTime then
+					PersonalReputationBoostEndsAt[Player] = nil
+					table.insert(ExpiredPersonalBoosts, Player)
+				end
+			end
+			if ServerBoostExpired then
+				self:PushAllStates()
+				Core:GetService("ExpositionService"):RefreshAllReputations()
+			else
+				for _, Player in ipairs(ExpiredPersonalBoosts) do
+					if Player.Parent then
+						self:PushState(Player)
+						Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
+					end
+				end
+				if ServerLuckEndsAt > CurrentTime then self:PushAllStates() end
+			end
 		end
 	end)
 end

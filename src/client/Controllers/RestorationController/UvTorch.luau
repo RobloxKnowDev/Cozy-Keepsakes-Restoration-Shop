@@ -1,34 +1,31 @@
+local Replicatedstorage = game:GetService("ReplicatedStorage")
+
+local Core = require(Replicatedstorage.Shared.Packages.Core)
+
 local Uvtorch = {
 	Name = "UvTorch",
 	AssetName = "UvTorch",
 	ShowsProgress = true,
 }
 
-local Glowingspots: { [BasePart]: Highlight } = {}
+local Uvcolor = Color3.fromRGB(100, 11, 255)
+local Normalcolor = Color3.fromRGB(255, 255, 255)
+local Glowingimages: { [ImageLabel]: boolean } = {}
 
-local function Stopglowing(Spot: BasePart)
-	local Glow = Glowingspots[Spot]
-	if Glow then Glow:Destroy() end
-	Glowingspots[Spot] = nil
+local function Stopglowing(Image: ImageLabel)
+	if Image.Parent then Image.ImageColor3 = Normalcolor end
+	Glowingimages[Image] = nil
 end
 
 local function Clearglow()
-	for Spot in pairs(Glowingspots) do
-		Stopglowing(Spot)
+	for Image in pairs(Glowingimages) do
+		Stopglowing(Image)
 	end
 end
 
-local function Makeglow(Spot: BasePart)
-	if Glowingspots[Spot] then return end
-	local Glow = Instance.new("Highlight")
-	Glow.Name = "UvGlow"
-	Glow.Adornee = Spot
-	Glow.DepthMode = Enum.HighlightDepthMode.Occluded
-	Glow.FillColor = Color3.fromRGB(151, 74, 255)
-	Glow.FillTransparency = 0.18
-	Glow.OutlineTransparency = 1
-	Glow.Parent = Spot
-	Glowingspots[Spot] = Glow
+local function Makeglow(Image: ImageLabel)
+	Image.ImageColor3 = Uvcolor
+	Glowingimages[Image] = true
 end
 
 function Uvtorch.GetDisplayCFrame(Context): CFrame
@@ -38,32 +35,28 @@ function Uvtorch.GetDisplayCFrame(Context): CFrame
 end
 
 function Uvtorch.OnUpdate(Context)
-	local Object = Context.Object
-	local Lightposition = Context.Display.SurfacePosition
-	if not Object or not Lightposition then
-		Clearglow()
-		return
+	local Display = Context.Display
+	local Image: ImageLabel? = nil
+	if
+		Context.Object
+		and Display.OnObject
+		and Display.HitInstance
+		and Display.HitInstance:IsA("BasePart")
+		and Display.SurfacePosition
+		and Display.SurfaceNormal
+	then
+		Image = Core:GetController("CleaningController"):GetDirtImage(
+			Display.HitInstance,
+			Display.SurfacePosition,
+			Display.SurfaceNormal
+		)
+		if Image and Image.ImageTransparency >= 1 then Image = nil end
 	end
 
-	local Spots = Object:FindFirstChild("RestorationSpots")
-	if not Spots then
-		Clearglow()
-		return
+	for Previous in pairs(Glowingimages) do
+		if Previous ~= Image or not Previous.Parent then Stopglowing(Previous) end
 	end
-
-	local Illuminated: { [BasePart]: boolean } = {}
-	for _, Descendant in ipairs(Spots:GetDescendants()) do
-		if Descendant:IsA("BasePart") and Descendant:GetAttribute("SpotKind") == "Dirt" then
-			local Isilluminated = (Descendant.Position - Lightposition).Magnitude <= 1.65
-			if Isilluminated then
-				Illuminated[Descendant] = true
-				Makeglow(Descendant)
-			end
-		end
-	end
-	for Spot in pairs(Glowingspots) do
-		if not Illuminated[Spot] or not Spot.Parent then Stopglowing(Spot) end
-	end
+	if Image then Makeglow(Image) end
 end
 
 function Uvtorch.OnDeselected()

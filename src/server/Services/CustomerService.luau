@@ -5,7 +5,6 @@ local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
-local Customerconfig = require(ReplicatedStorage.Shared.Config.Customer)
 local Daynightconfig = require(ReplicatedStorage.Shared.Config.DayNight)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Remotemanager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
@@ -24,7 +23,6 @@ local QueueFolderName = "SpawnCustomer"
 local TurnTweenDuration = 0.35
 type CustomerOffer = {
 	Id: number,
-	CustomerType: string,
 	ObjectKey: string,
 	ObjectName: string,
 	ImageId: string,
@@ -40,7 +38,8 @@ local QueueIndexes: { number } = {}
 local HighestQueueIndex = 0
 local CustomerSerial = 0
 local OfferSerial = 0
-local CachedCustomerTemplate: Model? = nil
+local Customerfolder: Folder
+local ObjectsByRarity: { [string]: { string } } = {}
 local PendingOffer: CustomerOffer? = nil
 local RefreshFrontCustomerAttribute: () -> ()
 local PresentFrontOffer: () -> ()
@@ -122,6 +121,23 @@ local function CollectQueueAttachments()
 
 end
 
+local function CollectOfferObjects()
+	for _, Rarity in ipairs(Objectconfig.Offer.Rarities) do
+		ObjectsByRarity[Rarity] = {}
+	end
+
+	for ObjectKey, Definition in pairs(Objectconfig.Object) do
+		local Rarity = Definition.Rarity
+		if Rarity ~= "Exclusive" then
+			table.insert(ObjectsByRarity[Rarity], ObjectKey)
+		end
+	end
+
+	for _, Rarity in ipairs(Objectconfig.Offer.Rarities) do
+		table.sort(ObjectsByRarity[Rarity])
+	end
+end
+
 local function GetTargetCFrame(Attachment: Attachment): CFrame
 	return Attachment.WorldCFrame
 end
@@ -178,7 +194,8 @@ local function TweenCustomerTurn(Customer: Model, Degrees: number, Duration: num
 end
 
 local function CreateCustomerInstance(): Model
-	local Template = CachedCustomerTemplate
+	local Customercount = #Customerfolder:GetChildren()
+	local Template = Customerfolder:WaitForChild(tostring(math.random(1, Customercount))) :: Model
 	local Customer = Template:Clone()
 
 	CustomerSerial += 1
@@ -331,7 +348,6 @@ local function BroadcastOffer(Offer: CustomerOffer?)
 	end
 	Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", {
 		Id = Offer.Id,
-		CustomerType = Offer.CustomerType,
 		ObjectKey = Offer.ObjectKey,
 		ObjectName = Offer.ObjectName,
 		ImageId = Offer.ImageId,
@@ -339,23 +355,48 @@ local function BroadcastOffer(Offer: CustomerOffer?)
 	})
 end
 
-local function ChooseCustomerRequest(Player: Player): CustomerOffer?
-	local Archetype = Customerconfig.Normal
-	if not Archetype then
-		return nil
+local function GetOfferChances(Reputation: number)
+	local Reputationtiers = Objectconfig.Offer.ReputationTiers
+	local Chances = Reputationtiers[1].Chances
+	for _, Tier in ipairs(Reputationtiers) do
+		if Reputation < Tier.MinimumReputation then
+			break
+		end
+		Chances = Tier.Chances
+	end
+	return Chances
+end
+
+local function ChooseObjectKey(Player: Player): string
+	local Reputation = Core:GetService("StatsService"):GetStats(Player).Reputation
+	local Chances = GetOfferChances(Reputation)
+	local Totalchance = 0
+	for _, Rarity in ipairs(Objectconfig.Offer.Rarities) do
+		local Chance = Chances[Rarity] or 0
+		if Chance > 0 and #ObjectsByRarity[Rarity] > 0 then
+			Totalchance += Chance
+		end
 	end
 
-	local Objectpool = Archetype.Objects or {}
-	if #Objectpool == 0 then
-		return nil
+	local Roll = math.random() * Totalchance
+	local Accumulatedchance = 0
+	for _, Rarity in ipairs(Objectconfig.Offer.Rarities) do
+		local Chance = Chances[Rarity] or 0
+		local Objectpool = ObjectsByRarity[Rarity]
+		if Chance > 0 and #Objectpool > 0 then
+			Accumulatedchance += Chance
+			if Roll < Accumulatedchance then
+				return Objectpool[math.random(1, #Objectpool)]
+			end
+		end
 	end
 
-	local ObjectKey = Objectpool[math.random(1, #Objectpool)]
+	error("CustomerService: aucun objet disponible pour les offres")
+end
+
+local function ChooseCustomerRequest(Player: Player): CustomerOffer
+	local ObjectKey = ChooseObjectKey(Player)
 	local Definition = Objectconfig.Object[ObjectKey]
-	if not Definition then
-		warn(string.format("CustomerService: config objet '%s' manquante", ObjectKey))
-		return nil
-	end
 
 	local Maxprice = math.max(tonumber(Definition.PriceMaxValue) or tonumber(Definition.MaxPrice) or tonumber(Definition.MaxValue) or 0, 0)
 	local Minprice = math.max(
@@ -375,7 +416,6 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer?
 
 	return {
 		Id = OfferSerial,
-		CustomerType = "Normal",
 		ObjectKey = ObjectKey,
 		ObjectName = Definition.Name or ObjectKey,
 		ImageId = tostring(Definition.IdImage or ""),
@@ -491,7 +531,8 @@ end
 
 function Customerservice:Init()
 	CollectQueueAttachments()
-	CachedCustomerTemplate = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Customer"):WaitForChild("Normal")
+	CollectOfferObjects()
+	Customerfolder = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Customer") :: Folder
 	SyncDayState()
 	Lighting:GetAttributeChangedSignal("Day"):Connect(SyncDayState)
 	Players.PlayerAdded:Connect(function()

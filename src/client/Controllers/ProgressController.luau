@@ -4,15 +4,23 @@ local Progresscontroller = { Name = "ProgressController", Priority = 9 }
 
 function Progresscontroller:Init()
 	local Gui = Players.LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("PackageUi")
-	self.percentText = Gui.PercentFrame.PercentText
-	local Progress = Gui.ProgressFrame
+	self.percentText = Gui:WaitForChild("PercentFrame"):WaitForChild("PercentText")
+	local Progress = Gui:WaitForChild("ProgressFrame")
+	local Dirtframe = Progress:WaitForChild("DirtFrame")
+	local Stickersframe = Progress:WaitForChild("StickersFrame")
+	local Inkframe = Progress:WaitForChild("InkFrame")
+	local Scratchesframe = Progress:WaitForChild("ScratchesFrame")
 	self.bars = {
-		Dirt = Progress.DirtFrame.FrameBar.Bar,
-		Sticker = Progress.StickersFrame.FrameBar.Bar,
+		Dirt = Dirtframe:WaitForChild("FrameBar"):WaitForChild("Bar"),
+		Sticker = Stickersframe:WaitForChild("FrameBar"):WaitForChild("Bar"),
+		Adhesive = Inkframe:WaitForChild("FrameBar"):WaitForChild("Bar"),
+		Scratch = Scratchesframe:WaitForChild("FrameBar"):WaitForChild("Bar"),
 	}
 	self.texts = {
-		Dirt = Progress.DirtFrame.PercentText,
-		Sticker = Progress.StickersFrame.PercentText,
+		Dirt = Dirtframe:WaitForChild("PercentText"),
+		Sticker = Stickersframe:WaitForChild("PercentText"),
+		Adhesive = Inkframe:WaitForChild("PercentText"),
+		Scratch = Scratchesframe:WaitForChild("PercentText"),
 	}
 end
 

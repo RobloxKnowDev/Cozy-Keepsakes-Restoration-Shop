@@ -1,5 +1,4 @@
 local Replicatedstorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 
@@ -11,33 +10,12 @@ local Solvent = {
 local Restheight = 1.15
 local Contactheight = 0.025
 local Pourinterval = 0.055
-local Minpuddledistance = 0.12
+local Minpuddledistance = 0.38
 
 local Currentheight = Restheight
 local Lastpourtime = 0
 local Lastpuddleposition: Vector3? = nil
 local Tiptouching = false
-
-local function Surfaceparts(Object: Model | BasePart): { BasePart }
-	if Object:IsA("BasePart") then
-		return { Object }
-	end
-	local Result = {}
-	local Spots = Object:FindFirstChild("RestorationSpots")
-	for _, Descendant in ipairs(Object:GetDescendants()) do
-		if Descendant:IsA("BasePart") and (not Spots or not Descendant:IsDescendantOf(Spots)) then
-			table.insert(Result, Descendant)
-		end
-	end
-	return Result
-end
-
-local function Findsurface(Object: Model | BasePart, Position: Vector3, Normal: Vector3): RaycastResult?
-	local Params = RaycastParams.new()
-	Params.FilterType = Enum.RaycastFilterType.Include
-	Params.FilterDescendantsInstances = Surfaceparts(Object)
-	return Workspace:Raycast(Position + Normal * 0.4, -Normal * 1.2, Params)
-end
 
 local function Liquidfolder(Object: Model | BasePart): Folder
 	local Spots = Object:FindFirstChild("RestorationSpots")
@@ -52,42 +30,45 @@ local function Liquidfolder(Object: Model | BasePart): Folder
 	return Folder
 end
 
-local function Depositliquid(Object: Model | BasePart, Surfaceposition: Vector3, Surfacenormal: Vector3)
-	local Result = Findsurface(Object, Surfaceposition, Surfacenormal)
-	if not Result or not Result.Instance:IsA("BasePart") then
-		return
-	end
-	if Lastpuddleposition and (Result.Position - Lastpuddleposition).Magnitude < Minpuddledistance then
-		return
-	end
-	Lastpuddleposition = Result.Position
-
-	local Diameter = math.random(34, 52) / 100
+local function Depositliquid(
+	Object: Model | BasePart,
+	Surface: BasePart,
+	Surfaceposition: Vector3,
+	Surfacenormal: Vector3,
+	Target: ImageLabel?
+)
+	local Diameter = math.random(62, 82) / 100
 	local Puddle = Instance.new("Part")
 	Puddle.Name = "SolventDrop"
 	Puddle.Shape = Enum.PartType.Cylinder
-	Puddle.Size = Vector3.new(0.018, Diameter, Diameter)
-	Puddle.Color = Color3.fromRGB(104, 76, 53)
-	Puddle.Material = Enum.Material.Glass
-	Puddle.Transparency = 0.32
+	Puddle.Size = Vector3.new(0.012, Diameter * 1.1, Diameter * 0.9)
+	Puddle.Color = Color3.fromRGB(78, 88, 96)
+	Puddle.Material = Enum.Material.SmoothPlastic
+	Puddle.Transparency = 0.8
 	Puddle.CastShadow = false
 	Puddle.CanCollide = false
 	Puddle.CanQuery = false
 	Puddle.CanTouch = false
 	Puddle.Massless = true
 
-	local Normal = Result.Normal
+	local Normal = Surfacenormal
 	local Tangent = Normal:Cross(Vector3.yAxis)
 	if Tangent.Magnitude < 0.01 then
 		Tangent = Normal:Cross(Vector3.xAxis)
 	end
 	Tangent = Tangent.Unit
-	Puddle.CFrame = CFrame.fromMatrix(Result.Position + Normal * 0.012, Normal, Tangent)
+	Puddle.CFrame = CFrame.fromMatrix(Surfaceposition + Normal * 0.009, Normal, Tangent)
 		* CFrame.Angles(math.rad(math.random(0, 359)), 0, 0)
 	Puddle.Parent = Liquidfolder(Object)
+	if Target then
+		local Scratchtarget = Instance.new("ObjectValue")
+		Scratchtarget.Name = "ScratchTarget"
+		Scratchtarget.Value = Target
+		Scratchtarget.Parent = Puddle
+	end
 
 	local Weld = Instance.new("WeldConstraint")
-	Weld.Part0 = Result.Instance
+	Weld.Part0 = Surface
 	Weld.Part1 = Puddle
 	Weld.Parent = Puddle
 end
@@ -106,6 +87,7 @@ function Solvent.OnInputBegan(Context)
 	if Context.Display.Instance and not Context.Display.OnObject then
 		return
 	end
+	Lastpourtime = 0
 	Lastpuddleposition = nil
 	Context.SetUsing(true)
 end
@@ -114,15 +96,22 @@ function Solvent.OnUpdate(Context)
 	if not Context.IsUsing or not Tiptouching or not Context.Object then
 		return
 	end
-	Core:GetController("CleaningController"):TryClean(Context.Object, Solvent.Name)
-	if os.clock() - Lastpourtime < Pourinterval then
+	local Display = Context.Display
+	local Cleaningcontroller = Core:GetController("CleaningController")
+	local Surface = Display.HitInstance
+	local Position = Display.SurfacePosition
+	local Normal = Display.SurfaceNormal
+	if not Display.OnObject or not Surface or not Surface:IsA("BasePart") or not Position or not Normal then
+		Cleaningcontroller:TryClean(Context.Object, Solvent.Name)
 		return
 	end
+	Cleaningcontroller:TryClean(Context.Object, Solvent.Name)
+	if os.clock() - Lastpourtime < Pourinterval then return end
+	if Lastpuddleposition and (Position - Lastpuddleposition).Magnitude < Minpuddledistance then return end
+	local Target = Cleaningcontroller:TryApplyScratchSolvent(Surface, Position, Normal)
 	Lastpourtime = os.clock()
-	local Position, Normal = Context.Display.SurfacePosition, Context.Display.SurfaceNormal
-	if Position and Normal then
-		Depositliquid(Context.Object, Position, Normal)
-	end
+	Lastpuddleposition = Position
+	Depositliquid(Context.Object, Surface, Position, Normal, Target)
 end
 
 function Solvent.OnInputEnded(Context)

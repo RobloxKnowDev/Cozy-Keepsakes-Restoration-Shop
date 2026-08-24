@@ -13,6 +13,9 @@ local Restorationservice = {
 	Remotes = {
 		BeginSession = "Function",
 		BeginPeel = "Function",
+		ApplyScratchSolvent = "Event",
+		CleanDirt = "Event",
+		CleanScratch = "Event",
 		CompleteRestoration = "Function",
 		CompletePeel = "Event",
 		CancelPeel = "Event",
@@ -21,15 +24,28 @@ local Restorationservice = {
 	},
 }
 
-local Spotcount = 2
-local Spotkinds = { "Dirt", "Sticker" }
-local Spothealth = { Dirt = 6, Sticker = 3, Adhesive = 3, Scratch = 4 }
+local Stickercount = 1
+local Dirtgridwidth = 4
+local Dirtcenterpower = 0.1
+local Dirtneighborpower = 0.04
+local Dirtcleaninterval = 0.07
+local Scratchimagecount = 4
+local Scratchcleanpower = Dirtcenterpower * 0.75
+local Scratchcleaninterval = Dirtcleaninterval
+local Dirtsurfacenames = {
+	UiTop = true,
+	UiBottom = true,
+	UiLeft = true,
+	UiRight = true,
+	UiFront = true,
+	UiBack = true,
+}
+local Dirttools = { CottonTip = true, ToothBrush = true }
+local Spothealth = { Sticker = 3, Adhesive = 3 }
 local Toolpower = { CottonTip = 1, HeatGun = 1, Polish = 1, Solvent = 1, ToothBrush = 1, Tweezers = 1 }
 local Toolsforspot = {
-	Dirt = { "ToothBrush", "CottonTip" },
 	Sticker = "Tweezers",
 	Adhesive = "Solvent",
-	Scratch = "Polish",
 }
 
 type RestorationObject = Model | BasePart
@@ -41,6 +57,7 @@ type ObjectMaximums = {
 
 local Sessions: { [Player]: RestorationObject } = {}
 local Lastclean: { [Player]: number } = {}
+local Lastscratchclean: { [Player]: number } = {}
 local Peeling: { [Player]: BasePart } = {}
 local Activeobject: RestorationObject? = nil
 local Grantedobjectqueue: { { Player: Player, Objectname: string, OnReady: (() -> ())? } } = {}
@@ -160,6 +177,78 @@ local function Randompointonsurface(Size: Vector3): (Vector3, Vector3)
 	return Vector3.new((math.random() - 0.5) * Size.X, (math.random() - 0.5) * Size.Y, -Sz), -Vector3.zAxis
 end
 
+local function Initializedirt(Object: RestorationObject): number
+	local Totaldirt = 0
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("SurfaceGui") and Dirtsurfacenames[Descendant.Name] then
+			local Part = Descendant.Parent
+			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Descendant:GetFullName() .. " doit être dans une BasePart")
+			assert(Descendant.Enabled, "RestorationService: " .. Descendant:GetFullName() .. " doit être activé")
+			assert(
+				Descendant.Face.Name == string.sub(Descendant.Name, 3),
+				"RestorationService: la face de " .. Descendant:GetFullName() .. " ne correspond pas à son nom"
+			)
+			local Dirtframe = Descendant:WaitForChild("DirtFrame")
+			assert(Dirtframe:IsA("GuiObject"), "RestorationService: " .. Dirtframe:GetFullName() .. " doit être un GuiObject")
+			assert(Dirtframe.Visible, "RestorationService: " .. Dirtframe:GetFullName() .. " doit être visible")
+			for Index = 1, 16 do
+				local Image = Dirtframe:WaitForChild(tostring(Index))
+				assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
+				assert(Image.Visible, "RestorationService: " .. Image:GetFullName() .. " doit être visible")
+				Image:SetAttribute("InitialDirtTransparency", Image.ImageTransparency)
+				Totaldirt += 1 - Image.ImageTransparency
+			end
+		end
+	end
+	Object:SetAttribute("Total_Dirt", Totaldirt)
+	Object:SetAttribute("Cleaned_Dirt", 0)
+	return Totaldirt
+end
+
+local function Initializescratches(Object: RestorationObject): number
+	local Totalscratches = 0
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("GuiObject") and Descendant.Name == "ScratchesFrame" then
+			local Surface = Descendant.Parent
+			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " doit être dans un SurfaceGui")
+			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " doit utiliser un nom Ui valide")
+			local Part = Surface.Parent
+			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " doit être dans une BasePart")
+			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " doit être activé")
+			assert(
+				Surface.Face.Name == string.sub(Surface.Name, 3),
+				"RestorationService: la face de " .. Surface:GetFullName() .. " ne correspond pas à son nom"
+			)
+			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " doit être visible")
+			for Index = 1, Scratchimagecount do
+				local Image = Descendant:WaitForChild(tostring(Index))
+				assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
+				assert(Image.Visible, "RestorationService: " .. Image:GetFullName() .. " doit être visible")
+				Image:SetAttribute("InitialScratchTransparency", Image.ImageTransparency)
+				Image:SetAttribute("HasSolvent", false)
+				Totalscratches += 1 - Image.ImageTransparency
+			end
+		end
+	end
+	Object:SetAttribute("Total_Scratch", Totalscratches)
+	Object:SetAttribute("Cleaned_Scratch", 0)
+	return Totalscratches
+end
+
+local function Validscratchimage(Object: RestorationObject, Target: any): boolean
+	if typeof(Target) ~= "Instance" or not Target:IsA("ImageLabel") or not Target:IsDescendantOf(Object) then return false end
+	local Scratchframe = Target.Parent
+	if not Scratchframe or Scratchframe.Name ~= "ScratchesFrame" or not Scratchframe:IsA("GuiObject") or not Scratchframe.Visible then return false end
+	local Surface = Scratchframe.Parent
+	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled or not Dirtsurfacenames[Surface.Name] then return false end
+	if not Surface.Parent or not Surface.Parent:IsA("BasePart") then return false end
+	if Surface.Face.Name ~= string.sub(Surface.Name, 3) then return false end
+	local Targetindex = tonumber(Target.Name)
+	if not Targetindex or Targetindex < 1 or Targetindex > Scratchimagecount or Targetindex ~= math.floor(Targetindex) then return false end
+	if Scratchframe:WaitForChild(tostring(Targetindex)) ~= Target then return false end
+	return Target.Visible and Target:GetAttribute("InitialScratchTransparency") ~= nil
+end
+
 local function Createspots(Object: RestorationObject)
 	local Old = Object:FindFirstChild("RestorationSpots")
 	if Old then
@@ -170,12 +259,12 @@ local function Createspots(Object: RestorationObject)
 	Folder.Name = "RestorationSpots"
 	Folder.Parent = Object
 
-	local Totals = {}
-	for _, Kind in ipairs(Spotkinds) do
-		Totals[Kind] = 0
-		Object:SetAttribute("Total_" .. Kind, 0)
-		Object:SetAttribute("Cleaned_" .. Kind, 0)
-	end
+	local Totaldirt = Initializedirt(Object)
+	local Totalscratches = Initializescratches(Object)
+	Object:SetAttribute("Total_Sticker", Stickercount)
+	Object:SetAttribute("Cleaned_Sticker", 0)
+	Object:SetAttribute("Total_Adhesive", 0)
+	Object:SetAttribute("Cleaned_Adhesive", 0)
 
 	local Surfaces = {}
 	if Object:IsA("BasePart") then
@@ -188,52 +277,30 @@ local function Createspots(Object: RestorationObject)
 		end
 	end
 	if #Surfaces == 0 then
+		Object:SetAttribute("Total_Sticker", 0)
+		Object:SetAttribute("TotalSpots", Totaldirt + Totalscratches)
+		Object:SetAttribute("CleanedSpots", 0)
 		return
 	end
 
-	for Index = 1, Spotcount do
-		local Kind = Spotkinds[((Index - 1) % #Spotkinds) + 1]
-		Totals[Kind] += 1
+	for Index = 1, Stickercount do
 		local Surface = Surfaces[((Index - 1) % #Surfaces) + 1]
 		local Localposition, Normal = Randompointonsurface(Surface.Size)
 		local Spot = Instance.new("Part")
-		Spot.Name = Kind .. "Spot"
+		Spot.Name = "StickerSpot"
 		Spot.Shape = Enum.PartType.Block
-		if Kind == "Dirt" then
-			local Width = math.random(65, 120) / 100
-			local Height = math.random(40, 85) / 100
-			Spot.Size = Vector3.new(Width, Height, 0.025)
-			Spot.Color = Color3.fromRGB(101, 82, 64)
-			Spot.Material = Enum.Material.Ground
-			Spot.Transparency = 0.04
-		elseif Kind == "Adhesive" then
-			local Width = math.random(45, 95) / 100
-			local Height = math.random(30, 70) / 100
-			Spot.Size = Vector3.new(Width, Height, 0.018)
-			Spot.Color = Color3.fromRGB(238, 234, 218)
-			Spot.Material = Enum.Material.SmoothPlastic
-			Spot.Transparency = 0.22
-		elseif Kind == "Sticker" then
-			local Width = math.random(45, 90) / 100
-			local Height = math.random(40, 80) / 100
-			Spot.Size = Vector3.new(Width, Height, 0.02)
-			Spot.Color = Color3.fromRGB(72, 205, 96)
-			Spot.Material = Enum.Material.SmoothPlastic
-			Spot.Transparency = 0
-		else
-			local Length = math.random(45, 110) / 100
-			local Thickness = math.random(3, 7) / 100
-			Spot.Size = Vector3.new(Length, Thickness, 0.012)
-			Spot.Color = Color3.fromRGB(95, 97, 101)
-			Spot.Material = Enum.Material.Metal
-			Spot.Transparency = 0.08
-		end
+		local Width = math.random(45, 90) / 100
+		local Height = math.random(40, 80) / 100
+		Spot.Size = Vector3.new(Width, Height, 0.02)
+		Spot.Color = Color3.fromRGB(72, 205, 96)
+		Spot.Material = Enum.Material.SmoothPlastic
+		Spot.Transparency = 0
 		Spot.CanCollide = false
 		Spot.CanQuery = true
 		Spot.CanTouch = false
 		Spot.Massless = true
-		Spot:SetAttribute("SpotKind", Kind)
-		Spot:SetAttribute("Health", Spothealth[Kind])
+		Spot:SetAttribute("SpotKind", "Sticker")
+		Spot:SetAttribute("Health", Spothealth.Sticker)
 		local Worldnormal = Surface.CFrame:VectorToWorldSpace(Normal)
 		local Surfaceposition = Surface.CFrame:PointToWorldSpace(Localposition) + Worldnormal * 0.035
 		Spot.CFrame = CFrame.lookAt(Surfaceposition, Surfaceposition + Worldnormal)
@@ -244,10 +311,7 @@ local function Createspots(Object: RestorationObject)
 		Weld.Part1 = Spot
 		Weld.Parent = Spot
 	end
-	for Kind, Total in pairs(Totals) do
-		Object:SetAttribute("Total_" .. Kind, Total)
-	end
-	Object:SetAttribute("TotalSpots", Spotcount)
+	Object:SetAttribute("TotalSpots", Totaldirt + Totalscratches + Stickercount)
 	Object:SetAttribute("CleanedSpots", 0)
 end
 
@@ -372,6 +436,7 @@ function Restorationservice:Init()
 		end
 		Peeling[Player] = nil
 		Lastclean[Player] = nil
+		Lastscratchclean[Player] = nil
 
 		if Activeobject == Sessionobject then
 			Activeobject = nil
@@ -394,7 +459,10 @@ function Restorationservice:Init()
 		end
 		Peeling[Player] = nil
 		Spot.CanQuery = false
-		Object:SetAttribute("CleanedSpots", (Object:GetAttribute("CleanedSpots") or 0) + 1)
+		local Totalspots = tonumber(Object:GetAttribute("TotalSpots")) or 0
+		local Cleanedspots = math.min((tonumber(Object:GetAttribute("CleanedSpots")) or 0) + 1, Totalspots)
+		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
+		Object:SetAttribute("CleanedSpots", Cleanedspots)
 		Object:SetAttribute("Cleaned_Sticker", (Object:GetAttribute("Cleaned_Sticker") or 0) + 1)
 		Spot:Destroy()
 	end)
@@ -408,6 +476,85 @@ function Restorationservice:Init()
 			Spot:SetAttribute("PeelingBy", nil)
 			Spot.CanQuery = true
 		end
+	end)
+
+	Remotemanager:OnServerEvent(self.Name, "ApplyScratchSolvent", function(Player, Target)
+		local Sessionobject = Sessions[Player]
+		if not Sessionobject or not Validscratchimage(Sessionobject, Target) then return end
+		if Target.ImageTransparency >= 1 or Target:GetAttribute("HasSolvent") == true then return end
+		Target:SetAttribute("HasSolvent", true)
+	end)
+
+	Remotemanager:OnServerEvent(self.Name, "CleanScratch", function(Player, Target)
+		local Sessionobject = Sessions[Player]
+		if not Sessionobject or not Validscratchimage(Sessionobject, Target) then return end
+		if Target:GetAttribute("HasSolvent") ~= true then return end
+		local Now = os.clock()
+		if Now - (Lastscratchclean[Player] or 0) < Scratchcleaninterval then return end
+		Lastscratchclean[Player] = Now
+
+		local PreviousTransparency = Target.ImageTransparency
+		local Transparency = math.clamp(PreviousTransparency + Scratchcleanpower, 0, 1)
+		local Removedscratch = Transparency - PreviousTransparency
+		if Removedscratch <= 0 then return end
+		Target.ImageTransparency = Transparency
+
+		local Totalscratches = tonumber(Sessionobject:GetAttribute("Total_Scratch")) or 0
+		local Previouscleanedscratches = tonumber(Sessionobject:GetAttribute("Cleaned_Scratch")) or 0
+		local Cleanedscratches = math.min(Previouscleanedscratches + Removedscratch, Totalscratches)
+		if Totalscratches - Cleanedscratches < 0.000001 then Cleanedscratches = Totalscratches end
+		local Appliedprogress = Cleanedscratches - Previouscleanedscratches
+		Sessionobject:SetAttribute("Cleaned_Scratch", Cleanedscratches)
+		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
+		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress, Totalspots)
+		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
+		Sessionobject:SetAttribute("CleanedSpots", Cleanedspots)
+	end)
+
+	Remotemanager:OnServerEvent(self.Name, "CleanDirt", function(Player, Target, Toolname)
+		local Sessionobject = Sessions[Player]
+		if not Sessionobject or not Dirttools[Toolname] then return end
+		if typeof(Target) ~= "Instance" or not Target:IsA("ImageLabel") or not Target:IsDescendantOf(Sessionobject) then return end
+		local Dirtframe = Target.Parent
+		if not Dirtframe or Dirtframe.Name ~= "DirtFrame" or not Dirtframe:IsA("GuiObject") then return end
+		local Surface = Dirtframe.Parent
+		if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled or not Dirtsurfacenames[Surface.Name] then return end
+		if Surface.Parent == nil or not Surface.Parent:IsA("BasePart") then return end
+		if Surface.Face.Name ~= string.sub(Surface.Name, 3) then return end
+		local Targetindex = tonumber(Target.Name)
+		if not Targetindex or Targetindex < 1 or Targetindex > 16 or Targetindex ~= math.floor(Targetindex) then return end
+		if Dirtframe:WaitForChild(tostring(Targetindex)) ~= Target then return end
+		if Target:GetAttribute("InitialDirtTransparency") == nil then return end
+		local Now = os.clock()
+		if Now - (Lastclean[Player] or 0) < Dirtcleaninterval then return end
+		Lastclean[Player] = Now
+
+		local Targetrow = math.floor((Targetindex - 1) / Dirtgridwidth)
+		local Targetcolumn = (Targetindex - 1) % Dirtgridwidth
+		local Removeddirt = 0
+		for Index = 1, 16 do
+			local Row = math.floor((Index - 1) / Dirtgridwidth)
+			local Column = (Index - 1) % Dirtgridwidth
+			if math.abs(Row - Targetrow) <= 1 and math.abs(Column - Targetcolumn) <= 1 then
+				local Image = Dirtframe:WaitForChild(tostring(Index))
+				assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
+				local Power = if Index == Targetindex then Dirtcenterpower else Dirtneighborpower
+				local Transparency = math.clamp(Image.ImageTransparency + Power, 0, 1)
+				Removeddirt += Transparency - Image.ImageTransparency
+				Image.ImageTransparency = Transparency
+			end
+		end
+		if Removeddirt <= 0 then return end
+		local Totaldirt = tonumber(Sessionobject:GetAttribute("Total_Dirt")) or 0
+		local Cleaneddirt = math.min((tonumber(Sessionobject:GetAttribute("Cleaned_Dirt")) or 0) + Removeddirt, Totaldirt)
+		if Totaldirt - Cleaneddirt < 0.000001 then Cleaneddirt = Totaldirt end
+		local Previouscleaneddirt = tonumber(Sessionobject:GetAttribute("Cleaned_Dirt")) or 0
+		local Appliedprogress = Cleaneddirt - Previouscleaneddirt
+		Sessionobject:SetAttribute("Cleaned_Dirt", Cleaneddirt)
+		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
+		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress, Totalspots)
+		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
+		Sessionobject:SetAttribute("CleanedSpots", Cleanedspots)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanSpot", function(Player, Spot, Toolname)
@@ -471,6 +618,8 @@ function Restorationservice:Init()
 	Remotemanager:OnServerEvent(self.Name, "SessionEnded", function(Player)
 		local Sessionobject = Sessions[Player]
 		Sessions[Player] = nil
+		Lastclean[Player] = nil
+		Lastscratchclean[Player] = nil
 		if Sessionobject and Activeobject == Sessionobject then Cleanupactiveobjectifidle() end
 		task.defer(function() self:TryPrepareNextGrantedObject() end)
 	end)
@@ -484,6 +633,7 @@ function Restorationservice:Init()
 		Peeling[Player] = nil
 		Sessions[Player] = nil
 		Lastclean[Player] = nil
+		Lastscratchclean[Player] = nil
 		for Index = #Grantedobjectqueue, 1, -1 do
 			if Grantedobjectqueue[Index].Player == Player then table.remove(Grantedobjectqueue, Index) end
 		end

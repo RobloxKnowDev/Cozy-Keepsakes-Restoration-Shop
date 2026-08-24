@@ -9,15 +9,20 @@ local Toothbrush = {
 
 function Toothbrush.OnInputBegan(Context)
 	if Context.Display.Instance and not Context.Display.OnObject then return end
+	local Cleaningcontroller = Core:GetController("CleaningController")
 	Context.SetUsing(true)
-	if Context.Object then Core:GetController("CleaningController"):TryClean(Context.Object, Toothbrush.Name) end
+	if Context.Object then Cleaningcontroller:TryCleanDirt(Context.Object, Toothbrush.Name) end
 end
 
 function Toothbrush.OnUpdate(Context)
-	if Context.IsUsing and Context.Object then Core:GetController("CleaningController"):TryClean(Context.Object, Toothbrush.Name) end
+	if Context.IsUsing and Context.Object then Core:GetController("CleaningController"):TryCleanDirt(Context.Object, Toothbrush.Name) end
 end
 
 function Toothbrush.OnInputEnded(Context)
+	Context.SetUsing(false)
+end
+
+function Toothbrush.OnDeselected(Context)
 	Context.SetUsing(false)
 end
 

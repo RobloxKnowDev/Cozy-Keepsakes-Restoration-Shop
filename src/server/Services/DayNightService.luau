@@ -40,6 +40,20 @@ function Daynightservice:Init()
 	Lighting.ClockTime = Config.StartClockTime
 end
 
+function Daynightservice:SkipToNextDayStart(): boolean
+	local Currenttime = Workspace:GetServerTimeNow()
+	local Elapsed = Currenttime - self.Starttime
+	local Targetelapsed = (math.floor(Elapsed / Config.DayDuration) + 1) * Config.DayDuration
+	self.Starttime = Currenttime - Targetelapsed
+	Lighting.ClockTime = Config.DayStartHour
+
+	local Day = Getday(Targetelapsed)
+	if Lighting:GetAttribute("Day") ~= Day then
+		Lighting:SetAttribute("Day", Day)
+	end
+	return true
+end
+
 function Daynightservice:Start()
 	Runservice.Heartbeat:Connect(function()
 		local Elapsed = Workspace:GetServerTimeNow() - self.Starttime
