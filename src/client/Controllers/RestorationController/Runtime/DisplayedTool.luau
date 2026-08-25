@@ -42,6 +42,7 @@ function Displayedtool:Select(Definition)
 	local Toolinstance = Toolassets:WaitForChild(Definition.AssetName):Clone()
 	Toolinstance.Name = "Displayed" .. Definition.Name
 	self.Instance = Toolinstance
+	self.Tip = Toolinstance:WaitForChild("Tip") :: Attachment
 	local Tipparts = {}
 	for _, Descendant in ipairs(Toolinstance:GetDescendants()) do
 		if Descendant:IsA("BasePart") then
@@ -51,15 +52,12 @@ function Displayedtool:Select(Definition)
 			if Definition.UsesCenteredTip and string.find(string.lower(Descendant.Name), "tip", 1, true) then
 				table.insert(Tipparts, Descendant)
 			end
-		elseif Descendant:IsA("Attachment") and Descendant.Name == "Tip" then
-			self.Tip = Descendant
 		end
 	end
 	if Toolinstance:IsA("BasePart") then
 		Toolinstance.Anchored = true
 		Toolinstance.CanCollide, Toolinstance.CanQuery, Toolinstance.CanTouch = false, false, false
 		Toolinstance.CastShadow = false
-		self.Tip = Toolinstance:FindFirstChild("Tip") or self.Tip
 	end
 	if Definition.UsesCenteredTip and #Tipparts > 0 then
 		local Average = Vector3.zero
@@ -124,7 +122,12 @@ function Displayedtool:Update(Deltatime: number, Object: Model | BasePart, Isusi
 			* (Definition.DisplayRotation or CFrame.identity)
 	end
 	local Current = Pivotof(Toolinstance)
-	if Current and self.Tip then Target *= Current:ToObjectSpace(self.Tip.WorldCFrame):Inverse() end
+	if Current and self.Tip then
+		local Tipoffset = if self.Tip.Parent == Toolinstance
+			then self.Tip.CFrame
+			else Current:ToObjectSpace(self.Tip.WorldCFrame)
+		Target *= Tipoffset:Inverse()
+	end
 	Pivotto(Toolinstance, Target)
 end
 

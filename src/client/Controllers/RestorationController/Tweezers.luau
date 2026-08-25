@@ -4,10 +4,15 @@ local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Tweezers = {
 	Name = "Tweezers",
 	AssetName = "Tweezers",
-	UsesCenteredTip = true,
 	UsesPullMotion = true,
-	DisplayRotation = CFrame.Angles(math.rad(85), 0, math.rad(-12)),
+	DisplayRotation = CFrame.Angles(math.rad(180), 0, math.rad(-12)),
 }
+
+function Tweezers.GetDisplayCFrame(Context): CFrame
+	local Position = Context.SurfacePosition
+	return CFrame.lookAt(Position, Position + Context.SurfaceNormal, Context.Camera.CFrame.UpVector)
+		* Tweezers.DisplayRotation
+end
 
 function Tweezers.OnInputBegan(Context)
 	if Context.Object then

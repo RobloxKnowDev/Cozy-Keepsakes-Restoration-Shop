@@ -11,23 +11,9 @@ local Cleaningcontroller = { Name = "CleaningController", Priority = 9 }
 local Cleaninterval = 0.075
 local Scratchimagecount = 4
 local Scratchcleaninterval = Cleaninterval
-local Solventrequestretry = 0.25
-
-type Pendingsolventrequest = {
-	Attributechanged: RBXScriptConnection?,
-	Destroying: RBXScriptConnection?,
-	Requestedat: number?,
-}
-
-local Pendingsolventrequests: { [ImageLabel]: Pendingsolventrequest } = {}
-
-local function Clearpendingsolventrequest(Image: ImageLabel)
-	local Request = Pendingsolventrequests[Image]
-	if not Request then return end
-	Pendingsolventrequests[Image] = nil
-	if Request.Attributechanged then Request.Attributechanged:Disconnect() end
-	if Request.Destroying then Request.Destroying:Disconnect() end
-end
+local Inkimagecount = 4
+local Inkcleaninterval = Cleaninterval
+local Liquidapplyinterval = 0.25
 
 local function Getfacename(Localnormal: Vector3): string
 	local Absolutex = math.abs(Localnormal.X)
@@ -40,6 +26,38 @@ local function Getfacename(Localnormal: Vector3): string
 		return if Localnormal.Y > 0 then "Top" else "Bottom"
 	end
 	return if Localnormal.Z > 0 then "Back" else "Front"
+end
+
+local function Getinkimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel?
+	local Inkframe = Surface:FindFirstChild("Ink")
+	if not Inkframe then return nil end
+	assert(Inkframe:IsA("GuiObject"), "CleaningController: " .. Inkframe:GetFullName() .. " doit être un GuiObject")
+	if not Inkframe.Visible then return nil end
+	local Canvaspoint = Surface.AbsolutePosition
+		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
+	local Target: ImageLabel? = nil
+	local Targetdistance = math.huge
+	for Index = 1, Inkimagecount do
+		local Image = Inkframe:WaitForChild(tostring(Index))
+		assert(Image:IsA("ImageLabel"), "CleaningController: " .. Image:GetFullName() .. " doit être un ImageLabel")
+		local Minimum = Image.AbsolutePosition
+		local Maximum = Minimum + Image.AbsoluteSize
+		if
+			Image.Visible
+			and Image.ImageTransparency < 1
+			and Canvaspoint.X >= Minimum.X
+			and Canvaspoint.Y >= Minimum.Y
+			and Canvaspoint.X <= Maximum.X
+			and Canvaspoint.Y <= Maximum.Y
+		then
+			local Distance = (Canvaspoint - (Minimum + Image.AbsoluteSize * 0.5)).Magnitude
+			if Distance < Targetdistance then
+				Target = Image
+				Targetdistance = Distance
+			end
+		end
+	end
+	return Target
 end
 
 local function Getfacepoint(Part: BasePart, Worldposition: Vector3, Facename: string): Vector2
@@ -92,7 +110,7 @@ local function Getdirtimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel
 	return Target
 end
 
-local function Getscratchimage(Surface: SurfaceGui, Facepoint: Vector2, Prefersolventfree: boolean): ImageLabel?
+local function Getscratchimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel?
 	local Scratchframe = Surface:FindFirstChild("ScratchesFrame")
 	if not Scratchframe then return nil end
 	assert(Scratchframe:IsA("GuiObject"), "CleaningController: " .. Scratchframe:GetFullName() .. " doit être un GuiObject")
@@ -101,8 +119,6 @@ local function Getscratchimage(Surface: SurfaceGui, Facepoint: Vector2, Preferso
 		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
 	local Target: ImageLabel? = nil
 	local Targetdistance = math.huge
-	local Solventfreetarget: ImageLabel? = nil
-	local Solventfreetargetdistance = math.huge
 	for Index = 1, Scratchimagecount do
 		local Image = Scratchframe:WaitForChild(tostring(Index))
 		assert(Image:IsA("ImageLabel"), "CleaningController: " .. Image:GetFullName() .. " doit être un ImageLabel")
@@ -121,19 +137,18 @@ local function Getscratchimage(Surface: SurfaceGui, Facepoint: Vector2, Preferso
 				Target = Image
 				Targetdistance = Distance
 			end
-			if Image:GetAttribute("HasSolvent") ~= true and Distance < Solventfreetargetdistance then
-				Solventfreetarget = Image
-				Solventfreetargetdistance = Distance
-			end
 		end
 	end
-	return if Prefersolventfree and Solventfreetarget then Solventfreetarget else Target
+	return Target
 end
 
 function Cleaningcontroller:Init()
 	self.camera = Workspace.CurrentCamera
 	self.lastRequest = 0
 	self.lastScratchRequest = 0
+	self.lastInkRequest = 0
+	self.lastInkSolventRequest = 0
+	self.lastScratchPolishRequest = 0
 end
 
 function Cleaningcontroller:GetDirtImage(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3): ImageLabel?
@@ -148,44 +163,69 @@ end
 function Cleaningcontroller:GetScratchImage(
 	Part: BasePart,
 	Worldposition: Vector3,
-	Worldnormal: Vector3,
-	Prefersolventfree: boolean?
+	Worldnormal: Vector3
 ): ImageLabel?
 	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
 	local Facename = Getfacename(Localnormal)
 	local Surface = Part:FindFirstChild("Ui" .. Facename)
 	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return nil end
 	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " doit utiliser la face " .. Facename)
-	return Getscratchimage(Surface, Getfacepoint(Part, Worldposition, Facename), Prefersolventfree == true)
+	return Getscratchimage(Surface, Getfacepoint(Part, Worldposition, Facename))
 end
 
-function Cleaningcontroller:TryApplyScratchSolvent(
+function Cleaningcontroller:GetInkImage(
 	Part: BasePart,
 	Worldposition: Vector3,
 	Worldnormal: Vector3
 ): ImageLabel?
+	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
+	local Facename = Getfacename(Localnormal)
+	local Surface = Part:FindFirstChild("Ui" .. Facename)
+	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return nil end
+	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " doit utiliser la face " .. Facename)
+	return Getinkimage(Surface, Getfacepoint(Part, Worldposition, Facename))
+end
+
+function Cleaningcontroller:TryApplyInkSolvent(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3): ImageLabel?
 	if Core:GetController("InspectionCameraController"):IsDragging() then return nil end
-	local Image = self:GetScratchImage(Part, Worldposition, Worldnormal, true)
+	local Image = self:GetInkImage(Part, Worldposition, Worldnormal)
 	if not Image or Image.ImageTransparency >= 1 then return nil end
-	if Image:GetAttribute("HasSolvent") == true then
-		Clearpendingsolventrequest(Image)
-	else
-		local Request = Pendingsolventrequests[Image]
-		if not Request then
-			Request = {}
-			Pendingsolventrequests[Image] = Request
-			Request.Attributechanged = Image:GetAttributeChangedSignal("HasSolvent"):Connect(function()
-				if Image:GetAttribute("HasSolvent") == true then Clearpendingsolventrequest(Image) end
-			end)
-			Request.Destroying = Image.Destroying:Connect(function()
-				Clearpendingsolventrequest(Image)
-			end)
-		end
-		local Now = os.clock()
-		if not Request.Requestedat or Now - Request.Requestedat >= Solventrequestretry then
-			Request.Requestedat = Now
-			Remotemanager:FireServer("RestorationService", "ApplyScratchSolvent", Image)
-		end
+	if Image:GetAttribute("HasSolvent") ~= true and os.clock() - self.lastInkSolventRequest >= Liquidapplyinterval then
+		self.lastInkSolventRequest = os.clock()
+		Remotemanager:FireServer("RestorationService", "ApplyInkSolvent", Image)
+	end
+	return Image
+end
+
+function Cleaningcontroller:TryApplyScratchPolish(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3): ImageLabel?
+	if Core:GetController("InspectionCameraController"):IsDragging() then return nil end
+	local Image = self:GetScratchImage(Part, Worldposition, Worldnormal)
+	if not Image or Image.ImageTransparency >= 1 then return nil end
+	if Image:GetAttribute("HasPolish") ~= true and os.clock() - self.lastScratchPolishRequest >= Liquidapplyinterval then
+		self.lastScratchPolishRequest = os.clock()
+		Remotemanager:FireServer("RestorationService", "ApplyScratchPolish", Image)
+	end
+	return Image
+end
+
+function Cleaningcontroller:TryCleanInk(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3): ImageLabel?
+	if Core:GetController("InspectionCameraController"):IsDragging() then return nil end
+	local Image = self:GetInkImage(Part, Worldposition, Worldnormal)
+	if not Image or Image.ImageTransparency >= 1 then return nil end
+	if os.clock() - self.lastInkRequest >= Inkcleaninterval then
+		self.lastInkRequest = os.clock()
+		Remotemanager:FireServer("RestorationService", "CleanInk", Image)
+	end
+	return Image
+end
+
+function Cleaningcontroller:TryCleanScratch(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3): ImageLabel?
+	if Core:GetController("InspectionCameraController"):IsDragging() then return nil end
+	local Image = self:GetScratchImage(Part, Worldposition, Worldnormal)
+	if not Image or Image.ImageTransparency >= 1 then return nil end
+	if os.clock() - self.lastScratchRequest >= Scratchcleaninterval then
+		self.lastScratchRequest = os.clock()
+		Remotemanager:FireServer("RestorationService", "CleanScratch", Image)
 	end
 	return Image
 end
@@ -216,12 +256,17 @@ function Cleaningcontroller:TryCleanCotton(Object: Model | BasePart)
 	local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 100, Params)
 	if not Result or not Result.Instance:IsA("BasePart") then return end
 
+	local Ink = self:GetInkImage(Result.Instance, Result.Position, Result.Normal)
+	if Ink and Ink.ImageTransparency < 1 then
+		if Ink:GetAttribute("HasSolvent") ~= true then return end
+		self:TryCleanInk(Result.Instance, Result.Position, Result.Normal)
+		return
+	end
+
 	local Scratch = self:GetScratchImage(Result.Instance, Result.Position, Result.Normal)
 	if Scratch and Scratch.ImageTransparency < 1 then
-		if Scratch:GetAttribute("HasSolvent") ~= true then return end
-		if os.clock() - self.lastScratchRequest < Scratchcleaninterval then return end
-		self.lastScratchRequest = os.clock()
-		Remotemanager:FireServer("RestorationService", "CleanScratch", Scratch)
+		if Scratch:GetAttribute("HasPolish") ~= true then return end
+		self:TryCleanScratch(Result.Instance, Result.Position, Result.Normal)
 		return
 	end
 

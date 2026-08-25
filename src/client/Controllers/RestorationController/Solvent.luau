@@ -61,10 +61,10 @@ local function Depositliquid(
 		* CFrame.Angles(math.rad(math.random(0, 359)), 0, 0)
 	Puddle.Parent = Liquidfolder(Object)
 	if Target then
-		local Scratchtarget = Instance.new("ObjectValue")
-		Scratchtarget.Name = "ScratchTarget"
-		Scratchtarget.Value = Target
-		Scratchtarget.Parent = Puddle
+		local Inktarget = Instance.new("ObjectValue")
+		Inktarget.Name = "InkTarget"
+		Inktarget.Value = Target
+		Inktarget.Parent = Puddle
 	end
 
 	local Weld = Instance.new("WeldConstraint")
@@ -102,13 +102,11 @@ function Solvent.OnUpdate(Context)
 	local Position = Display.SurfacePosition
 	local Normal = Display.SurfaceNormal
 	if not Display.OnObject or not Surface or not Surface:IsA("BasePart") or not Position or not Normal then
-		Cleaningcontroller:TryClean(Context.Object, Solvent.Name)
 		return
 	end
-	Cleaningcontroller:TryClean(Context.Object, Solvent.Name)
 	if os.clock() - Lastpourtime < Pourinterval then return end
 	if Lastpuddleposition and (Position - Lastpuddleposition).Magnitude < Minpuddledistance then return end
-	local Target = Cleaningcontroller:TryApplyScratchSolvent(Surface, Position, Normal)
+	local Target = Cleaningcontroller:TryApplyInkSolvent(Surface, Position, Normal)
 	Lastpourtime = os.clock()
 	Lastpuddleposition = Position
 	Depositliquid(Context.Object, Surface, Position, Normal, Target)

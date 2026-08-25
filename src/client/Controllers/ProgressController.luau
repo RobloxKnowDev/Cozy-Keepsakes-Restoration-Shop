@@ -13,13 +13,13 @@ function Progresscontroller:Init()
 	self.bars = {
 		Dirt = Dirtframe:WaitForChild("FrameBar"):WaitForChild("Bar"),
 		Sticker = Stickersframe:WaitForChild("FrameBar"):WaitForChild("Bar"),
-		Adhesive = Inkframe:WaitForChild("FrameBar"):WaitForChild("Bar"),
+		Ink = Inkframe:WaitForChild("FrameBar"):WaitForChild("Bar"),
 		Scratch = Scratchesframe:WaitForChild("FrameBar"):WaitForChild("Bar"),
 	}
 	self.texts = {
 		Dirt = Dirtframe:WaitForChild("PercentText"),
 		Sticker = Stickersframe:WaitForChild("PercentText"),
-		Adhesive = Inkframe:WaitForChild("PercentText"),
+		Ink = Inkframe:WaitForChild("PercentText"),
 		Scratch = Scratchesframe:WaitForChild("PercentText"),
 	}
 end
