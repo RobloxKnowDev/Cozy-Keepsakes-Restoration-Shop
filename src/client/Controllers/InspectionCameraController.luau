@@ -9,6 +9,10 @@ local Controller = { Name = "InspectionCameraController", Priority = 5 }
 
 local Player = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+local Slot = Workspace:WaitForChild("Map"):WaitForChild("Slot1")
+local Mapcamera = Slot:WaitForChild("Camera")
+local Generateditems = Slot:WaitForChild("GeneratedItems")
+local Planwork = Slot:WaitForChild("Work"):WaitForChild("PlanWork", 10)
 type InspectionTarget = Model | BasePart
 local Target: InspectionTarget? = nil
 local Yaw = 0
@@ -114,7 +118,11 @@ local function Objectsize(Object: InspectionTarget): Vector3
 end
 
 local function Pivotobject(Object: InspectionTarget, Pivot: CFrame)
-	if Object:IsA("Model") then Object:PivotTo(Pivot) else Object.CFrame = Pivot end
+	if Object:IsA("Model") then
+		Object:PivotTo(Pivot)
+	else
+		Object.CFrame = Pivot
+	end
 end
 
 local function Verticalhalfextent(Object: InspectionTarget): number
@@ -144,7 +152,9 @@ local function Bottomoffsetfrompivot(Object: InspectionTarget): number
 				Bottomy = math.min(Bottomy, Descendant.Position.Y - Halfheight)
 			end
 		end
-		if Bottomy == math.huge then return Verticalhalfextent(Object) end
+		if Bottomy == math.huge then
+			return Verticalhalfextent(Object)
+		end
 		return Pivoty - Bottomy
 	end
 	return Verticalhalfextent(Object)
@@ -166,8 +176,7 @@ function Controller:FlipObject()
 		return
 	end
 	Showingback = not Showingback
-	Objectrotationgoal = Originalobjectrotation
-		* (Showingback and CFrame.Angles(math.pi, 0, 0) or CFrame.identity)
+	Objectrotationgoal = Originalobjectrotation * (Showingback and CFrame.Angles(math.pi, 0, 0) or CFrame.identity)
 end
 
 function Controller:IsDragging(): boolean
@@ -175,7 +184,7 @@ function Controller:IsDragging(): boolean
 end
 
 function Controller:IsIntroCameraReady(): boolean
-	local Campart = Workspace:WaitForChild("CamPart")
+	local Campart = Mapcamera:WaitForChild("CamPart")
 	return Introcameraactive
 		and Introcameratween == nil
 		and Campart ~= nil
@@ -211,14 +220,18 @@ end
 
 local function CancelIntroCameraTween()
 	local Tween = Introcameratween
-	if not Tween then return end
+	if not Tween then
+		return
+	end
 	Introcameratween = nil
 	Tween:Cancel()
 	Tween:Destroy()
 end
 
 local function ShowCameraPart(CameraPart: BasePart, Options: CameraPartOptions?): boolean
-	if Target then return false end
+	if Target then
+		return false
+	end
 	if not Introcameraactive then
 		Previouscameratype = Camera.CameraType
 		Previouscamerasubject = Camera.CameraSubject
@@ -239,31 +252,35 @@ local function ShowCameraPart(CameraPart: BasePart, Options: CameraPartOptions?)
 	if Options and Options.OnLead then
 		local OnLead = Options.OnLead
 		task.delay(math.max(Duration - (Options.LeadTime or 0), 0), function()
-			if Introcameratween == Newtween then OnLead() end
+			if Introcameratween == Newtween then
+				OnLead()
+			end
 		end)
 	end
 	Newtween.Completed:Once(function(State)
 		if Introcameratween == Newtween then
 			Newtween:Destroy()
 			Introcameratween = nil
-			if State == Enum.PlaybackState.Completed and Options and Options.OnArrived then Options.OnArrived() end
+			if State == Enum.PlaybackState.Completed and Options and Options.OnArrived then
+				Options.OnArrived()
+			end
 		end
 	end)
 	return true
 end
 
 function Controller:ShowIntroCamera(): boolean
-	return ShowCameraPart(Workspace:WaitForChild("CamPart") :: BasePart)
+	return ShowCameraPart(Mapcamera:WaitForChild("CamPart") :: BasePart)
 end
 
 function Controller:ShowIntroCameraFromExposition(): boolean
-	return ShowCameraPart(Workspace:WaitForChild("CamPart") :: BasePart, {
+	return ShowCameraPart(Mapcamera:WaitForChild("CamPart") :: BasePart, {
 		Duration = Expositioncameraduration,
 	})
 end
 
 function Controller:ShowExpositionCamera(OnLead: (() -> ())?, OnArrived: (() -> ())?): boolean
-	return ShowCameraPart(Workspace:WaitForChild("CamPartExposition") :: BasePart, {
+	return ShowCameraPart(Mapcamera:WaitForChild("CamPartExposition") :: BasePart, {
 		Duration = Expositioncameraduration,
 		LeadTime = Expositionbuttonleadtime,
 		OnLead = OnLead,
@@ -272,7 +289,7 @@ function Controller:ShowExpositionCamera(OnLead: (() -> ())?, OnArrived: (() -> 
 end
 
 function Controller:ShowComputerCamera(): boolean
-	return ShowCameraPart(Workspace:WaitForChild("CamPartComputer") :: BasePart)
+	return ShowCameraPart(Mapcamera:WaitForChild("CamPartComputer") :: BasePart)
 end
 
 function Controller:Begin(Object: InspectionTarget)
@@ -311,7 +328,9 @@ function Controller:Begin(Object: InspectionTarget)
 end
 
 function Controller:PrepareCompletion()
-	if not Target then return end
+	if not Target then
+		return
+	end
 	Enabled = false
 	Completionview = true
 	Enddrag()
@@ -385,11 +404,7 @@ function Controller:Start()
 					end
 				end
 			end
-			Targetdistance = math.clamp(
-				Targetdistance * (1 - Input.Position.Z * 0.12),
-				Mindistance,
-				Maxdistance
-			)
+			Targetdistance = math.clamp(Targetdistance * (1 - Input.Position.Z * 0.12), Mindistance, Maxdistance)
 			return
 		end
 
@@ -429,10 +444,12 @@ function Controller:Start()
 		if not Dragging then
 			return
 		end
-		if Input == Draginput
+		if
+			Input == Draginput
 			or Input.UserInputType == Enum.UserInputType.MouseButton1
 			or Input.UserInputType == Enum.UserInputType.MouseButton2
-			or Input.UserInputType == Enum.UserInputType.MouseButton3 then
+			or Input.UserInputType == Enum.UserInputType.MouseButton3
+		then
 			Enddrag()
 		end
 	end)
@@ -449,8 +466,10 @@ function Controller:Start()
 			local Currentpivot = Objectpivot(Target)
 			local Nextrotation = Currentpivot.Rotation:Lerp(Objectrotationgoal, Flipalpha)
 			Pivotobject(Target, CFrame.new(Currentpivot.Position) * Nextrotation)
-			if Nextrotation.LookVector:Dot(Objectrotationgoal.LookVector) > 0.9999
-				and Nextrotation.UpVector:Dot(Objectrotationgoal.UpVector) > 0.9999 then
+			if
+				Nextrotation.LookVector:Dot(Objectrotationgoal.LookVector) > 0.9999
+				and Nextrotation.UpVector:Dot(Objectrotationgoal.UpVector) > 0.9999
+			then
 				Pivotobject(Target, CFrame.new(Objectpivot(Target).Position) * Objectrotationgoal)
 				Objectrotationgoal = nil
 			end
@@ -469,19 +488,27 @@ function Controller:Start()
 		local Selectedcenteroffset = Objectselected and (Adjustedy - Objectstartposition.Y) or 0
 		local Focus = if Completionview
 			then Objectstartposition
-			else Objectstartposition
-				+ Vector3.new(0, Selectedcenteroffset, 0)
-				+ Vector3.new(0, Objectsize(Target).Y * 0, 0)
-				+ Focusoffset
+			else Objectstartposition + Vector3.new(0, Selectedcenteroffset, 0) + Vector3.new(
+				0,
+				Objectsize(Target).Y * 0,
+				0
+			) + Focusoffset
 		local Orbit = CFrame.fromEulerAnglesYXZ(Pitch, Yaw, 0)
 		local Orbitdirection = Orbit:VectorToWorldSpace(Vector3.new(0, 0, 1))
 		local Direction = Orbitdirection * Distance
 		local Params = RaycastParams.new()
 		Params.FilterType = Enum.RaycastFilterType.Exclude
-		Params.FilterDescendantsInstances = { Target, Player.Character }
+		Params.FilterDescendantsInstances = { Target, Player.Character, Generateditems }
 		Params.IgnoreWater = true
 		Params.RespectCanCollide = true
 		local Collision = Workspace:Spherecast(Focus, 0.55, Direction, Params)
+		local Planparams = RaycastParams.new()
+		Planparams.FilterType = Enum.RaycastFilterType.Include
+		Planparams.FilterDescendantsInstances = { Planwork }
+		local Plancollision = Workspace:Spherecast(Focus, 0.55, Direction, Planparams)
+		if Plancollision and (not Collision or Plancollision.Distance < Collision.Distance) then
+			Collision = Plancollision
+		end
 		local Alloweddistance = Distance
 		if Collision then
 			Alloweddistance = math.max(Collision.Distance - 0.45, 0.15)
@@ -497,15 +524,10 @@ function Controller:Start()
 		if Cameratransitionactive then
 			Cameratransitionelapsed += Deltatime
 			local Progress = math.clamp(Cameratransitionelapsed / Cameratransitionduration, 0, 1)
-			local Easedprogress = Tweenservice:GetValue(
-				Progress,
-				Enum.EasingStyle.Quint,
-				Enum.EasingDirection.InOut
-			)
+			local Easedprogress = Tweenservice:GetValue(Progress, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
 			local Traveldistance = (Safeposition - Cameratransitionstart.Position).Magnitude
 			local Arc = math.clamp(Traveldistance * 0.06, 0.5, 2) * math.sin(Easedprogress * math.pi)
-			local Position = Cameratransitionstart.Position:Lerp(Safeposition, Easedprogress)
-				+ Vector3.new(0, Arc, 0)
+			local Position = Cameratransitionstart.Position:Lerp(Safeposition, Easedprogress) + Vector3.new(0, Arc, 0)
 			local Looktarget = Cameratransitionlooktarget:Lerp(Focus, Easedprogress)
 			Camera.CFrame = CFrame.lookAt(Position, Looktarget)
 

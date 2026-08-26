@@ -22,11 +22,11 @@ local Completioncontroller = {
 	closing = false,
 }
 
-local Completionkinds = { "Dirt", "Sticker", "Adhesive", "Scratch" }
+local Completionkinds = { "Dirt", "Sticker", "Ink", "Scratch" }
 local Rownames = {
 	Dirt = "DirtFrame",
 	Sticker = "StickersFrame",
-	Adhesive = "InkFrame",
+	Ink = "InkFrame",
 	Scratch = "ScratchesFrame",
 }
 
@@ -85,6 +85,7 @@ function Completioncontroller:Init()
 	self.rarityText = self.rarityFrame:WaitForChild("Rarity")
 	self.totalProgressText = self.frame:WaitForChild("TotalProgress")
 	self.valueText = self.frame:WaitForChild("Value")
+	self.reputationText = self.frame:WaitForChild("ReputationText")
 	self.maxValueText = self.frame:WaitForChild("MaxValue")
 	self.frameShownPosition = self.frame.Position
 	self.transition = self.gui:FindFirstChild("CompletionTransition")
@@ -116,6 +117,12 @@ local function Formatcurrency(Value: number): string
 	return string.format("$%.2f", Value)
 end
 
+local function Formatreputation(Value: number): string
+	local Rounded = math.round(Value * 100) / 100
+	if math.abs(Rounded - math.round(Rounded)) < 0.005 then return tostring(math.round(Rounded)) end
+	return string.format("%.2f", Rounded)
+end
+
 local function Ratiofromattributes(Object: RestorationObject, Kind: string): number
 	local Total = Object:GetAttribute("Total_" .. Kind) or 0
 	local Cleaned = Object:GetAttribute("Cleaned_" .. Kind) or 0
@@ -133,6 +140,7 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 	local Overallratio = Progressfromattributes(Object)
 	local Maxvalue = tonumber(Object:GetAttribute("MaxValue")) or tonumber(Object:GetAttribute("MaxPrice")) or 0
 	local Currentvalue = Maxvalue * Overallratio
+	local Reputation = (tonumber(Object:GetAttribute("MaxReputation")) or 0) * Overallratio
 	local Rarity = Rarityconfig[tostring(Object:GetAttribute("Rarity") or "Common")]
 
 	self.objectNameText.Text = tostring(Object:GetAttribute("DisplayName") or Object.Name)
@@ -140,6 +148,7 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 	self.rarityFrame.BackgroundColor3 = Rarity.Color
 	self.totalProgressText.Text = string.format("%d%%", math.floor(Overallratio * 100 + 0.5))
 	self.valueText.Text = Formatcurrency(Currentvalue)
+	self.reputationText.Text = Formatreputation(Reputation)
 	self.maxValueText.Text = Formatcurrency(Maxvalue)
 
 	for _, Kind in ipairs(Completionkinds) do

@@ -15,6 +15,19 @@ local Daynightcontroller = {
 local Player = Players.LocalPlayer
 local Robuxicon = ""
 
+local Daytimehours = Daynightconfig.NightStartHour - Daynightconfig.DayStartHour
+local Nighttimehours = 24 - Daytimehours
+local Nighttimeduration = Daynightconfig.DayDuration - Daynightconfig.DaytimeDuration
+
+local function Getclocktime(Cycleelapsed: number): number
+	if Cycleelapsed < Daynightconfig.DaytimeDuration then
+		local Progress = Cycleelapsed / Daynightconfig.DaytimeDuration
+		return Daynightconfig.DayStartHour + Progress * Daytimehours
+	end
+	local Progress = (Cycleelapsed - Daynightconfig.DaytimeDuration) / Nighttimeduration
+	return (Daynightconfig.NightStartHour + Progress * Nighttimehours) % 24
+end
+
 local function Formattime(Clocktime: number): string
 	local Totalminutes = math.floor(Clocktime * 60) % 1440
 	local Hour24 = math.floor(Totalminutes / 60)
@@ -51,6 +64,11 @@ function Daynightcontroller:Init()
 end
 
 function Daynightcontroller:Update()
+	local Starttime = Lighting:GetAttribute("DayCycleStartTime")
+	if Starttime then
+		local Elapsed = workspace:GetServerTimeNow() - Starttime
+		Lighting.ClockTime = Getclocktime(Elapsed % Daynightconfig.DayDuration)
+	end
 	local Day = Lighting:GetAttribute("Day") or 1
 	local Clocktime = Lighting.ClockTime
 	self.DayText.Text = "Day " .. tostring(Day)

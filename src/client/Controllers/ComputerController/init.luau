@@ -48,7 +48,9 @@ function ComputerController:CanOpen(): boolean
 end
 
 function ComputerController:SetHoveredComputer(Computer: Instance?)
-	if self.hoveredComputer == Computer then return end
+	if self.hoveredComputer == Computer then
+		return
+	end
 	self.hoveredComputer = Computer
 	self.hoverHighlight.Adornee = Computer
 	self.hoverHighlight.Enabled = Computer ~= nil and not self:IsOpen()
@@ -59,9 +61,12 @@ function ComputerController:UpdateHoveredComputer()
 		self:SetHoveredComputer(nil)
 		return
 	end
-	local Target = if self.mouse then self.mouse.Target else nil
-	local Computer = if Target and (Target == self.computer or Target:IsDescendantOf(self.computer)) then self.computer else nil
-	self:SetHoveredComputer(Computer)
+	local Ray = self.mouse.UnitRay
+	local Params = RaycastParams.new()
+	Params.FilterType = Enum.RaycastFilterType.Include
+	Params.FilterDescendantsInstances = { self.coreModel, self.screenModel, self.buttonModel, self.postitModel }
+	local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 500, Params)
+	self:SetHoveredComputer(if Result then self.computer else nil)
 end
 
 function ComputerController:FocusCamera()
@@ -69,19 +74,31 @@ function ComputerController:FocusCamera()
 end
 
 function ComputerController:SetHudVisible(IsVisible: boolean)
-	if self.hudCashFrame then self.hudCashFrame.Visible = IsVisible end
-	if self.hudDayFrame then self.hudDayFrame.Visible = IsVisible end
+	if self.hudCashFrame then
+		self.hudCashFrame.Visible = IsVisible
+	end
+	if self.hudDayFrame then
+		self.hudDayFrame.Visible = IsVisible
+	end
 end
 
 function ComputerController:SyncHeader()
-	if self.cashText and self.hudCashText then self.cashText.Text = self.hudCashText.Text end
-	if self.dayText and self.hudDayText then self.dayText.Text = self.hudDayText.Text end
-	if self.timeText and self.hudTimeText then self.timeText.Text = self.hudTimeText.Text end
+	if self.cashText and self.hudCashText then
+		self.cashText.Text = self.hudCashText.Text
+	end
+	if self.dayText and self.hudDayText then
+		self.dayText.Text = self.hudDayText.Text
+	end
+	if self.timeText and self.hudTimeText then
+		self.timeText.Text = self.hudTimeText.Text
+	end
 end
 
 function ComputerController:SetDisplayedComputerCash(Value: number)
 	self.displayedComputerCash = Value
-	if self.cashText then self.cashText.Text = Shared.FormatCurrency(Value) end
+	if self.cashText then
+		self.cashText.Text = Shared.FormatCurrency(Value)
+	end
 end
 
 function ComputerController:AnimateComputerCashTo(TargetValue: number)
@@ -94,21 +111,35 @@ function ComputerController:AnimateComputerCashTo(TargetValue: number)
 	self.computerCashAnimationId += 1
 	local AnimationId = self.computerCashAnimationId
 	local StartTime = os.clock()
-	if self.cashTextScale then TweenService:Create(self.cashTextScale, PulseInfo, { Scale = 1.08 }):Play() end
-	if self.cashText then TweenService:Create(self.cashText, PulseInfo, { TextColor3 = if Delta > 0 then GainColor else LossColor }):Play() end
+	if self.cashTextScale then
+		TweenService:Create(self.cashTextScale, PulseInfo, { Scale = 1.08 }):Play()
+	end
+	if self.cashText then
+		TweenService:Create(self.cashText, PulseInfo, { TextColor3 = if Delta > 0 then GainColor else LossColor })
+			:Play()
+	end
 	local Connection
 	Connection = RunService.RenderStepped:Connect(function()
-		if self.computerCashAnimationId ~= AnimationId then Connection:Disconnect() return end
+		if self.computerCashAnimationId ~= AnimationId then
+			Connection:Disconnect()
+			return
+		end
 		local Alpha = math.clamp((os.clock() - StartTime) / CountDuration, 0, 1)
-		self:SetDisplayedComputerCash(StartValue + Delta * TweenService:GetValue(Alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.Out))
+		self:SetDisplayedComputerCash(
+			StartValue + Delta * TweenService:GetValue(Alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		)
 		if Alpha >= 1 then
 			Connection:Disconnect()
 			self:SetDisplayedComputerCash(TargetValue)
-			if self.cashTextScale then TweenService:Create(self.cashTextScale, PulseInfo, { Scale = 1 }):Play() end
+			if self.cashTextScale then
+				TweenService:Create(self.cashTextScale, PulseInfo, { Scale = 1 }):Play()
+			end
 			if self.cashText then
-				TweenService:Create(self.cashText, TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					TextColor3 = self.baseComputerCashTextColor,
-				}):Play()
+				TweenService
+					:Create(self.cashText, TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+						TextColor3 = self.baseComputerCashTextColor,
+					})
+					:Play()
 			end
 		end
 	end)
@@ -118,15 +149,31 @@ function ComputerController:ApplyNavButtonStyle(Button: GuiButton, IsActive: boo
 	local Defaults = self.navButtonDefaults[Button]
 	local Scale = Shared.EnsureScale(Button)
 	TweenService:Create(Scale, ButtonTweenInfo, { Scale = if IsActive then ActiveButtonScale else 1 }):Play()
-	TweenService:Create(Button, ButtonTweenInfo, { BackgroundColor3 = if IsActive then ActiveButtonColor else Defaults.BackgroundColor3 }):Play()
+	TweenService:Create(
+		Button,
+		ButtonTweenInfo,
+		{ BackgroundColor3 = if IsActive then ActiveButtonColor else Defaults.BackgroundColor3 }
+	):Play()
 	if Defaults.Stroke then
-		TweenService:Create(Defaults.Stroke, ButtonTweenInfo, { Transparency = if IsActive then 1 else Defaults.StrokeTransparency }):Play()
+		TweenService:Create(
+			Defaults.Stroke,
+			ButtonTweenInfo,
+			{ Transparency = if IsActive then 1 else Defaults.StrokeTransparency }
+		):Play()
 	end
 	for _, Object in ipairs(Defaults.Texts) do
-		TweenService:Create(Object, ButtonTweenInfo, { TextColor3 = if IsActive then ActiveContentColor else Defaults.TextColors[Object] }):Play()
+		TweenService:Create(
+			Object,
+			ButtonTweenInfo,
+			{ TextColor3 = if IsActive then ActiveContentColor else Defaults.TextColors[Object] }
+		):Play()
 	end
 	for _, Object in ipairs(Defaults.Images) do
-		TweenService:Create(Object, ButtonTweenInfo, { ImageColor3 = if IsActive then ActiveContentColor else Defaults.ImageColors[Object] }):Play()
+		TweenService:Create(
+			Object,
+			ButtonTweenInfo,
+			{ ImageColor3 = if IsActive then ActiveContentColor else Defaults.ImageColors[Object] }
+		):Play()
 	end
 end
 
@@ -145,13 +192,17 @@ function ComputerController:SetPage(PageName: string)
 end
 
 function ComputerController:Open()
-	if not self:CanOpen() then return end
+	if not self:CanOpen() then
+		return
+	end
 	self.isOpen = true
 	self:SetHoveredComputer(nil)
 	self:SyncHeader()
 	self:SetHudVisible(false)
 	Core:GetController("ExpositionController"):SetBlocker("Computer", "Hidden")
+	self.computerModel.CanQuery = true
 	self.surfaceGui.Enabled = true
+	self.surfaceGui.Active = true
 	self.frame.Visible = true
 	self:SetPage("Home")
 	UserInputService.MouseIconEnabled = true
@@ -159,9 +210,13 @@ function ComputerController:Open()
 end
 
 function ComputerController:Close()
-	if not self:IsOpen() then return end
+	if not self:IsOpen() then
+		return
+	end
 	self.isOpen = false
-	self.frame.Visible = false
+	self.computerModel.CanQuery = false
+	self.surfaceGui.Active = false
+	self.frame.Visible = true
 	self:SetHudVisible(true)
 	Core:GetController("InspectionCameraController"):ShowIntroCamera()
 	Core:GetController("ExpositionController"):SetBlocker("Computer", nil)
@@ -194,9 +249,21 @@ end
 function ComputerController:Init()
 	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.mouse = Players.LocalPlayer:GetMouse()
-	self.computer = Workspace:WaitForChild("Work"):WaitForChild("Ordi")
-	self.surfaceGui = self.computer:WaitForChild("Gui"):WaitForChild("Computer"):WaitForChild("SurfaceGui") :: SurfaceGui
-	self.surfaceGui.Active = true
+	self.computer = Workspace:WaitForChild("Map")
+		:WaitForChild("Slot1")
+		:WaitForChild("Work")
+		:WaitForChild("Utilities")
+		:WaitForChild("Ordi")
+	self.buttonModel = self.computer:WaitForChild("Button")
+	self.coreModel = self.computer:WaitForChild("Core"):WaitForChild("Model") :: BasePart
+	self.postitModel = self.computer:WaitForChild("Postit")
+	self.computerGui = self.computer:WaitForChild("Gui")
+	self.computerModel = self.computerGui:WaitForChild("Computer") :: BasePart
+	self.computerModel.CanQuery = false
+	self.screenModel = self.computer:WaitForChild("Ecran"):WaitForChild("Model") :: BasePart
+	self.screenModel.CanQuery = true
+	self.surfaceGui = self.computerModel:WaitForChild("SurfaceGui") :: SurfaceGui
+	self.surfaceGui.Active = false
 	self.frame = self.surfaceGui:WaitForChild("Frame") :: Frame
 	self.header = self.frame:WaitForChild("Header") :: Frame
 	self.pageFrame = self.frame:WaitForChild("PageFrame")
@@ -238,22 +305,42 @@ function ComputerController:Init()
 	self.baseComputerCashTextColor = self.cashText.TextColor3
 
 	self.surfaceGui.Enabled = true
-	self.frame.Visible = false
+	self.frame.Visible = true
 	self.homeFrame.Visible = false
 	self.indexFrame.Visible = false
 	self.sellFrame.Visible = false
 	self.upgradesFrame.Visible = false
 	self.shopFrame.Visible = false
-	for _, Button in ipairs({ self.homeButton, self.indexButton, self.sellNavButton, self.upgradesButton, self.shopButton }) do
+	for _, Button in ipairs({
+		self.homeButton,
+		self.indexButton,
+		self.sellNavButton,
+		self.upgradesButton,
+		self.shopButton,
+	}) do
 		CaptureNavigationDefaults(self, Button)
 	end
-	Shared.AnimateButton(self.exitButton, function() return false end)
-	Shared.AnimateButton(self.homeButton, function() return self.activePage == "Home" end)
-	Shared.AnimateButton(self.indexButton, function() return self.activePage == "Index" end)
-	Shared.AnimateButton(self.sellNavButton, function() return self.activePage == "Sell" end)
-	Shared.AnimateButton(self.upgradesButton, function() return self.activePage == "Upgrades" end)
-	Shared.AnimateButton(self.shopButton, function() return self.activePage == "Shop" end)
-	for _, Application in ipairs(Applications) do Application.Init(self) end
+	Shared.AnimateButton(self.exitButton, function()
+		return false
+	end)
+	Shared.AnimateButton(self.homeButton, function()
+		return self.activePage == "Home"
+	end)
+	Shared.AnimateButton(self.indexButton, function()
+		return self.activePage == "Index"
+	end)
+	Shared.AnimateButton(self.sellNavButton, function()
+		return self.activePage == "Sell"
+	end)
+	Shared.AnimateButton(self.upgradesButton, function()
+		return self.activePage == "Upgrades"
+	end)
+	Shared.AnimateButton(self.shopButton, function()
+		return self.activePage == "Shop"
+	end)
+	for _, Application in ipairs(Applications) do
+		Application.Init(self)
+	end
 	self:SetPage("Home")
 	self:SyncHeader()
 	self:SetDisplayedComputerCash(RemoteManager:InvokeServer("CashService", "GetCash"))
@@ -261,22 +348,47 @@ function ComputerController:Init()
 end
 
 function ComputerController:Start()
-	for _, Application in ipairs(Applications) do Application.Start(self) end
+	for _, Application in ipairs(Applications) do
+		Application.Start(self)
+	end
 	RunService.RenderStepped:Connect(function()
-		if self:IsOpen() then self:SyncHeader() end
+		if self:IsOpen() then
+			self:SyncHeader()
+		end
 		self:UpdateHoveredComputer()
 	end)
-	RemoteManager:OnClientEvent("CashService", "CashUpdated", function(Value) self:AnimateComputerCashTo(Value) end)
+	RemoteManager:OnClientEvent("CashService", "CashUpdated", function(Value)
+		self:AnimateComputerCashTo(Value)
+	end)
 	UserInputService.InputBegan:Connect(function(Input, Processed)
-		if Processed or not self:CanOpen() or Input.UserInputType ~= Enum.UserInputType.MouseButton1 or not self.hoveredComputer then return end
+		if
+			Processed
+			or not self:CanOpen()
+			or Input.UserInputType ~= Enum.UserInputType.MouseButton1
+			or not self.hoveredComputer
+		then
+			return
+		end
 		self:Open()
 	end)
-	self.exitButton.Activated:Connect(function() self:Close() end)
-	self.homeButton.Activated:Connect(function() self:SetPage("Home") end)
-	self.indexButton.Activated:Connect(function() self:SetPage("Index") end)
-	self.sellNavButton.Activated:Connect(function() self:SetPage("Sell") end)
-	self.upgradesButton.Activated:Connect(function() self:SetPage("Upgrades") end)
-	self.shopButton.Activated:Connect(function() self:SetPage("Shop") end)
+	self.exitButton.Activated:Connect(function()
+		self:Close()
+	end)
+	self.homeButton.Activated:Connect(function()
+		self:SetPage("Home")
+	end)
+	self.indexButton.Activated:Connect(function()
+		self:SetPage("Index")
+	end)
+	self.sellNavButton.Activated:Connect(function()
+		self:SetPage("Sell")
+	end)
+	self.upgradesButton.Activated:Connect(function()
+		self:SetPage("Upgrades")
+	end)
+	self.shopButton.Activated:Connect(function()
+		self:SetPage("Shop")
+	end)
 end
 
 return ComputerController

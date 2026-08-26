@@ -68,6 +68,7 @@ function Toolruntime:Destroy()
 	if Definition and Definition.OnDeselected then Definition.OnDeselected(self:Context()) end
 	self.Cleaning = false
 	self.Display:Destroy()
+	self.SelectedName = "Transform"
 end
 
 return Toolruntime

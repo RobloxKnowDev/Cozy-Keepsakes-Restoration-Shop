@@ -45,11 +45,15 @@ local Dirtsurfacenames = {
 	UiBack = true,
 }
 local Dirttools = { CottonTip = true, ToothBrush = true }
+local Dirttoolpower = { CottonTip = 1, ToothBrush = 1.2 }
 local Spothealth = { Sticker = 3 }
 local Toolpower = { CottonTip = 1, HeatGun = 1, Polish = 1, Solvent = 1, ToothBrush = 1, Tweezers = 1 }
 local Toolsforspot = { Sticker = "Tweezers" }
 
 type RestorationObject = Model | BasePart
+
+local Slot: Folder
+local Generateditems: Folder
 
 type ObjectMaximums = {
 	MaxValue: number,
@@ -116,7 +120,7 @@ local function Validsessionspot(Player: Player, Spot: any): (RestorationObject?,
 end
 
 local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximums?): RestorationObject
-	local Spawnattachment = Workspace:WaitForChild("Spawn") :: Attachment
+	local Spawnattachment = Slot:WaitForChild("Spawn") :: Attachment
 	local Definition = Config.Object[Objectname]
 	local Asset = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object"):WaitForChild(Objectname)
 	local Object = Asset:Clone() :: RestorationObject
@@ -134,7 +138,7 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 	Object:SetAttribute("Rarity", Definition.Rarity or Definition.Rarety or "Common")
 	Object:SetAttribute("ImageId", Definition.IdImage or "")
 	Object:SetAttribute("MaxReputation", Maxreputation)
-	Object.Parent = Workspace
+	Object.Parent = Generateditems
 	if Object:IsA("Model") then
 		Object:PivotTo(Spawnattachment.WorldCFrame)
 	else
@@ -355,6 +359,10 @@ function Restorationservice:HasActiveObject(): boolean
 end
 
 function Restorationservice:Init()
+	Slot = Workspace:WaitForChild("Map"):WaitForChild("Slot1") :: Folder
+	Generateditems = Instance.new("Folder")
+	Generateditems.Name = "GeneratedItems"
+	Generateditems.Parent = Slot
 	Remotemanager:OnServerInvoke(self.Name, "BeginSession", function(Player)
 		local Object = Activeobject
 		if not Object or not Object.Parent then
@@ -556,7 +564,7 @@ function Restorationservice:Init()
 			if math.abs(Row - Targetrow) <= 1 and math.abs(Column - Targetcolumn) <= 1 then
 				local Image = Dirtframe:WaitForChild(tostring(Index))
 				assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
-				local Power = if Index == Targetindex then Dirtcenterpower else Dirtneighborpower
+				local Power = (if Index == Targetindex then Dirtcenterpower else Dirtneighborpower) * Dirttoolpower[Toolname]
 				local Transparency = math.clamp(Image.ImageTransparency + Power, 0, 1)
 				Removeddirt += Transparency - Image.ImageTransparency
 				Image.ImageTransparency = Transparency

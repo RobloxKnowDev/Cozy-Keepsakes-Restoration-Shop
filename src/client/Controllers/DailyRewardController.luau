@@ -145,6 +145,9 @@ function DailyRewardController:Claim()
 	if Result and Result.Success then
 		self.days[Result.Day].ClaimedFrame.Visible = true
 		self.days[Result.Day].Text.Text = "CLAIMED"
+		Core:GetController("FeedbackController"):Success(self.days[Result.Day].ClaimedFrame, Result.RewardType == "Object")
+		Core:GetController("FeedbackController"):FloatingText(self.frame, "REWARD CLAIMED", Color3.fromRGB(255, 214, 122))
+		Core:GetController("FeedbackController"):PlaySound("DailyReward", 0.2)
 		if Result.RewardType == "Object" and Result.ObjectReady then self:StartObjectReward() end
 	end
 end

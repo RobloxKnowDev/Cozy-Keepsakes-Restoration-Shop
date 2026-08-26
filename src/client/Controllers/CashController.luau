@@ -3,6 +3,7 @@ local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
 local Tweenservice = game:GetService("TweenService")
 
+local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Abbreviatenumber = require(Replicatedstorage.Shared.Utils.NumberAbbreviator)
 
@@ -44,6 +45,11 @@ function Cashcontroller:AnimateCashTo(TargetValue: number)
 	local Animationid = self.animationId
 	local Starttime = os.clock()
 	local Targetcolor = Delta > 0 and Gaincolor or Losscolor
+	if Delta > 0 then
+		self.feedback:FloatingText(self.cashFrame, "+$" .. Abbreviatenumber(math.abs(Delta)), Targetcolor)
+		self.feedback:Burst(self.cashFrame, Gaincolor, math.clamp(math.floor(math.log10(math.abs(Delta) + 1) * 3), 4, 12))
+		self.feedback:PlaySound("CashGain", 0.12, 1 + math.clamp(math.log10(math.abs(Delta) + 1) * 0.025, 0, 0.12))
+	end
 
 	Tweenservice:Create(self.cashScale, Pulseinfo, {
 		Scale = 1.08,
@@ -79,7 +85,8 @@ end
 function Cashcontroller:Init()
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	local Hud = Playergui:WaitForChild("HUD")
-	self.cashText = Hud:WaitForChild("CashFrame"):WaitForChild("CashText")
+	self.cashFrame = Hud:WaitForChild("CashFrame")
+	self.cashText = self.cashFrame:WaitForChild("CashText")
 	self.cashScale = EnsureScale(self.cashText)
 	self.baseTextColor = self.cashText.TextColor3
 	self.displayedCash = 0
@@ -87,6 +94,7 @@ function Cashcontroller:Init()
 end
 
 function Cashcontroller:Start()
+	self.feedback = Core:GetController("FeedbackController")
 	self:SetDisplayedCash(Remotemanager:InvokeServer("CashService", "GetCash"))
 	Remotemanager:OnClientEvent("CashService", "CashUpdated", function(Value)
 		self:AnimateCashTo(Value)

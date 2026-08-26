@@ -83,9 +83,9 @@ local function Showcompletion()
 	end)
 end
 
-local function Updateprogress()
+local function Updateprogress(InteractionPosition: Vector2?)
 	if Activeobject then
-		Core:GetController("ProgressController"):Update(Activeobject)
+		Core:GetController("ProgressController"):Update(Activeobject, InteractionPosition)
 	end
 end
 
@@ -159,16 +159,19 @@ function Controller:Start()
 		if Input.UserInputType == Enum.UserInputType.MouseButton1 then Runtime:InputBegan() end
 	end)
 	Userinputservice.InputEnded:Connect(function(Input)
+		if not Activeobject or Core:GetController("CompletionController"):IsVisible() then return end
 		if Input.UserInputType == Enum.UserInputType.MouseButton1 then Runtime:InputEnded() end
 	end)
 	Runservice.RenderStepped:Connect(function(Deltatime)
 		if self.pendingEnter then self:Enter() end
-		local Mouse = Userinputservice:GetMouseLocation()
+		local ScreenMouse = Userinputservice:GetMouseLocation()
+		local Mouse = ScreenMouse
 		if not Interface.Hud.IgnoreGuiInset then Mouse -= Guiservice:GetGuiInset() end
 		Interface.Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y)
 		if not Activeobject or Core:GetController("CompletionController"):IsVisible() then return end
+		Interface.Cursor.Visible = true
 		Runtime:Update(Deltatime)
-		Updateprogress()
+		Updateprogress(ScreenMouse)
 	end)
 end
 

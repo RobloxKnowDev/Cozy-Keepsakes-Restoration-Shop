@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
@@ -7,6 +8,12 @@ local Shared = require(script.Parent.Shared)
 local Sell = {}
 local GainColor = Color3.fromRGB(126, 255, 145)
 local LossColor = Color3.fromRGB(255, 138, 138)
+
+local function Formatreputation(Value: number): string
+	local Rounded = math.round(Value * 100) / 100
+	if math.abs(Rounded - math.round(Rounded)) < 0.005 then return tostring(math.round(Rounded)) end
+	return string.format("%.2f", Rounded)
+end
 
 function Sell.ShowDetails(Controller, Item)
 	Controller.sellDetailsFrame.Visible = true
@@ -17,6 +24,7 @@ function Sell.ShowDetails(Controller, Item)
 		Controller.sellDetailsRarityText.Text = "-"
 		Controller.sellDetailsRarityText.TextColor3 = Color3.fromRGB(255, 255, 255)
 		Controller.sellDetailsRestorationText.Text = "0%"
+		Controller.sellDetailsReputationText.Text = "0"
 		Controller.sellDetailsValueText.Text = "$0"
 		Controller.sellDetailsProfitText.Text = "$0"
 		Controller.sellDetailsProfitText.TextColor3 = Controller.sellDetailBaseProfitTextColor
@@ -35,6 +43,7 @@ function Sell.ShowDetails(Controller, Item)
 	Controller.sellDetailsRarityText.Text = Rarity.Name
 	Controller.sellDetailsRarityText.TextColor3 = Rarity.Color
 	Controller.sellDetailsRestorationText.Text = string.format("%d%%", Item.RestorationPercent or 0)
+	Controller.sellDetailsReputationText.Text = Formatreputation(tonumber(Item.Reputation) or 0)
 	Controller.sellDetailsValueText.Text = Shared.FormatCurrency(Item.CurrentValue or 0)
 	Controller.sellDetailsProfitText.Text = Shared.FormatProfit(Profit)
 	Controller.sellDetailsProfitText.TextColor3 = if Profit > 0 then GainColor elseif Profit < 0 then LossColor else Controller.sellDetailBaseProfitTextColor
@@ -63,7 +72,10 @@ function Sell.ApplyItems(Controller, Items)
 		RootButton.Activated:Connect(function() Sell.ShowDetails(Controller, Item) end)
 		SellButton.Activated:Connect(function()
 			local Sold = RemoteManager:InvokeServer("InventoryService", "SellRestoredItem", Item.Id)
-			if Sold and Controller.selectedRestoredItemId == Item.Id then Controller.selectedRestoredItemId = nil end
+			if Sold then
+				Core:GetController("FeedbackController"):Sale(tostring(Sold.Name or "ITEM"), tonumber(Sold.CurrentValue) or 0)
+				if Controller.selectedRestoredItemId == Item.Id then Controller.selectedRestoredItemId = nil end
+			end
 		end)
 		RootButton:WaitForChild("NameText").Text = tostring(Item.Name or "")
 		RootButton:WaitForChild("PriceText").Text = Shared.FormatCurrency(Item.CurrentValue or 0)
@@ -87,6 +99,7 @@ function Sell.Init(Controller)
 	Controller.sellDetailsBoughtText = Controller.sellDetailsFrame:WaitForChild("BoughtText")
 	Controller.sellDetailsRarityText = Controller.sellDetailsFrame:WaitForChild("RarityText")
 	Controller.sellDetailsRestorationText = Controller.sellDetailsFrame:WaitForChild("RestorationText")
+	Controller.sellDetailsReputationText = Controller.sellDetailsFrame:WaitForChild("ReputationText")
 	Controller.sellDetailsValueText = Controller.sellDetailsFrame:WaitForChild("ValueText")
 	Controller.sellDetailsProfitText = Controller.sellDetailsFrame:WaitForChild("ProfitText")
 	Controller.sellDetailsIcon = Controller.sellDetailsFrame:WaitForChild("Icon")
@@ -105,8 +118,11 @@ function Sell.Start(Controller)
 	end)
 	RemoteManager:OnClientEvent("InventoryService", "RestoredItemsUpdated", function(Items) Sell.ApplyItems(Controller, Items) end)
 	Controller.sellAllButton.Activated:Connect(function()
-		RemoteManager:InvokeServer("InventoryService", "SellAllRestoredItems")
-		Controller.selectedRestoredItemId = nil
+		local Result = RemoteManager:InvokeServer("InventoryService", "SellAllRestoredItems")
+		if Result and Result.Count > 0 then
+			Core:GetController("FeedbackController"):Sale("ITEMS", tonumber(Result.TotalValue) or 0, Result.Count)
+			Controller.selectedRestoredItemId = nil
+		end
 	end)
 end
 

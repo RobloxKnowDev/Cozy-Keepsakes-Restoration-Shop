@@ -47,7 +47,7 @@ function Hudcustomercontroller:Init()
 	local Hud = Playergui:WaitForChild("HUD")
 	self.customerFrame = Hud:WaitForChild("CustomerFrame") :: GuiObject
 	self.customerText = self.customerFrame:WaitForChild("CustomerText") :: TextLabel
-	self.cameraPart = Workspace:WaitForChild("CamPart") :: BasePart
+	self.cameraPart = Workspace:WaitForChild("Map"):WaitForChild("Slot1"):WaitForChild("Camera"):WaitForChild("CamPart") :: BasePart
 
 	Lighting:GetAttributeChangedSignal("CustomersToday"):Connect(function()
 		self:UpdateCustomerText()

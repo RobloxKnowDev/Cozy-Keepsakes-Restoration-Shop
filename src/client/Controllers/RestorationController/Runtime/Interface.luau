@@ -112,6 +112,27 @@ function Interface:ShowIntro()
 	self.Cursor.Visible = true
 end
 
+function Interface:IsPointerOverUi(Position: Vector2): boolean
+	for _, Item in ipairs({
+		self.FrameTool,
+		self.TransformFrame,
+		self.ProgressFrame,
+		self.PercentFrame,
+		self.ReturnButton,
+		self.ProgressText,
+		self.ContinueButton,
+	}) do
+		if Item.Visible then
+			local Minimum = Item.AbsolutePosition
+			local Maximum = Minimum + Item.AbsoluteSize
+			if Position.X >= Minimum.X and Position.Y >= Minimum.Y and Position.X <= Maximum.X and Position.Y <= Maximum.Y then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 function Interface:HideForCompletion()
 	for _, Item in ipairs({
 		self.FrameTool,

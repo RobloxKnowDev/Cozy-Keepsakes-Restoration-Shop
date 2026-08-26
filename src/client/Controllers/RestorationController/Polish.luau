@@ -7,10 +7,11 @@ local Polish = {
 	AssetName = "Polish",
 }
 
-local Restheight = 1.15
-local Contactheight = 0.025
+local Sizescale = 2.5
+local Restheight = 1.15 / Sizescale
+local Contactheight = 0.025 / Sizescale
 local Pourinterval = 0.055
-local Minpuddledistance = 0.38
+local Minpuddledistance = 0.38 / Sizescale
 
 local Currentheight = Restheight
 local Lastpourtime = 0
@@ -40,7 +41,7 @@ local function Depositliquid(
 	local Puddle = Instance.new("Part")
 	Puddle.Name = "PolishDrop"
 	Puddle.Shape = Enum.PartType.Cylinder
-	Puddle.Size = Vector3.new(0.012, Diameter * 1.1, Diameter * 0.9)
+	Puddle.Size = Vector3.new(0.012, Diameter * 1.1, Diameter * 0.9) / Sizescale
 	Puddle.Color = Color3.fromRGB(226, 194, 111)
 	Puddle.Material = Enum.Material.SmoothPlastic
 	Puddle.Transparency = 0.65
@@ -56,7 +57,7 @@ local function Depositliquid(
 		Tangent = Normal:Cross(Vector3.xAxis)
 	end
 	Tangent = Tangent.Unit
-	Puddle.CFrame = CFrame.fromMatrix(Surfaceposition + Normal * 0.009, Normal, Tangent)
+	Puddle.CFrame = CFrame.fromMatrix(Surfaceposition + Normal * (0.009 / Sizescale), Normal, Tangent)
 		* CFrame.Angles(math.rad(math.random(0, 359)), 0, 0)
 	Puddle.Parent = Liquidfolder(Object)
 
@@ -70,7 +71,7 @@ function Polish.GetDisplayCFrame(Context): CFrame
 	local Goalheight = Context.IsUsing and Contactheight or Restheight
 	local Alpha = 1 - math.exp(-14 * Context.DeltaTime)
 	Currentheight += (Goalheight - Currentheight) * Alpha
-	Tiptouching = Context.IsUsing and Currentheight <= Contactheight + 0.045
+	Tiptouching = Context.IsUsing and Currentheight <= Contactheight + 0.045 / Sizescale
 
 	local Contact = Context.SurfacePosition + Context.SurfaceNormal * Currentheight
 	return CFrame.new(Contact) * CFrame.Angles(math.rad(180), math.rad(10), math.rad(90))

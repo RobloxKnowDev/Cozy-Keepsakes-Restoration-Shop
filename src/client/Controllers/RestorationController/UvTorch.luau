@@ -10,6 +10,7 @@ local Uvtorch = {
 
 local Uvcolor = Color3.fromRGB(100, 11, 255)
 local Normalcolor = Color3.fromRGB(255, 255, 255)
+local Sizescale = 2.5
 local Glowingimages: { [ImageLabel]: boolean } = {}
 
 local function Stopglowing(Image: ImageLabel)
@@ -30,7 +31,7 @@ end
 
 function Uvtorch.GetDisplayCFrame(Context): CFrame
 	local Target = Context.SurfacePosition
-	local Torchposition = Target + Vector3.new(0, 2.4, 0)
+	local Torchposition = Target + Vector3.new(0, 2.4 / Sizescale, 0)
 	return CFrame.lookAt(Torchposition, Target, Context.Camera.CFrame.RightVector) * CFrame.Angles(0, math.rad(90), 0)
 end
 

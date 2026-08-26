@@ -298,7 +298,7 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 end
 
 function Expositionservice:Init()
-	local Etagere = Workspace:WaitForChild("Work"):WaitForChild("Etagere")
+	local Etagere = Workspace:WaitForChild("Map"):WaitForChild("Slot1"):WaitForChild("Work"):WaitForChild("Utilities"):WaitForChild("Etagere")
 	local Slots = Etagere:WaitForChild("Slots")
 	for Slotindex = 1, 9 do
 		Slotattachments[Slotindex] = Slots:WaitForChild(tostring(Slotindex)) :: Attachment

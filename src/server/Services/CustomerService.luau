@@ -21,6 +21,7 @@ local Customerservice = {
 
 local QueueFolderName = "SpawnCustomer"
 local TurnTweenDuration = 0.35
+local SlotTurnDegrees = -90
 type CustomerOffer = {
 	Id: number,
 	ObjectKey: string,
@@ -100,7 +101,7 @@ local function CollectQueueAttachments()
 	table.clear(QueueIndexes)
 	HighestQueueIndex = 0
 
-	local Folder = Workspace:WaitForChild(QueueFolderName)
+	local Folder = Workspace:WaitForChild("Map"):WaitForChild("Slot1"):WaitForChild(QueueFolderName)
 
 	for _, Child in ipairs(Folder:GetChildren()) do
 		if Child:IsA("Attachment") then
@@ -118,7 +119,6 @@ local function CollectQueueAttachments()
 	table.sort(QueueIndexes, function(Left, Right)
 		return Left > Right
 	end)
-
 end
 
 local function CollectOfferObjects()
@@ -142,11 +142,6 @@ local function GetTargetCFrame(Attachment: Attachment): CFrame
 	return Attachment.WorldCFrame
 end
 
-local function GetPivotWithPosition(Pivot: CFrame, Position: Vector3): CFrame
-	local _, _, _, R00, R01, R02, R10, R11, R12, R20, R21, R22 = Pivot:GetComponents()
-	return CFrame.new(Position.X, Position.Y, Position.Z, R00, R01, R02, R10, R11, R12, R20, R21, R22)
-end
-
 local function FacePosition(Customer: Model, Position: Vector3)
 	local Pivot = Customer:GetPivot()
 	local CurrentPosition = Pivot.Position
@@ -159,38 +154,28 @@ local function FacePosition(Customer: Model, Position: Vector3)
 	Customer:PivotTo(CFrame.lookAt(CurrentPosition, FlatTarget))
 end
 
-local function TweenCustomerFacing(Customer: Model, TargetCFrame: CFrame, Duration: number): (() -> ())?
-	local RotationValue = Instance.new("CFrameValue")
-	RotationValue.Value = Customer:GetPivot()
-
-	local Connection = RotationValue:GetPropertyChangedSignal("Value"):Connect(function()
-		if not Customer.Parent then
-			return
+local function TweenCustomerTurn(Customer: Model, Degrees: number, Duration: number, OnComplete: (() -> ())?)
+	local StartCFrame = Customer:GetPivot()
+	local Angle = Instance.new("NumberValue")
+	local Connection = Angle:GetPropertyChangedSignal("Value"):Connect(function()
+		if Customer.Parent then
+			Customer:PivotTo(StartCFrame * CFrame.Angles(0, math.rad(Angle.Value), 0))
 		end
-
-		Customer:PivotTo(GetPivotWithPosition(RotationValue.Value, Customer:GetPivot().Position))
 	end)
-
-	local Tween = TweenService:Create(RotationValue, TweenInfo.new(Duration, Enum.EasingStyle.Linear), {
-		Value = TargetCFrame,
+	local Tween = TweenService:Create(Angle, TweenInfo.new(Duration, Enum.EasingStyle.Linear), {
+		Value = Degrees,
 	})
-	Tween:Play()
-
-	return function()
-		Tween:Cancel()
+	Tween.Completed:Once(function()
 		Connection:Disconnect()
-		RotationValue:Destroy()
-	end
-end
-
-local function TweenCustomerTurn(Customer: Model, Degrees: number, Duration: number)
-	local TargetCFrame = Customer:GetPivot() * CFrame.Angles(0, math.rad(Degrees), 0)
-	local StopTween = TweenCustomerFacing(Customer, TargetCFrame, Duration)
-	task.delay(Duration, function()
-		if StopTween then
-			StopTween()
+		if Customer.Parent then
+			Customer:PivotTo(StartCFrame * CFrame.Angles(0, math.rad(Degrees), 0))
+			if OnComplete then
+				OnComplete()
+			end
 		end
+		Angle:Destroy()
 	end)
+	Tween:Play()
 end
 
 local function CreateCustomerInstance(): Model
@@ -237,17 +222,27 @@ local function MoveCustomerTo(Customer: Model, Attachment: Attachment, OnComplet
 	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
 	local ShouldTurnAtArrival = Attachment.Name == "1"
 	Customer:SetAttribute("ArrivedAtSlot1", false)
-	if not Humanoid then
-		warn(string.format("CustomerService: %s n'a pas de Humanoid, déplacement instantané utilisé", Customer.Name))
+	local function FinishArrival()
 		Customer:PivotTo(GetTargetCFrame(Attachment))
-		if ShouldTurnAtArrival then
-			TweenCustomerTurn(Customer, 90, TurnTweenDuration)
-			Customer:SetAttribute("TurnedAtSlot1", true)
-			MarkCustomerArrivedAtSlot1(Customer)
+		if Humanoid then
+			Humanoid:Move(Vector3.zero)
+			Humanoid.AutoRotate = not ShouldTurnAtArrival
 		end
-		if OnComplete then
+		if ShouldTurnAtArrival then
+			TweenCustomerTurn(Customer, SlotTurnDegrees, TurnTweenDuration, function()
+				Customer:SetAttribute("TurnedAtSlot1", true)
+				MarkCustomerArrivedAtSlot1(Customer)
+				if OnComplete then
+					OnComplete()
+				end
+			end)
+		elseif OnComplete then
 			OnComplete()
 		end
+	end
+	if not Humanoid then
+		warn(string.format("CustomerService: %s n'a pas de Humanoid, déplacement instantané utilisé", Customer.Name))
+		FinishArrival()
 		return
 	end
 
@@ -260,39 +255,18 @@ local function MoveCustomerTo(Customer: Model, Attachment: Attachment, OnComplet
 		task.spawn(function()
 			local Reached = false
 			local Connection
-			Connection = Humanoid.MoveToFinished:Connect(function(DidReach)
+			Connection = Humanoid.MoveToFinished:Connect(function()
 				Reached = true
 				Connection:Disconnect()
-				if not DidReach and Customer.Parent then
-					Customer:PivotTo(GetTargetCFrame(Attachment))
-				end
-
 				if Customer.Parent then
-					Humanoid.AutoRotate = true
-					if ShouldTurnAtArrival then
-						TweenCustomerTurn(Customer, 90, TurnTweenDuration)
-						Customer:SetAttribute("TurnedAtSlot1", true)
-						MarkCustomerArrivedAtSlot1(Customer)
-					end
-				end
-				if OnComplete and Customer.Parent then
-					OnComplete()
+					FinishArrival()
 				end
 			end)
 
 			task.wait(4)
 			if not Reached and Customer.Parent then
 				Connection:Disconnect()
-				Customer:PivotTo(GetTargetCFrame(Attachment))
-				Humanoid.AutoRotate = true
-				if ShouldTurnAtArrival then
-					TweenCustomerTurn(Customer, 90, TurnTweenDuration)
-					Customer:SetAttribute("TurnedAtSlot1", true)
-					MarkCustomerArrivedAtSlot1(Customer)
-				end
-				if OnComplete then
-					OnComplete()
-				end
+				FinishArrival()
 			end
 		end)
 	end
@@ -398,14 +372,11 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer
 	local ObjectKey = ChooseObjectKey(Player)
 	local Definition = Objectconfig.Object[ObjectKey]
 
-	local Maxprice = math.max(tonumber(Definition.PriceMaxValue) or tonumber(Definition.MaxPrice) or tonumber(Definition.MaxValue) or 0, 0)
-	local Minprice = math.max(
-		math.min(
-			tonumber(Definition.PriceMinValue) or Maxprice,
-			Maxprice
-		),
+	local Maxprice = math.max(
+		tonumber(Definition.PriceMaxValue) or tonumber(Definition.MaxPrice) or tonumber(Definition.MaxValue) or 0,
 		0
 	)
+	local Minprice = math.max(math.min(tonumber(Definition.PriceMinValue) or Maxprice, Maxprice), 0)
 	OfferSerial += 1
 	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
 	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
@@ -427,7 +398,9 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer
 end
 
 function Customerservice:RefreshPendingOfferPrice(Player: Player)
-	if not PendingOffer then return end
+	if not PendingOffer then
+		return
+	end
 	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
 	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
 	local DiscountPercent = math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
@@ -442,16 +415,22 @@ local function AdvanceQueue()
 
 	local NewOccupiedSlots: { [number]: Model } = {}
 	local FrontCustomer = OccupiedSlots[1]
-	local QueueDelay = 0
+	local QueueReady = true
+	local QueuedMoves: { () -> () } = {}
 	if FrontCustomer and FrontCustomer:GetAttribute("TurnedAtSlot1") == true then
 		FrontCustomer:SetAttribute("TurnedAtSlot1", false)
-		TweenCustomerTurn(FrontCustomer, -90, TurnTweenDuration)
-		QueueDelay = TurnTweenDuration
+		QueueReady = false
+		TweenCustomerTurn(FrontCustomer, -SlotTurnDegrees, TurnTweenDuration, function()
+			QueueReady = true
+			for _, Callback in ipairs(QueuedMoves) do
+				Callback()
+			end
+		end)
 	end
 
 	local function StartQueueMove(Callback: () -> ())
-		if QueueDelay > 0 then
-			task.delay(QueueDelay, Callback)
+		if not QueueReady then
+			table.insert(QueuedMoves, Callback)
 			return
 		end
 		Callback()
@@ -505,9 +484,7 @@ end
 
 local function CanPresentOffer(): boolean
 	local Restorationservice = Core:GetService("RestorationService")
-	return not PendingOffer
-		and not Restorationservice:HasActiveSession()
-		and not Restorationservice:HasActiveObject()
+	return not PendingOffer and not Restorationservice:HasActiveSession() and not Restorationservice:HasActiveObject()
 end
 
 PresentFrontOffer = function()
@@ -561,7 +538,8 @@ function Customerservice:Init()
 
 	Remotemanager:OnServerInvoke(self.Name, "RespondToOffer", function(Player, OfferId, Decision)
 		local FrontCustomer = GetFrontCustomer()
-		if not PendingOffer
+		if
+			not PendingOffer
 			or PendingOffer.Id ~= OfferId
 			or not FrontCustomer
 			or FrontCustomer:GetAttribute("ArrivedAtSlot1") ~= true
@@ -605,25 +583,25 @@ function Customerservice:Init()
 			}
 		end
 
-	if NormalizedDecision == "decline" then
-		local ExitAttachment = AttachmentsByIndex[0]
-		OccupiedSlots[1] = nil
-		FrontCustomer:SetAttribute("IsFrontCustomer", false)
-		FrontCustomer:SetAttribute("ArrivedAtSlot1", false)
-		RefreshFrontCustomerAttribute()
-		ClearPendingOffer()
-		if ExitAttachment then
-			MoveCustomerTo(FrontCustomer, ExitAttachment, function()
+		if NormalizedDecision == "decline" then
+			local ExitAttachment = AttachmentsByIndex[0]
+			OccupiedSlots[1] = nil
+			FrontCustomer:SetAttribute("IsFrontCustomer", false)
+			FrontCustomer:SetAttribute("ArrivedAtSlot1", false)
+			RefreshFrontCustomerAttribute()
+			ClearPendingOffer()
+			if ExitAttachment then
+				MoveCustomerTo(FrontCustomer, ExitAttachment, function()
+					DespawnCustomer(FrontCustomer)
+				end)
+			else
 				DespawnCustomer(FrontCustomer)
-			end)
-		else
-			DespawnCustomer(FrontCustomer)
+			end
+			AdvanceQueue()
+			return {
+				Success = true,
+			}
 		end
-		AdvanceQueue()
-		return {
-			Success = true,
-		}
-	end
 
 		return {
 			Success = false,
@@ -637,10 +615,7 @@ function Customerservice:RefreshCustomerLimit()
 	if HighestQueueIndex <= 0 or not AttachmentsByIndex[0] then
 		return
 	end
-	if IsBusinessHours()
-		and CanSpawnMoreCustomersToday()
-		and not OccupiedSlots[HighestQueueIndex]
-	then
+	if IsBusinessHours() and CanSpawnMoreCustomersToday() and not OccupiedSlots[HighestQueueIndex] then
 		SpawnCustomerAt(HighestQueueIndex)
 	end
 end

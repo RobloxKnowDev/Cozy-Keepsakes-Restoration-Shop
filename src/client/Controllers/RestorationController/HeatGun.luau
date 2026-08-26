@@ -7,7 +7,8 @@ local Heatgun = {
 	AssetName = "HeatGun",
 }
 
-local Cleanradius = 1.25
+local Sizescale = 2.5
+local Cleanradius = 1.25 / Sizescale
 local Liquidfolders = { "SolventLiquid", "PolishLiquid" }
 
 local function Setemitter(Context, Enabled: boolean)
@@ -36,7 +37,7 @@ end
 
 function Heatgun.GetDisplayCFrame(Context): CFrame
 	local Target = Context.SurfacePosition
-	local Heatgunposition = Target + Context.SurfaceNormal * 2.4
+	local Heatgunposition = Target + Context.SurfaceNormal * (2.4 / Sizescale)
 	return CFrame.lookAt(Heatgunposition, Target, Context.Camera.CFrame.RightVector) * CFrame.Angles(0, math.rad(90), 0)
 end
 

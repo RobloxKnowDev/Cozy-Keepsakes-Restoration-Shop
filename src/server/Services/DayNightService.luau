@@ -37,6 +37,7 @@ end
 function Daynightservice:Init()
 	self.Starttime = Workspace:GetServerTimeNow()
 	Lighting:SetAttribute("Day", 1)
+	Lighting:SetAttribute("DayCycleStartTime", self.Starttime)
 	Lighting.ClockTime = Config.StartClockTime
 end
 
@@ -45,6 +46,7 @@ function Daynightservice:SkipToNextDayStart(): boolean
 	local Elapsed = Currenttime - self.Starttime
 	local Targetelapsed = (math.floor(Elapsed / Config.DayDuration) + 1) * Config.DayDuration
 	self.Starttime = Currenttime - Targetelapsed
+	Lighting:SetAttribute("DayCycleStartTime", self.Starttime)
 	Lighting.ClockTime = Config.DayStartHour
 
 	local Day = Getday(Targetelapsed)
