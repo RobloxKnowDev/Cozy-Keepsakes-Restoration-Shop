@@ -1,4 +1,5 @@
 local Guiservice = game:GetService("GuiService")
+local Gamepadservice = game:GetService("GamepadService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
@@ -44,6 +45,16 @@ local function Disableplayercontrols()
 	local Playermodule = Playerscripts:WaitForChild("PlayerModule")
 	local Controls = require(Playermodule):GetControls()
 	Controls:Disable()
+
+	if Userinputservice.TouchEnabled then
+		Userinputservice.ModalEnabled = true
+		local Playergui = Player:WaitForChild("PlayerGui")
+		local Touchgui = Playergui:FindFirstChild("TouchGui")
+		if Touchgui and Touchgui:IsA("ScreenGui") then Touchgui.Enabled = false end
+		Playergui.ChildAdded:Connect(function(Child)
+			if Child.Name == "TouchGui" and Child:IsA("ScreenGui") then Child.Enabled = false end
+		end)
+	end
 
 	if Player.Character then
 		task.spawn(Lockcharacter, Player.Character)
@@ -154,14 +165,25 @@ function Controller:Start()
 	Interface:ShowIntro()
 	Core:GetController("CompletionController"):Hide()
 	Userinputservice.MouseIconEnabled = true
+	Gamepadservice:DisableGamepadCursor()
 
 	Userinputservice.InputBegan:Connect(function(Input, Processed)
 		if Processed or not Activeobject or Core:GetController("CompletionController"):IsVisible() then return end
-		if Input.UserInputType == Enum.UserInputType.MouseButton1 then Runtime:InputBegan() end
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+			Runtime:InputBegan()
+		elseif Input.UserInputType == Enum.UserInputType.Touch then
+			Runtime:Update(0)
+			Runtime:InputBegan()
+		end
 	end)
 	Userinputservice.InputEnded:Connect(function(Input)
 		if not Activeobject or Core:GetController("CompletionController"):IsVisible() then return end
-		if Input.UserInputType == Enum.UserInputType.MouseButton1 then Runtime:InputEnded() end
+		if
+			Input.UserInputType == Enum.UserInputType.MouseButton1
+			or Input.UserInputType == Enum.UserInputType.Touch
+		then
+			Runtime:InputEnded()
+		end
 	end)
 	Runservice.RenderStepped:Connect(function(Deltatime)
 		if self.pendingEnter then self:Enter() end
@@ -169,8 +191,15 @@ function Controller:Start()
 		local Mouse = ScreenMouse
 		if not Interface.Hud.IgnoreGuiInset then Mouse -= Guiservice:GetGuiInset() end
 		Interface.Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y)
-		if not Activeobject or Core:GetController("CompletionController"):IsVisible() then return end
-		Interface.Cursor.Visible = true
+		local Isediting = Activeobject ~= nil and not Core:GetController("CompletionController"):IsVisible()
+		local Showgamepadcursor = Isediting and Userinputservice:GetLastInputType() == Enum.UserInputType.Gamepad1
+		if Showgamepadcursor and not Gamepadservice.GamepadCursorEnabled then
+			Gamepadservice:EnableGamepadCursor(nil)
+		elseif not Showgamepadcursor and Gamepadservice.GamepadCursorEnabled then
+			Gamepadservice:DisableGamepadCursor()
+		end
+		Interface.Cursor.Visible = Isediting and Userinputservice:GetLastInputType() ~= Enum.UserInputType.Touch
+		if not Isediting then return end
 		Runtime:Update(Deltatime)
 		Updateprogress(ScreenMouse)
 	end)

@@ -127,10 +127,8 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 	if Objectname == "Skate" then
 		local Objectcore = Object:WaitForChild("Core")
 		local Grip = Objectcore:WaitForChild("Grip")
-		local Wood = Objectcore:WaitForChild("Wood")
-		local Uitop = Wood:WaitForChild("UiTop") :: SurfaceGui
+		local Uitop = Grip:WaitForChild("UiTop") :: SurfaceGui
 		Uitop.AlwaysOnTop = false
-		Uitop.Parent = Grip
 	end
 	local Objectmaximums = Maximums or Generateobjectmaximums(Objectname)
 	local Maxvalue = Objectmaximums.MaxValue

@@ -15,6 +15,13 @@
       "$ignoreUnknownInstances": true
     },
 
+    "StarterGui": {
+      "$properties": {
+        "VirtualCursorMode": "Default"
+      },
+      "$ignoreUnknownInstances": true
+    },
+
     "StarterPlayer": {
       "StarterPlayerScripts": {
         "$path": "src/client",

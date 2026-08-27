@@ -1,5 +1,7 @@
+local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Tweenservice = game:GetService("TweenService")
+local Userinputservice = game:GetService("UserInputService")
 
 local Interface = {}
 Interface.__index = Interface
@@ -26,6 +28,8 @@ function Interface.new(Tools)
 	Self.ProgressFrame = Gui:WaitForChild("ProgressFrame")
 	Self.PercentFrame = Gui:WaitForChild("PercentFrame")
 	Self.Cursor = Hud:WaitForChild("CurseurFrame")
+	Self.Cursor.Visible = false
+	Self.Cursor.Active = false
 	Self.ProgressText = Gui:WaitForChild("Progress")
 	Self.ReturnButton = Gui:WaitForChild("ReturnButton")
 	Self.ContinueButton = Gui:WaitForChild("ContinueButton")
@@ -70,9 +74,20 @@ function Interface:Select(Name: string, Definition)
 end
 
 function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
+	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	self.Actions = {}
+	local Lastactivations: { [GuiButton]: number } = {}
+	local function Activate(Button: GuiButton)
+		local Callback = self.Actions[Button]
+		if not Callback then return end
+		local Now = os.clock()
+		if Lastactivations[Button] and Now - Lastactivations[Button] < 0.25 then return end
+		Lastactivations[Button] = Now
+		Callback()
+	end
 	for Name, Button in pairs(self.Buttons) do
 		Button.BackgroundTransparency = 0.7
-		Button.Activated:Connect(function() Selecttool(Name) end)
+		self.Actions[Button] = function() Selecttool(Name) end
 	end
 	for _, Button in ipairs({ self.TurnButton, self.LockButton, self.ReturnButton, self.ContinueButton }) do
 		Animate(Button)
@@ -83,13 +98,42 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 		self.LockImage.Visible, self.UnlockImage.Visible = Locked, not Locked
 		self.LockButton.BackgroundTransparency = 0
 	end
-	self.TurnButton.Activated:Connect(function() Locked = false Setmode("Rotate") Refreshlock() end)
-	self.LockButton.Activated:Connect(function() Locked = not Locked Setmode(Locked and "Locked" or "Rotate") Refreshlock() end)
-	self.ReturnButton.Activated:Connect(Flipobject)
-	self.ContinueButton.Activated:Connect(Continue)
+	self.Actions[self.TurnButton] = function() Locked = false Setmode("Rotate") Refreshlock() end
+	self.Actions[self.LockButton] = function() Locked = not Locked Setmode(Locked and "Locked" or "Rotate") Refreshlock() end
+	self.Actions[self.ReturnButton] = Flipobject
+	self.Actions[self.ContinueButton] = Continue
+	for Button in pairs(self.Actions) do
+		Button.Activated:Connect(function() Activate(Button) end)
+	end
+	local function Findbutton(Position: Vector2): GuiButton?
+		for _, Point in ipairs({ Position, Position - Guiservice:GetGuiInset() }) do
+			for _, Object in ipairs(Playergui:GetGuiObjectsAtPosition(Point.X, Point.Y)) do
+				local Current: Instance? = Object
+				while Current and Current ~= Playergui do
+					if self.Actions[Current] then return Current :: GuiButton end
+					Current = Current.Parent
+				end
+			end
+		end
+		return nil
+	end
+	local Pendingtouches: { [InputObject]: { Button: GuiButton, Position: Vector2 } } = {}
+	Userinputservice.InputBegan:Connect(function(Input)
+		if Input.UserInputType ~= Enum.UserInputType.Touch or not self.Gui.Enabled then return end
+		local Position = Vector2.new(Input.Position.X, Input.Position.Y)
+		local Button = Findbutton(Position)
+		if Button then Pendingtouches[Input] = { Button = Button, Position = Position } end
+	end)
+	Userinputservice.InputEnded:Connect(function(Input)
+		local Pending = Pendingtouches[Input]
+		if not Pending then return end
+		Pendingtouches[Input] = nil
+		local Position = Vector2.new(Input.Position.X, Input.Position.Y)
+		if (Position - Pending.Position).Magnitude <= 24 then Activate(Pending.Button) end
+	end)
 	self.Gui.Enabled = true
 	self.TransformFrame.Visible, self.ProgressFrame.Visible = false, false
-	self.Cursor.Visible, self.Cursor.AnchorPoint = true, Vector2.new(0.5, 0.5)
+	self.Cursor.Visible, self.Cursor.AnchorPoint = false, Vector2.new(0.5, 0.5)
 	Refreshlock()
 end
 
@@ -109,7 +153,7 @@ end
 function Interface:ShowIntro()
 	self.Gui.Enabled = true
 	self:HideForCompletion()
-	self.Cursor.Visible = true
+	self.Cursor.Visible = false
 end
 
 function Interface:IsPointerOverUi(Position: Vector2): boolean

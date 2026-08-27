@@ -1,3 +1,4 @@
+local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
@@ -22,6 +23,26 @@ local HighlightFillcolor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlinecolor = Color3.fromRGB(255, 255, 255)
 local ErrorMessageColor = Color3.fromRGB(255, 92, 92)
 local DisabledEstimateColor = Color3.fromRGB(115, 115, 115)
+local PointerRayOffsets = { Vector2.zero }
+local TouchRayOffsets = {
+	Vector2.zero,
+	Vector2.new(-36, 0),
+	Vector2.new(36, 0),
+	Vector2.new(0, -36),
+	Vector2.new(0, 36),
+	Vector2.new(-30, -30),
+	Vector2.new(30, -30),
+	Vector2.new(-30, 30),
+	Vector2.new(30, 30),
+	Vector2.new(-52, 0),
+	Vector2.new(52, 0),
+	Vector2.new(0, -52),
+	Vector2.new(0, 52),
+}
+
+local function Isgamepad(Inputtype: Enum.UserInputType): boolean
+	return Inputtype == Enum.UserInputType.Gamepad1
+end
 
 local function Formatcurrency(Value: number): string
 	local Rounded = math.round(Value * 100) / 100
@@ -110,18 +131,6 @@ local function EnsureScale(Target: Instance): UIScale
 	return Scale
 end
 
-local function FindCustomerModelFromInstance(Target: Instance?): Model?
-	local Current = Target
-	while Current and Current ~= Workspace do
-		if Current:IsA("Model") and Current:GetAttribute("QueueCustomerInstance") == true then
-			return Current
-		end
-		Current = Current.Parent
-	end
-
-	return nil
-end
-
 local function AnimateButton(Button: GuiButton)
 	local Scale = EnsureScale(Button)
 	local IsHovering = false
@@ -156,6 +165,8 @@ function Customercontroller:HideInstant()
 	self.frame.Position = self.hiddenPosition
 	self.frameScale.Scale = 0.96
 	self.frame.BackgroundTransparency = 1
+	local Selectedobject = Guiservice.SelectedObject
+	if Selectedobject and Selectedobject:IsDescendantOf(self.frame) then Guiservice.SelectedObject = nil end
 	self:HideEstimateText()
 end
 
@@ -190,19 +201,58 @@ function Customercontroller:SetHoveredCustomer(Customer: Model?)
 	self.hoverHighlight.Enabled = Customer ~= nil
 end
 
+function Customercontroller:GetInteractionCustomer(): Model?
+	local Offer = self.pendingOffer
+	local Customer = if Offer then Offer.Customer else nil
+	return if self:IsFrontCustomer(Customer) then Customer else nil
+end
+
+function Customercontroller:GetCustomerAtPosition(Screenposition: Vector2?, Expandtouch: boolean?): Model?
+	local Customer = self:GetInteractionCustomer()
+	if not Customer then return nil end
+	local Camera = Workspace.CurrentCamera
+	local Position = Screenposition or Userinputservice:GetMouseLocation()
+	local Params = RaycastParams.new()
+	Params.FilterType = Enum.RaycastFilterType.Include
+	Params.FilterDescendantsInstances = { Customer }
+	for _, Offset in ipairs(if Expandtouch then TouchRayOffsets else PointerRayOffsets) do
+		local Rayposition = Position + Offset
+		local Ray = Camera:ViewportPointToRay(Rayposition.X, Rayposition.Y)
+		if Workspace:Raycast(Ray.Origin, Ray.Direction * 500, Params) then
+			return Customer
+		end
+		if Expandtouch then
+			local Insetray = Camera:ScreenPointToRay(Rayposition.X, Rayposition.Y)
+			if Workspace:Raycast(Insetray.Origin, Insetray.Direction * 500, Params) then
+				return Customer
+			end
+		end
+	end
+	return nil
+end
+
+function Customercontroller:TryInteractAtPosition(Screenposition: Vector2?, Expandtouch: boolean?): boolean
+	if self:IsVisible() or not self:CanInteract() then return false end
+	local Clickedcustomer = self:GetCustomerAtPosition(Screenposition, Expandtouch)
+	if not Clickedcustomer or not self.pendingOffer then return false end
+	self:SetHoveredCustomer(Clickedcustomer)
+	self:ShowPendingOffer()
+	return true
+end
+
 function Customercontroller:UpdateHoveredCustomer()
 	if not self:CanInteract() then
 		self:SetHoveredCustomer(nil)
 		return
 	end
 
-	local Target = self.mouse and self.mouse.Target or nil
-	local Customer = FindCustomerModelFromInstance(Target)
-	if not self:IsFrontCustomer(Customer) then
-		Customer = nil
+	local Lastinputtype = Userinputservice:GetLastInputType()
+	if Lastinputtype == Enum.UserInputType.Touch then
+		self:SetHoveredCustomer(nil)
+		return
 	end
-
-	self:SetHoveredCustomer(Customer)
+	if Isgamepad(Lastinputtype) then return end
+	self:SetHoveredCustomer(self:GetCustomerAtPosition(nil))
 end
 
 function Customercontroller:ShowPendingOffer()
@@ -254,6 +304,7 @@ function Customercontroller:ShowOffer(Offer)
 	Tweenservice:Create(self.frameScale, Frametweeninfo, {
 		Scale = 1,
 	}):Play()
+	if Isgamepad(Userinputservice:GetLastInputType()) then Guiservice.SelectedObject = self.acceptButton end
 end
 
 function Customercontroller:ApplyUpgradeState(State)
@@ -293,6 +344,8 @@ function Customercontroller:HideAnimated(Fast: boolean?)
 	local Currentofferid = self.activeOfferId
 	self.activeOfferId = nil
 	local Tweeninfo = if Fast then Fastframetweeninfo else Frametweeninfo
+	local Selectedobject = Guiservice.SelectedObject
+	if Selectedobject and Selectedobject:IsDescendantOf(self.frame) then Guiservice.SelectedObject = nil end
 	Tweenservice:Create(self.frame, Tweeninfo, {
 		Position = self.hiddenPosition,
 		BackgroundTransparency = 1,
@@ -351,7 +404,6 @@ end
 
 function Customercontroller:Init()
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
-	self.mouse = Players.LocalPlayer:GetMouse()
 	self.gui = Playergui:WaitForChild("CustomerUi") :: ScreenGui
 	self.frame = self.gui:WaitForChild("CustomerFrame") :: Frame
 	self.acceptButton = self.frame:WaitForChild("AcceptButton") :: GuiButton
@@ -425,9 +477,21 @@ function Customercontroller:Start()
 		self:ApplyUpgradeState(State)
 	end)
 
-	Remotemanager:OnClientEvent(Customerservicename, "OfferUpdated", function(Offer)
+	local Offertoken = 0
+	local function Applyoffer(Offer)
+		Offertoken += 1
+		local Token = Offertoken
 		if Offer then
+			local Isnewoffer = not self.pendingOffer or self.pendingOffer.Id ~= Offer.Id
+			local Customer = Workspace:WaitForChild(Offer.CustomerName) :: Model
+			if Token ~= Offertoken then
+				return
+			end
+			Offer.Customer = Customer
 			self.pendingOffer = Offer
+			if Isnewoffer and Isgamepad(Userinputservice:GetLastInputType()) then
+				Core:GetController("ComputerController"):FocusGamepadCustomer()
+			end
 			if self:IsVisible() then
 				self:ShowOffer(Offer)
 			end
@@ -436,33 +500,17 @@ function Customercontroller:Start()
 			self:SetHoveredCustomer(nil)
 			self:HideInstant()
 		end
+	end
+	Remotemanager:OnClientEvent(Customerservicename, "OfferUpdated", Applyoffer)
+	task.spawn(function()
+		local Offer = Remotemanager:InvokeServer(Customerservicename, "GetPendingOffer")
+		if Offertoken == 0 then
+			Applyoffer(Offer)
+		end
 	end)
 
 	Runservice.RenderStepped:Connect(function()
 		self:UpdateHoveredCustomer()
-	end)
-
-	Userinputservice.InputBegan:Connect(function(Input, Processed)
-		if Processed or self:IsVisible() or not self:CanInteract() then
-			return
-		end
-		if Input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-			return
-		end
-		local Clickedcustomer = self.hoveredCustomer
-		if not Clickedcustomer then
-			local Target = self.mouse and self.mouse.Target or nil
-			local Customer = FindCustomerModelFromInstance(Target)
-			if self:IsFrontCustomer(Customer) then
-				Clickedcustomer = Customer
-			end
-		end
-		if not Clickedcustomer or not self.pendingOffer then
-			return
-		end
-
-		self:SetHoveredCustomer(Clickedcustomer)
-		self:ShowPendingOffer()
 	end)
 end
 

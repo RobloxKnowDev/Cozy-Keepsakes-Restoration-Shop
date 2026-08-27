@@ -1,3 +1,4 @@
+local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
@@ -498,12 +499,14 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 end
 
 function Completioncontroller:InputBegan(Input: InputObject): boolean
+	local Istouch = Input.UserInputType == Enum.UserInputType.Touch
 	if
 		not self:IsVisible()
 		or not self.viewport
 		or (
 			Input.UserInputType ~= Enum.UserInputType.MouseButton1
 			and Input.UserInputType ~= Enum.UserInputType.MouseButton2
+			and not Istouch
 		)
 	then
 		return false
@@ -511,17 +514,26 @@ function Completioncontroller:InputBegan(Input: InputObject): boolean
 	local Position = Vector2.new(Input.Position.X, Input.Position.Y)
 	local Minimum = self.viewport.AbsolutePosition
 	local Maximum = Minimum + self.viewport.AbsoluteSize
-	if Position.X < Minimum.X or Position.Y < Minimum.Y or Position.X > Maximum.X or Position.Y > Maximum.Y then
+	local function Inside(Point: Vector2): boolean
+		return Point.X >= Minimum.X and Point.Y >= Minimum.Y and Point.X <= Maximum.X and Point.Y <= Maximum.Y
+	end
+	if not Inside(Position) and not Inside(Position - Guiservice:GetGuiInset()) then
 		return false
 	end
 	self.dragging = true
+	self.dragInput = if Istouch then Input else nil
 	self.dragStart = Input.Position.X
 	self.dragOffset = self.rotation
 	return true
 end
 
 function Completioncontroller:InputChanged(Input: InputObject)
-	if not self.dragging or Input.UserInputType ~= Enum.UserInputType.MouseMovement then
+	if not self.dragging then
+		return
+	end
+	local Ismousemove = Input.UserInputType == Enum.UserInputType.MouseMovement
+	local Isactivetouch = Input.UserInputType == Enum.UserInputType.Touch and Input == self.dragInput
+	if not Ismousemove and not Isactivetouch then
 		return
 	end
 	local Width = math.max(Workspace.CurrentCamera.ViewportSize.X, 1)
@@ -536,8 +548,10 @@ function Completioncontroller:InputEnded(Input: InputObject)
 	if
 		Input.UserInputType == Enum.UserInputType.MouseButton1
 		or Input.UserInputType == Enum.UserInputType.MouseButton2
+		or Input == self.dragInput
 	then
 		self.dragging = false
+		self.dragInput = nil
 	end
 end
 

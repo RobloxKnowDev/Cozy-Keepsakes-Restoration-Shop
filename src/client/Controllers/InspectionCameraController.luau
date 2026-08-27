@@ -69,22 +69,21 @@ local function Viewportposition(Screenposition: Vector2): Vector2
 	return Screenposition - Inset
 end
 
-local function Raycasttarget(Screenposition: Vector2): RaycastResult?
+local function Ispointerontarget(Screenposition: Vector2): boolean
 	if not Target then
-		return nil
+		return false
 	end
 
-	local Viewport = Viewportposition(Screenposition)
-	local Ray = Camera:ViewportPointToRay(Viewport.X, Viewport.Y)
 	local Params = RaycastParams.new()
 	Params.FilterType = Enum.RaycastFilterType.Include
 	Params.FilterDescendantsInstances = { Target }
-	return Workspace:Raycast(Ray.Origin, Ray.Direction * 500, Params)
-end
-
-local function Ispointerontarget(Screenposition: Vector2): boolean
-	local Result = Raycasttarget(Screenposition)
-	return Result ~= nil
+	for _, Point in ipairs({ Viewportposition(Screenposition), Screenposition }) do
+		local Ray = Camera:ViewportPointToRay(Point.X, Point.Y)
+		if Workspace:Raycast(Ray.Origin, Ray.Direction * 500, Params) then
+			return true
+		end
+	end
+	return false
 end
 
 local function Begindrag(Input: InputObject, Mode: string)
@@ -367,9 +366,28 @@ function Controller:Start()
 		local Shiftdown = Userinputservice:IsKeyDown(Enum.KeyCode.LeftShift)
 			or Userinputservice:IsKeyDown(Enum.KeyCode.RightShift)
 
-		if Enabled and (Isprimary or Istouch) and Ispointerontarget(Position) then
+		if Istouch then
+			if Dragging then
+				return
+			end
+			local Ontarget = Ispointerontarget(Position)
+			if Enabled and Ontarget then
+				Setobjectselected(true)
+				if Transformmode == "Rotate" then
+					Begindrag(Input, "RotateObject")
+				end
+			elseif Enabled then
+				Setobjectselected(false)
+				Begindrag(Input, "OrbitCamera")
+			elseif not Ontarget then
+				Begindrag(Input, "OrbitCamera")
+			end
+			return
+		end
+
+		if Enabled and Isprimary and Ispointerontarget(Position) then
 			Setobjectselected(true)
-		elseif Enabled and (Isprimary or Istouch) then
+		elseif Enabled and Isprimary then
 			Setobjectselected(false)
 		elseif Ismiddle or (Issecondary and Shiftdown) then
 			Begindrag(Input, "Move")

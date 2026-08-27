@@ -195,6 +195,7 @@ function DailyRewardController:Init()
 	self.framePosition = self.frame.Position
 	self.frameScale = Shared.EnsureScale(self.frame)
 	self.frame.Visible = false
+	self.frame.Active = true
 
 	for Day, Reward in ipairs(Config.Rewards) do
 		local DayFrame = self.frame:WaitForChild("Day" .. Day)

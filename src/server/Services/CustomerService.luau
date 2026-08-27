@@ -14,6 +14,7 @@ local Customerservice = {
 	Priority = 15,
 	Remotes = {
 		OfferUpdated = "Event",
+		GetPendingOffer = "Function",
 		RespondToOffer = "Function",
 		RequestPriceEstimate = "Function",
 	},
@@ -316,19 +317,24 @@ RefreshFrontCustomerAttribute = function()
 	end
 end
 
-local function BroadcastOffer(Offer: CustomerOffer?)
+local function GetOfferPayload(Offer: CustomerOffer?)
 	if not Offer then
-		Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", nil)
-		return
+		return nil
 	end
-	Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", {
+	local Customer = GetFrontCustomer() :: Model
+	return {
 		Id = Offer.Id,
+		CustomerName = Customer.Name,
 		ObjectKey = Offer.ObjectKey,
 		ObjectName = Offer.ObjectName,
 		ImageId = Offer.ImageId,
 		Price = Offer.Price,
 		Emergency = Offer.Emergency,
-	})
+	}
+end
+
+local function BroadcastOffer(Offer: CustomerOffer?)
+	Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", GetOfferPayload(Offer))
 end
 
 local function GetOfferChances(Reputation: number)
@@ -573,6 +579,10 @@ function Customerservice:Init()
 			Success = true,
 			MaxPrice = PendingOffer.MaxValue,
 		}
+	end)
+
+	Remotemanager:OnServerInvoke(self.Name, "GetPendingOffer", function()
+		return GetOfferPayload(PendingOffer)
 	end)
 
 	Remotemanager:OnServerInvoke(self.Name, "RespondToOffer", function(Player, OfferId, Decision)

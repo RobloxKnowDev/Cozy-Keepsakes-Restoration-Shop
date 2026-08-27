@@ -99,7 +99,11 @@ function SettingController:BindToggle(Setting: Frame)
 	Text1.Visible = true
 	Text2.Visible = false
 	Shared.AnimateButton(Bar, function() return false end)
-	Bar.Activated:Connect(function()
+	local Lasttoggle = 0
+	local function Toggle()
+		local Now = os.clock()
+		if Now - Lasttoggle < 0.1 then return end
+		Lasttoggle = Now
 		Enabled = not Enabled
 		local DisabledPosition = UDim2.new(
 			1,
@@ -114,7 +118,18 @@ function SettingController:BindToggle(Setting: Frame)
 			BackgroundColor3 = if Enabled then EnabledColor else self.disabledColor,
 			Rotation = if Enabled then EnabledRotation else EnabledRotation + 180,
 		}):Play()
-	end)
+	end
+	local function Ontogglepress(Input: InputObject)
+		if
+			Input.UserInputType == Enum.UserInputType.MouseButton1
+			or Input.UserInputType == Enum.UserInputType.Touch
+		then
+			Toggle()
+		end
+	end
+	FrameBar.Active = true
+	FrameBar.InputBegan:Connect(Ontogglepress)
+	Bar.InputBegan:Connect(Ontogglepress)
 end
 
 function SettingController:BindSlider(Setting: Frame)
@@ -155,6 +170,7 @@ function SettingController:Init()
 	self.framePosition = self.frame.Position
 	self.frameScale = Shared.EnsureScale(self.frame)
 	self.frame.Visible = false
+	self.frame.Active = true
 
 	self:BindToggle(Settings:WaitForChild("Graphism"))
 	self:BindToggle(Settings:WaitForChild("Effect"))

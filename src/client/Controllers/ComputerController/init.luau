@@ -1,3 +1,4 @@
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -30,6 +31,26 @@ local CountDuration = 0.65
 local PulseInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local GainColor = Color3.fromRGB(126, 255, 145)
 local LossColor = Color3.fromRGB(255, 138, 138)
+local PointerRayOffsets = { Vector2.zero }
+local TouchRayOffsets = {
+	Vector2.zero,
+	Vector2.new(-36, 0),
+	Vector2.new(36, 0),
+	Vector2.new(0, -36),
+	Vector2.new(0, 36),
+	Vector2.new(-30, -30),
+	Vector2.new(30, -30),
+	Vector2.new(-30, 30),
+	Vector2.new(30, 30),
+	Vector2.new(-52, 0),
+	Vector2.new(52, 0),
+	Vector2.new(0, -52),
+	Vector2.new(0, 52),
+}
+
+local function IsGamepad(InputType: Enum.UserInputType): boolean
+	return InputType == Enum.UserInputType.Gamepad1
+end
 
 function ComputerController:IsOpen(): boolean
 	return self.isOpen == true
@@ -52,17 +73,83 @@ function ComputerController:SetHoveredComputer(Computer: Instance?)
 	self.hoverHighlight.Enabled = Computer ~= nil and not self:IsOpen()
 end
 
+function ComputerController:IsComputerAtPosition(ScreenPosition: Vector2?, ExpandTouch: boolean?): boolean
+	local Camera = Workspace.CurrentCamera
+	local Position = ScreenPosition or UserInputService:GetMouseLocation()
+	local Params = RaycastParams.new()
+	Params.FilterType = Enum.RaycastFilterType.Include
+	Params.FilterDescendantsInstances = { self.computer }
+	for _, Offset in ipairs(if ExpandTouch then TouchRayOffsets else PointerRayOffsets) do
+		local RayPosition = Position + Offset
+		local Ray = Camera:ViewportPointToRay(RayPosition.X, RayPosition.Y)
+		if Workspace:Raycast(Ray.Origin, Ray.Direction * 500, Params) then return true end
+		if ExpandTouch then
+			local InsetRay = Camera:ScreenPointToRay(RayPosition.X, RayPosition.Y)
+			if Workspace:Raycast(InsetRay.Origin, InsetRay.Direction * 500, Params) then return true end
+		end
+	end
+	return false
+end
+
 function ComputerController:UpdateHoveredComputer()
 	if not self:CanOpen() then
 		self:SetHoveredComputer(nil)
 		return
 	end
-	local Ray = self.mouse.UnitRay
-	local Params = RaycastParams.new()
-	Params.FilterType = Enum.RaycastFilterType.Include
-	Params.FilterDescendantsInstances = { self.coreModel, self.screenModel, self.buttonModel, self.postitModel }
-	local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 500, Params)
-	self:SetHoveredComputer(if Result then self.computer else nil)
+	local LastInputType = UserInputService:GetLastInputType()
+	if LastInputType == Enum.UserInputType.Touch then
+		self:SetHoveredComputer(nil)
+		return
+	end
+	if IsGamepad(LastInputType) then
+		self:RefreshGamepadTarget()
+		return
+	end
+	self:SetHoveredComputer(if self:IsComputerAtPosition(nil) then self.computer else nil)
+end
+
+function ComputerController:RefreshGamepadTarget()
+	local CustomerController = Core:GetController("CustomerController")
+	local Customer = CustomerController:GetInteractionCustomer()
+	local CustomerAvailable = Customer ~= nil and CustomerController:CanInteract()
+	local ComputerAvailable = self:CanOpen()
+	if self.gamepadTarget == "Customer" and not CustomerAvailable then self.gamepadTarget = nil end
+	if self.gamepadTarget == "Computer" and not ComputerAvailable then self.gamepadTarget = nil end
+	if not self.gamepadTarget then
+		self.gamepadTarget = if CustomerAvailable then "Customer" elseif ComputerAvailable then "Computer" else nil
+	end
+	CustomerController:SetHoveredCustomer(if self.gamepadTarget == "Customer" then Customer else nil)
+	self:SetHoveredComputer(if self.gamepadTarget == "Computer" then self.computer else nil)
+end
+
+function ComputerController:CycleGamepadTarget()
+	local CustomerController = Core:GetController("CustomerController")
+	local CustomerAvailable = CustomerController:GetInteractionCustomer() ~= nil and CustomerController:CanInteract()
+	local ComputerAvailable = self:CanOpen()
+	if CustomerAvailable and ComputerAvailable then
+		self.gamepadTarget = if self.gamepadTarget == "Customer" then "Computer" else "Customer"
+	elseif CustomerAvailable then
+		self.gamepadTarget = "Customer"
+	elseif ComputerAvailable then
+		self.gamepadTarget = "Computer"
+	else
+		self.gamepadTarget = nil
+	end
+	self:RefreshGamepadTarget()
+end
+
+function ComputerController:ActivateGamepadTarget()
+	self:RefreshGamepadTarget()
+	if self.gamepadTarget == "Customer" then
+		Core:GetController("CustomerController"):ShowPendingOffer()
+	elseif self.gamepadTarget == "Computer" then
+		self:Open()
+	end
+end
+
+function ComputerController:FocusGamepadCustomer()
+	self.gamepadTarget = "Customer"
+	self:RefreshGamepadTarget()
 end
 
 function ComputerController:FocusCamera()
@@ -205,7 +292,7 @@ function ComputerController:Open()
 	self.surfaceGui.Active = true
 	self.frame.Visible = true
 	self:SetPage("Home")
-	UserInputService.MouseIconEnabled = true
+	if IsGamepad(UserInputService:GetLastInputType()) then GuiService.SelectedObject = self.homeButton end
 	self:FocusCamera()
 end
 
@@ -217,6 +304,8 @@ function ComputerController:Close()
 	self.computerModel.CanQuery = false
 	self.surfaceGui.Active = false
 	self.frame.Visible = true
+	local SelectedObject = GuiService.SelectedObject
+	if SelectedObject and SelectedObject:IsDescendantOf(self.frame) then GuiService.SelectedObject = nil end
 	self:SetHudVisible(true)
 	Core:GetController("InspectionCameraController"):ShowIntroCamera()
 	Core:GetController("ExpositionController"):SetBlocker("Computer", nil)
@@ -248,7 +337,6 @@ end
 
 function ComputerController:Init()
 	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-	self.mouse = Players.LocalPlayer:GetMouse()
 	self.computer = Workspace:WaitForChild("Map")
 		:WaitForChild("Slot1")
 		:WaitForChild("Work")
@@ -290,6 +378,7 @@ function ComputerController:Init()
 	self.hudTimeText = self.hudDayFrame:WaitForChild("TimeText")
 	self.activePage = "Home"
 	self.isOpen = false
+	self.gamepadTarget = nil
 	self.navButtonDefaults = {}
 	self.computerCashAnimationId = 0
 	self.hoverHighlight = Instance.new("Highlight")
@@ -360,16 +449,37 @@ function ComputerController:Start()
 	RemoteManager:OnClientEvent("CashService", "CashUpdated", function(Value)
 		self:AnimateComputerCashTo(Value)
 	end)
-	UserInputService.InputBegan:Connect(function(Input, Processed)
-		if
-			Processed
-			or not self:CanOpen()
-			or Input.UserInputType ~= Enum.UserInputType.MouseButton1
-			or not self.hoveredComputer
-		then
+	local function TryOpen(ScreenPosition: Vector2?, ExpandTouch: boolean?): boolean
+		if not self:CanOpen() or not self:IsComputerAtPosition(ScreenPosition, ExpandTouch) then return false end
+		self:SetHoveredComputer(self.computer)
+		self:Open()
+		return true
+	end
+	local function TryWorldInteraction(ScreenPosition: Vector2, ExpandTouch: boolean?)
+		local CustomerController = Core:GetController("CustomerController")
+		if ExpandTouch then
+			if CustomerController:TryInteractAtPosition(ScreenPosition, true) then return end
+			TryOpen(ScreenPosition, true)
 			return
 		end
-		self:Open()
+		if CustomerController:TryInteractAtPosition(ScreenPosition, false) then return end
+		TryOpen(ScreenPosition, false)
+	end
+	UserInputService.InputBegan:Connect(function(Input, Processed)
+		if Processed then return end
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+			TryWorldInteraction(UserInputService:GetMouseLocation())
+		elseif IsGamepad(Input.UserInputType) and Input.KeyCode == Enum.KeyCode.ButtonA then
+			self:ActivateGamepadTarget()
+		elseif IsGamepad(Input.UserInputType)
+			and (Input.KeyCode == Enum.KeyCode.DPadLeft or Input.KeyCode == Enum.KeyCode.DPadRight)
+		then
+			self:CycleGamepadTarget()
+		end
+	end)
+	UserInputService.TouchTapInWorld:Connect(function(Position, Processed)
+		if Processed then return end
+		TryWorldInteraction(Position, true)
 	end)
 	self.exitButton.Activated:Connect(function()
 		self:Close()

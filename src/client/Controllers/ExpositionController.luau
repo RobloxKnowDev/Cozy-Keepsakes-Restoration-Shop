@@ -118,7 +118,10 @@ function Controller:ResolveBlockerMode(): BlockerMode?
 end
 
 function Controller:CanUseButtons(): boolean
-	if self.blockerMode ~= nil or self.isTransitioning then return false end
+	if self.isTransitioning then return false end
+	for Source, Mode in pairs(self.blockers) do
+		if Source ~= "Selection" and Mode ~= nil then return false end
+	end
 	return self.isOpen or self.cameraController:IsIntroCameraReady()
 end
 
@@ -126,7 +129,6 @@ function Controller:CanUseSelectionSlot(Slot): boolean
 	if self.blockers.Selection ~= "Disabled"
 		or not self.selectFrameOpen
 		or self.selectPlacementPending
-		or self.selectedSlotIndex ~= Slot.Index
 		or not self.isOpen
 		or self.isTransitioning
 		or not Slot.Button.Visible
@@ -562,6 +564,7 @@ end
 function Controller:Close()
 	self:SyncFrameBlockers()
 	if not self.isOpen or not self:CanUseButtons() then return end
+	if self.selectFrame.Visible then self:CloseSelectionFrame(true) end
 	if not self.cameraController:ShowIntroCameraFromExposition() then return end
 	self.expositionRequestId += 1
 	self.slotsRevealReached = false
@@ -738,7 +741,8 @@ function Controller:Start()
 		Slot.Button.Activated:Connect(function()
 			self:SyncFrameBlockers()
 			if not Slot.Button.Active then return end
-			if self.selectFrameOpen and self.selectedSlotIndex == Slot.Index then
+			local Wasopen = self.selectFrameOpen
+			if Wasopen and self.selectedSlotIndex == Slot.Index then
 				self:CloseSelectionFrame(false)
 				return
 			end
@@ -750,6 +754,7 @@ function Controller:Start()
 				self:RemoveDisplayItem(Slot.Index)
 				return
 			end
+			if Wasopen then self:CloseSelectionFrame(true) end
 			self:OpenSelectionFrame(Slot.Index)
 		end)
 	end
