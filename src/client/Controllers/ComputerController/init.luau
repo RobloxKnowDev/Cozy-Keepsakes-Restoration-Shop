@@ -38,13 +38,9 @@ end
 function ComputerController:CanOpen(): boolean
 	local CameraController = Core:GetController("InspectionCameraController")
 	local RestorationController = Core:GetController("RestorationController")
-	local CustomerController = Core:GetController("CustomerController")
-	local DailyRewardController = Core:GetController("DailyRewardController")
 	return not self:IsOpen()
 		and CameraController:IsIntroCameraReady()
 		and not RestorationController:IsEditingObject()
-		and not CustomerController:IsVisible()
-		and not DailyRewardController:IsOpen()
 end
 
 function ComputerController:SetHoveredComputer(Computer: Instance?)
@@ -195,6 +191,10 @@ function ComputerController:Open()
 	if not self:CanOpen() then
 		return
 	end
+	Core:GetController("DailyRewardController"):CloseForSwitch()
+	Core:GetController("SettingController"):CloseForSwitch()
+	local CustomerController = Core:GetController("CustomerController")
+	if CustomerController:IsVisible() then CustomerController:CloseOfferUi(true) end
 	self.isOpen = true
 	self:SetHoveredComputer(nil)
 	self:SyncHeader()

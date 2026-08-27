@@ -14,10 +14,11 @@ local Cashservice = {
 }
 
 local Startingcash = 150
+local Minimumcash = -10
 local Cashbyplayer: { [Player]: number } = {}
 
 local function Normalizecash(Value: number): number
-	return math.max(math.round(Value * 100) / 100, 0)
+	return math.max(math.round(Value * 100) / 100, Minimumcash)
 end
 
 function Cashservice:EnsurePlayer(Player: Player): number
@@ -29,30 +30,36 @@ function Cashservice:EnsurePlayer(Player: Player): number
 	return Cash
 end
 
-function Cashservice:PushCash(Player: Player)
+function Cashservice:PushCash(Player: Player, ShowGainFeedback: boolean?)
 	self:EnsurePlayer(Player)
-	Remotemanager:FireClient(self.Name, "CashUpdated", Player, Cashbyplayer[Player])
+	Remotemanager:FireClient(self.Name, "CashUpdated", Player, Cashbyplayer[Player], ShowGainFeedback ~= false)
 end
 
 function Cashservice:GetCash(Player: Player): number
 	return self:EnsurePlayer(Player)
 end
 
-function Cashservice:AddCash(Player: Player, Amount: number, TrackProfit: boolean?): number
+function Cashservice:AddCash(Player: Player, Amount: number, TrackProfit: boolean?, ShowGainFeedback: boolean?): number
 	local Currentcash = self:EnsurePlayer(Player)
 	Cashbyplayer[Player] = Normalizecash(Currentcash + Amount)
 	if TrackProfit ~= false then Core:GetService("StatsService"):AddDailyProfit(Player, Amount) end
-	self:PushCash(Player)
+	self:PushCash(Player, ShowGainFeedback)
 	return Cashbyplayer[Player]
 end
 
-function Cashservice:SpendCash(Player: Player, Amount: number): boolean
+function Cashservice:CanSpendCash(Player: Player, Amount: number): boolean
 	local Currentcash = self:EnsurePlayer(Player)
-	local Normalizedamount = Normalizecash(Amount)
-	if Currentcash < Normalizedamount then
+	local Normalizedamount = math.max(math.round(Amount * 100) / 100, 0)
+	return Currentcash - Normalizedamount >= Minimumcash
+end
+
+function Cashservice:SpendCash(Player: Player, Amount: number): boolean
+	local Normalizedamount = math.max(math.round(Amount * 100) / 100, 0)
+	if not self:CanSpendCash(Player, Normalizedamount) then
 		return false
 	end
 
+	local Currentcash = self:EnsurePlayer(Player)
 	Cashbyplayer[Player] = Normalizecash(Currentcash - Normalizedamount)
 	Core:GetService("StatsService"):AddDailyProfit(Player, -Normalizedamount)
 	self:PushCash(Player)

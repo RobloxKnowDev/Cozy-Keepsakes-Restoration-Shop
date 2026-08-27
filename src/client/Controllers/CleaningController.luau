@@ -82,7 +82,10 @@ local function Getfacepoint(Part: BasePart, Worldposition: Vector3, Facename: st
 end
 
 local function Getdirtimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel?
-	local Dirtframe = Surface:WaitForChild("DirtFrame") :: GuiObject
+	local Dirtframe = Surface:FindFirstChild("DirtFrame")
+	if not Dirtframe then return nil end
+	assert(Dirtframe:IsA("GuiObject"), "CleaningController: " .. Dirtframe:GetFullName() .. " doit être un GuiObject")
+	if not Dirtframe.Visible then return nil end
 	local Canvaspoint = Surface.AbsolutePosition
 		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
 	local Target: ImageLabel? = nil
@@ -111,31 +114,33 @@ local function Getdirtimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel
 end
 
 local function Getscratchimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel?
-	local Scratchframe = Surface:FindFirstChild("ScratchesFrame")
-	if not Scratchframe then return nil end
-	assert(Scratchframe:IsA("GuiObject"), "CleaningController: " .. Scratchframe:GetFullName() .. " doit être un GuiObject")
-	if not Scratchframe.Visible then return nil end
 	local Canvaspoint = Surface.AbsolutePosition
 		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
 	local Target: ImageLabel? = nil
 	local Targetdistance = math.huge
-	for Index = 1, Scratchimagecount do
-		local Image = Scratchframe:WaitForChild(tostring(Index))
-		assert(Image:IsA("ImageLabel"), "CleaningController: " .. Image:GetFullName() .. " doit être un ImageLabel")
-		local Minimum = Image.AbsolutePosition
-		local Maximum = Minimum + Image.AbsoluteSize
-		if
-			Image.Visible
-			and Image.ImageTransparency < 1
-			and Canvaspoint.X >= Minimum.X
-			and Canvaspoint.Y >= Minimum.Y
-			and Canvaspoint.X <= Maximum.X
-			and Canvaspoint.Y <= Maximum.Y
-		then
-			local Distance = (Canvaspoint - (Minimum + Image.AbsoluteSize * 0.5)).Magnitude
-			if Distance < Targetdistance then
-				Target = Image
-				Targetdistance = Distance
+	for _, Scratchframe in ipairs(Surface:GetChildren()) do
+		if Scratchframe.Name == "ScratchesFrame" then
+			assert(Scratchframe:IsA("GuiObject"), "CleaningController: " .. Scratchframe:GetFullName() .. " doit être un GuiObject")
+			if not Scratchframe.Visible then continue end
+			for Index = 1, Scratchimagecount do
+				local Image = Scratchframe:WaitForChild(tostring(Index))
+				assert(Image:IsA("ImageLabel"), "CleaningController: " .. Image:GetFullName() .. " doit être un ImageLabel")
+				local Minimum = Image.AbsolutePosition
+				local Maximum = Minimum + Image.AbsoluteSize
+				if
+					Image.Visible
+					and Image.ImageTransparency < 1
+					and Canvaspoint.X >= Minimum.X
+					and Canvaspoint.Y >= Minimum.Y
+					and Canvaspoint.X <= Maximum.X
+					and Canvaspoint.Y <= Maximum.Y
+				then
+					local Distance = (Canvaspoint - (Minimum + Image.AbsoluteSize * 0.5)).Magnitude
+					if Distance < Targetdistance then
+						Target = Image
+						Targetdistance = Distance
+					end
+				end
 			end
 		end
 	end

@@ -31,6 +31,7 @@ type CustomerOffer = {
 	Price: number,
 	MaxValue: number,
 	MaxReputation: number,
+	Emergency: boolean,
 }
 
 local AttachmentsByIndex: { [number]: Attachment } = {}
@@ -326,6 +327,7 @@ local function BroadcastOffer(Offer: CustomerOffer?)
 		ObjectName = Offer.ObjectName,
 		ImageId = Offer.ImageId,
 		Price = Offer.Price,
+		Emergency = Offer.Emergency,
 	})
 end
 
@@ -394,7 +396,44 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer
 		Price = DiscountedPrice,
 		MaxValue = Maximums.MaxValue,
 		MaxReputation = Maximums.MaxReputation,
+		Emergency = false,
 	}
+end
+
+local function ChooseEmergencyRequest(): CustomerOffer
+	local ObjectKey = "Skate"
+	local Definition = Objectconfig.Object[ObjectKey]
+	local Maximums = Core:GetService("RestorationService"):GenerateObjectMaximums(ObjectKey)
+	OfferSerial += 1
+	return {
+		Id = OfferSerial,
+		ObjectKey = ObjectKey,
+		ObjectName = Definition.Name or ObjectKey,
+		ImageId = tostring(Definition.IdImage or ""),
+		BasePrice = 0,
+		Price = 0,
+		MaxValue = Maximums.MaxValue,
+		MaxReputation = Maximums.MaxReputation,
+		Emergency = true,
+	}
+end
+
+local function GetCheapestRegularOfferPrice(Player: Player): number
+	local Cheapestprice = math.huge
+	for _, Definition in pairs(Objectconfig.Object) do
+		if Definition.Rarity ~= "Exclusive" then
+			local Maxprice = math.max(
+				tonumber(Definition.PriceMaxValue) or tonumber(Definition.MaxPrice) or tonumber(Definition.MaxValue) or 0,
+				0
+			)
+			local Minprice = math.max(math.min(tonumber(Definition.PriceMinValue) or Maxprice, Maxprice), 0)
+			Cheapestprice = math.min(Cheapestprice, Minprice)
+		end
+	end
+	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
+	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
+	local DiscountPercent = math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
+	return math.max(math.round(Cheapestprice * (1 - DiscountPercent / 100)), 0)
 end
 
 function Customerservice:RefreshPendingOfferPrice(Player: Player)
@@ -554,9 +593,17 @@ function Customerservice:Init()
 		if NormalizedDecision == "accept" then
 			local Cashservice = Core:GetService("CashService")
 			if not Cashservice:SpendCash(Player, PendingOffer.Price) then
+				if Cashservice:CanSpendCash(Player, GetCheapestRegularOfferPrice(Player)) then
+					return {
+						Success = false,
+						Reason = "NotEnoughCash",
+					}
+				end
+				PendingOffer = ChooseEmergencyRequest()
+				BroadcastOffer(PendingOffer)
 				return {
 					Success = false,
-					Reason = "NotEnoughCash",
+					Reason = "EmergencyOfferPresented",
 				}
 			end
 			local Restorationservice = Core:GetService("RestorationService")

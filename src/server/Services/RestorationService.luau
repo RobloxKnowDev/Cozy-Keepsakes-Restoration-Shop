@@ -124,6 +124,14 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 	local Definition = Config.Object[Objectname]
 	local Asset = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object"):WaitForChild(Objectname)
 	local Object = Asset:Clone() :: RestorationObject
+	if Objectname == "Skate" then
+		local Objectcore = Object:WaitForChild("Core")
+		local Grip = Objectcore:WaitForChild("Grip")
+		local Wood = Objectcore:WaitForChild("Wood")
+		local Uitop = Wood:WaitForChild("UiTop") :: SurfaceGui
+		Uitop.AlwaysOnTop = false
+		Uitop.Parent = Grip
+	end
 	local Objectmaximums = Maximums or Generateobjectmaximums(Objectname)
 	local Maxvalue = Objectmaximums.MaxValue
 	local Maxreputation = Objectmaximums.MaxReputation
@@ -139,10 +147,11 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 	Object:SetAttribute("ImageId", Definition.IdImage or "")
 	Object:SetAttribute("MaxReputation", Maxreputation)
 	Object.Parent = Generateditems
+	local Spawncframe = Spawnattachment.WorldCFrame * CFrame.Angles(0, math.rad(90), 0)
 	if Object:IsA("Model") then
-		Object:PivotTo(Spawnattachment.WorldCFrame)
+		Object:PivotTo(Spawncframe)
 	else
-		Object.CFrame = Spawnattachment.WorldCFrame
+		Object.CFrame = Spawncframe
 	end
 
 	local Boundscframe, Boundssize
@@ -165,16 +174,18 @@ end
 local function Initializedirt(Object: RestorationObject): number
 	local Totaldirt = 0
 	for _, Descendant in ipairs(Object:GetDescendants()) do
-		if Descendant:IsA("SurfaceGui") and Dirtsurfacenames[Descendant.Name] then
-			local Part = Descendant.Parent
-			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Descendant:GetFullName() .. " doit être dans une BasePart")
-			assert(Descendant.Enabled, "RestorationService: " .. Descendant:GetFullName() .. " doit être activé")
+		if Descendant:IsA("GuiObject") and Descendant.Name == "DirtFrame" then
+			local Surface = Descendant.Parent
+			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " doit être dans un SurfaceGui")
+			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " doit utiliser un nom Ui valide")
+			local Part = Surface.Parent
+			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " doit être dans une BasePart")
+			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " doit être activé")
 			assert(
-				Descendant.Face.Name == string.sub(Descendant.Name, 3),
-				"RestorationService: la face de " .. Descendant:GetFullName() .. " ne correspond pas à son nom"
+				Surface.Face.Name == string.sub(Surface.Name, 3),
+				"RestorationService: la face de " .. Surface:GetFullName() .. " ne correspond pas à son nom"
 			)
-			local Dirtframe = Descendant:WaitForChild("DirtFrame")
-			assert(Dirtframe:IsA("GuiObject"), "RestorationService: " .. Dirtframe:GetFullName() .. " doit être un GuiObject")
+			local Dirtframe = Descendant
 			assert(Dirtframe.Visible, "RestorationService: " .. Dirtframe:GetFullName() .. " doit être visible")
 			for Index = 1, 16 do
 				local Image = Dirtframe:WaitForChild(tostring(Index))

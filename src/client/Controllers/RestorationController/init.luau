@@ -98,8 +98,7 @@ function Controller:IsEditingObject(): boolean
 end
 
 function Controller:CanEnter(): boolean
-	return not Core:GetController("DailyRewardController"):IsOpen()
-		and not Core:GetController("ComputerController"):IsOpen()
+	return not Core:GetController("ComputerController"):IsOpen()
 		and not Core:GetController("CustomerController"):IsVisible()
 		and not Core:GetController("CompletionController"):IsVisible()
 end
@@ -109,6 +108,8 @@ function Controller:Enter()
 		self.pendingEnter = true
 		return
 	end
+	Core:GetController("DailyRewardController"):CloseForSwitch()
+	Core:GetController("SettingController"):CloseForSwitch()
 	local Expositioncontroller = Core:GetController("ExpositionController")
 	Expositioncontroller:PrepareForRestoration()
 	if not self:CanEnter() then

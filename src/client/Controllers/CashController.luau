@@ -33,7 +33,7 @@ function Cashcontroller:SetDisplayedCash(Value: number)
 	self.cashText.Text = "$" .. Abbreviatenumber(Value)
 end
 
-function Cashcontroller:AnimateCashTo(TargetValue: number)
+function Cashcontroller:AnimateCashTo(TargetValue: number, ShowGainFeedback: boolean?)
 	local Startvalue = self.displayedCash or TargetValue
 	local Delta = TargetValue - Startvalue
 	if math.abs(Delta) < 0.005 then
@@ -45,7 +45,7 @@ function Cashcontroller:AnimateCashTo(TargetValue: number)
 	local Animationid = self.animationId
 	local Starttime = os.clock()
 	local Targetcolor = Delta > 0 and Gaincolor or Losscolor
-	if Delta > 0 then
+	if Delta > 0 and ShowGainFeedback ~= false then
 		self.feedback:FloatingText(self.cashFrame, "+$" .. Abbreviatenumber(math.abs(Delta)), Targetcolor)
 		self.feedback:Burst(self.cashFrame, Gaincolor, math.clamp(math.floor(math.log10(math.abs(Delta) + 1) * 3), 4, 12))
 		self.feedback:PlaySound("CashGain", 0.12, 1 + math.clamp(math.log10(math.abs(Delta) + 1) * 0.025, 0, 0.12))
@@ -96,8 +96,8 @@ end
 function Cashcontroller:Start()
 	self.feedback = Core:GetController("FeedbackController")
 	self:SetDisplayedCash(Remotemanager:InvokeServer("CashService", "GetCash"))
-	Remotemanager:OnClientEvent("CashService", "CashUpdated", function(Value)
-		self:AnimateCashTo(Value)
+	Remotemanager:OnClientEvent("CashService", "CashUpdated", function(Value, ShowGainFeedback)
+		self:AnimateCashTo(Value, ShowGainFeedback)
 	end)
 end
 

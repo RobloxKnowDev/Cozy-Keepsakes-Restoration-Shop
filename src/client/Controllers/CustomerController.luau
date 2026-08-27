@@ -15,6 +15,7 @@ local Customercontroller = {
 
 local Customerservicename = "CustomerService"
 local Frametweeninfo = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local Fastframetweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local Buttontweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Estimationtweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local HighlightFillcolor = Color3.fromRGB(255, 232, 163)
@@ -172,12 +173,10 @@ end
 function Customercontroller:CanInteract(): boolean
 	local Computercontroller = Core:GetController("ComputerController")
 	local Cameracontroller = Core:GetController("InspectionCameraController")
-	local Dailyrewardcontroller = Core:GetController("DailyRewardController")
 	local Restorationcontroller = Core:GetController("RestorationController")
 	return not self:IsVisible()
 		and not Computercontroller:IsOpen()
 		and Cameracontroller:IsIntroCameraReady()
-		and not Dailyrewardcontroller:IsOpen()
 		and not Restorationcontroller:IsEditingObject()
 end
 
@@ -210,6 +209,8 @@ function Customercontroller:ShowPendingOffer()
 	if not self.pendingOffer or self:IsVisible() then
 		return
 	end
+	Core:GetController("DailyRewardController"):CloseForSwitch()
+	Core:GetController("SettingController"):CloseForSwitch()
 
 	self:ShowOffer(self.pendingOffer)
 end
@@ -288,14 +289,15 @@ function Customercontroller:RequestPriceEstimate()
 	end
 end
 
-function Customercontroller:HideAnimated()
+function Customercontroller:HideAnimated(Fast: boolean?)
 	local Currentofferid = self.activeOfferId
 	self.activeOfferId = nil
-	Tweenservice:Create(self.frame, Frametweeninfo, {
+	local Tweeninfo = if Fast then Fastframetweeninfo else Frametweeninfo
+	Tweenservice:Create(self.frame, Tweeninfo, {
 		Position = self.hiddenPosition,
 		BackgroundTransparency = 1,
 	}):Play()
-	local Scaletween = Tweenservice:Create(self.frameScale, Frametweeninfo, {
+	local Scaletween = Tweenservice:Create(self.frameScale, Tweeninfo, {
 		Scale = 0.96,
 	})
 	Scaletween:Play()
@@ -307,12 +309,12 @@ function Customercontroller:HideAnimated()
 	end)
 end
 
-function Customercontroller:CloseOfferUi()
+function Customercontroller:CloseOfferUi(Fast: boolean?)
 	if not self:IsVisible() or self.isBusy then
 		return
 	end
 	self:SetHoveredCustomer(nil)
-	self:HideAnimated()
+	self:HideAnimated(Fast)
 end
 
 function Customercontroller:Respond(Decision: string)
@@ -334,6 +336,8 @@ function Customercontroller:Respond(Decision: string)
 	if not WasAccepted then
 		if Reason == "NotEnoughCash" then
 			Core:GetController("MessageController"):Show("Not enough money", ErrorMessageColor)
+		elseif Reason == "EmergencyOfferPresented" then
+			Core:GetController("MessageController"):Show("You cannot afford this item. Restore this free skateboard to recover.", ErrorMessageColor)
 		end
 		return
 	end

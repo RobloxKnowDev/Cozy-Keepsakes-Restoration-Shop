@@ -153,7 +153,7 @@ end
 function DailyRewardService:GrantReward(Player: Player, Day: number, Data: DailyRewardData): (boolean, boolean)
 	local Reward = Config.Rewards[Day]
 	if Reward.Type == "Cash" then
-		Core:GetService("CashService"):AddCash(Player, tonumber(Reward.Amount) or 0, false)
+		Core:GetService("CashService"):AddCash(Player, tonumber(Reward.Amount) or 0, false, false)
 		return true, false
 	end
 	if Reward.Type == "Object" then

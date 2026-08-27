@@ -17,6 +17,8 @@ local DailyRewardController = {
 local Player = Players.LocalPlayer
 local ErrorColor = Color3.fromRGB(255, 138, 138)
 local OpenTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+local CloseTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+local FastCloseTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 
 local function FormatTime(Seconds: number): string
 	local Total = math.max(math.ceil(Seconds), 0)
@@ -31,35 +33,19 @@ function DailyRewardController:IsRewardAvailable(): boolean
 end
 
 function DailyRewardController:IsOpen(): boolean
-	return self.frame.Visible
+	return self.isOpen == true
 end
 
 function DailyRewardController:CanOpen(): boolean
 	return not self:IsOpen()
-		and not Core:GetController("ComputerController"):IsOpen()
-		and not Core:GetController("CustomerController"):IsVisible()
-		and not Core:GetController("ExpositionController"):IsSelectionOpen()
 		and not Core:GetController("RestorationController"):IsEditingObject()
 		and not Core:GetController("CompletionController"):IsVisible()
 end
 
-function DailyRewardController:SetOtherTopbarIconsLocked(Locked: boolean)
-	if Locked then
-		for _, OtherIcon in pairs(Icon.getIcons()) do
-			if OtherIcon ~= self.topbarIcon then
-				OtherIcon:deselect()
-				if not OtherIcon.locked then
-					OtherIcon:lock()
-					self.lockedTopbarIcons[OtherIcon] = true
-				end
-			end
-		end
-		return
+function DailyRewardController:DeselectOtherTopbarIcons()
+	for _, OtherIcon in pairs(Icon.getIcons()) do
+		if OtherIcon ~= self.topbarIcon then OtherIcon:deselect() end
 	end
-	for OtherIcon in pairs(self.lockedTopbarIcons) do
-		if OtherIcon.locked then OtherIcon:unlock() end
-	end
-	table.clear(self.lockedTopbarIcons)
 end
 
 function DailyRewardController:Refresh()
@@ -102,7 +88,15 @@ function DailyRewardController:Open()
 		self.topbarIcon:deselect()
 		return
 	end
-	self:SetOtherTopbarIconsLocked(true)
+	Core:GetController("SettingController"):CloseForSwitch()
+	self:DeselectOtherTopbarIcons()
+	local ComputerController = Core:GetController("ComputerController")
+	local CustomerController = Core:GetController("CustomerController")
+	local ExpositionController = Core:GetController("ExpositionController")
+	if ComputerController:IsOpen() then ComputerController:Close() end
+	if CustomerController:IsVisible() then CustomerController:CloseOfferUi(true) end
+	if ExpositionController:IsSelectionOpen() then ExpositionController:CloseSelectionFrame(false, true) end
+	self.isOpen = true
 	if self.positionTween then self.positionTween:Cancel() end
 	if self.scaleTween then self.scaleTween:Cancel() end
 	self.frame.Position = self.framePosition + UDim2.fromOffset(0, 20)
@@ -114,14 +108,33 @@ function DailyRewardController:Open()
 	self.scaleTween:Play()
 end
 
-function DailyRewardController:Close()
-	self:SetOtherTopbarIconsLocked(false)
+function DailyRewardController:Close(Fast: boolean?)
+	if not self:IsOpen() then return end
+	self.isOpen = false
 	if self.positionTween then self.positionTween:Cancel() end
 	if self.scaleTween then self.scaleTween:Cancel() end
-	self.frame.Visible = false
-	self.frame.Position = self.framePosition
-	self.frameScale.Scale = 1
-	Core:GetController("RestorationController"):ResumePendingEnter()
+	local TweenInfoValue = if Fast then FastCloseTweenInfo else CloseTweenInfo
+	self.positionTween = TweenService:Create(self.frame, TweenInfoValue, {
+		Position = self.framePosition + UDim2.fromOffset(0, 20),
+	})
+	self.scaleTween = TweenService:Create(self.frameScale, TweenInfoValue, { Scale = 0.94 })
+	local PositionTween = self.positionTween
+	PositionTween:Play()
+	self.scaleTween:Play()
+	PositionTween.Completed:Once(function(State)
+		if self.positionTween ~= PositionTween or State ~= Enum.PlaybackState.Completed then return end
+		self.frame.Visible = false
+		self.frame.Position = self.framePosition
+		self.frameScale.Scale = 1
+		self.positionTween = nil
+		self.scaleTween = nil
+		Core:GetController("RestorationController"):ResumePendingEnter()
+	end)
+end
+
+function DailyRewardController:CloseForSwitch()
+	self:Close(true)
+	self.topbarIcon:deselect()
 end
 
 function DailyRewardController:StartObjectReward()
@@ -178,7 +191,7 @@ function DailyRewardController:Init()
 	self.timerText = self.frame:WaitForChild("TimerText")
 	self.days = {}
 	self.processing = false
-	self.lockedTopbarIcons = {}
+	self.isOpen = false
 	self.framePosition = self.frame.Position
 	self.frameScale = Shared.EnsureScale(self.frame)
 	self.frame.Visible = false

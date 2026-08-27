@@ -20,6 +20,7 @@ local Buttonhidetweeninfo = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.Easin
 local Buttonshowtweeninfo = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local Selectframeshowtweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local Selectframehidetweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+local Fastselectframehidetweeninfo = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local Detailstweeninfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ErrorMessageColor = Color3.fromRGB(255, 92, 92)
 local ReputationMessageColor = Color3.fromRGB(126, 255, 145)
@@ -211,8 +212,12 @@ end
 function Controller:SyncFrameBlockers()
 	self:SetBlocker("Computer", if self.computerController:IsOpen() then "Hidden" else nil)
 	self:SetBlocker("Customer", if self.customerController:IsVisible() then "Disabled" else nil)
-	self:SetBlocker("DailyReward", if self.dailyRewardController:IsOpen() then "Disabled" else nil)
 	self:SetBlocker("Completion", if self.completionController:IsVisible() then "Disabled" else nil)
+end
+
+function Controller:CloseTopbarFrames()
+	self.dailyRewardController:CloseForSwitch()
+	self.settingController:CloseForSwitch()
 end
 
 function Controller:SetSelectionControlsEnabled(Enabled: boolean)
@@ -346,6 +351,7 @@ function Controller:SetSelectionFramePosition(SlotIndex: number)
 end
 
 function Controller:OpenSelectionFrame(SlotIndex: number)
+	self:CloseTopbarFrames()
 	if self.selectFrameOpen or self.blockerMode ~= nil then return end
 	self.selectionRequestId += 1
 	self.selectFrameAnimationId += 1
@@ -365,7 +371,7 @@ function Controller:OpenSelectionFrame(SlotIndex: number)
 	self.selectFrameTween:Play()
 end
 
-function Controller:CloseSelectionFrame(Instant: boolean?)
+function Controller:CloseSelectionFrame(Instant: boolean?, Fast: boolean?)
 	if not self.selectFrame.Visible then return end
 	self.selectionRequestId += 1
 	self.selectFrameAnimationId += 1
@@ -385,7 +391,8 @@ function Controller:CloseSelectionFrame(Instant: boolean?)
 		if Slot then self:RestoreButtonHover(Slot.Button) end
 		return
 	end
-	self.selectFrameTween = Tweenservice:Create(self.selectFrameScale, Selectframehidetweeninfo, { Scale = 0.9 })
+	local Tweeninfo = if Fast then Fastselectframehidetweeninfo else Selectframehidetweeninfo
+	self.selectFrameTween = Tweenservice:Create(self.selectFrameScale, Tweeninfo, { Scale = 0.9 })
 	self.selectFrameTween:Play()
 	self.selectFrameTween.Completed:Once(function(State)
 		if State ~= Enum.PlaybackState.Completed or self.selectFrameAnimationId ~= Animationid then return end
@@ -491,6 +498,7 @@ function Controller:BindButtonAnimation(Button: GuiButton)
 		self:TweenButton(Button, Buttontweeninfo, 1)
 	end)
 	Button.MouseButton1Down:Connect(function()
+		self:CloseTopbarFrames()
 		if not Button.Active then return end
 		self:TweenButton(Button, Buttontweeninfo, 0.96)
 	end)
@@ -534,6 +542,7 @@ function Controller:SwapButtons(ButtonToHide: GuiButton, ButtonToShow: GuiButton
 end
 
 function Controller:Open()
+	self:CloseTopbarFrames()
 	self:SyncFrameBlockers()
 	if self.isOpen or not self:CanUseButtons() then return end
 	self.expositionRequestId += 1
@@ -714,6 +723,7 @@ function Controller:Start()
 	self.computerController = Core:GetController("ComputerController")
 	self.customerController = Core:GetController("CustomerController")
 	self.dailyRewardController = Core:GetController("DailyRewardController")
+	self.settingController = Core:GetController("SettingController")
 	self.completionController = Core:GetController("CompletionController")
 	for _, Button in ipairs(self.animatedButtons) do self:BindButtonAnimation(Button) end
 	Shared.AnimateButton(self.selectCloseButton, function() return not self.selectCloseButton.Active end)

@@ -85,6 +85,16 @@ return {
 	},
 
 	Object = {
+		Skate = {
+			Name = "Skateboard",
+			MaxValue = 15,
+			PriceMinValue = 0,
+			PriceMaxValue = 0,
+			IdImage = "rbxassetid://111157604286387",
+			Rarity = "Exclusive",
+			Reputation = 1,
+			Emergency = true,
+		},
 		OldSuitcase = {
 			Name = "Old suitcase",
 			MaxValue = 100,
