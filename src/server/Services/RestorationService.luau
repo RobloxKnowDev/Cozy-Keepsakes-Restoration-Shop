@@ -170,7 +170,7 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 end
 
 local function Initializedirt(Object: RestorationObject): number
-	local Totaldirt = 0
+	local Dirtframes = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("GuiObject") and Descendant.Name == "DirtFrame" then
 			local Surface = Descendant.Parent
@@ -183,15 +183,27 @@ local function Initializedirt(Object: RestorationObject): number
 				Surface.Face.Name == string.sub(Surface.Name, 3),
 				"RestorationService: la face de " .. Surface:GetFullName() .. " ne correspond pas à son nom"
 			)
-			local Dirtframe = Descendant
-			assert(Dirtframe.Visible, "RestorationService: " .. Dirtframe:GetFullName() .. " doit être visible")
-			for Index = 1, 16 do
-				local Image = Dirtframe:WaitForChild(tostring(Index))
-				assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
-				assert(Image.Visible, "RestorationService: " .. Image:GetFullName() .. " doit être visible")
-				Image:SetAttribute("InitialDirtTransparency", Image.ImageTransparency)
-				Totaldirt += 1 - Image.ImageTransparency
-			end
+			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " doit être visible")
+			table.insert(Dirtframes, Descendant)
+		end
+	end
+	for Index = #Dirtframes, 2, -1 do
+		local Swap = math.random(Index)
+		Dirtframes[Index], Dirtframes[Swap] = Dirtframes[Swap], Dirtframes[Index]
+	end
+	local Keptcount = if #Dirtframes > 0 then math.random(1, #Dirtframes) else 0
+	local Totaldirt = 0
+	for Index, Dirtframe in ipairs(Dirtframes) do
+		if Index > Keptcount then
+			Dirtframe.Visible = false
+			continue
+		end
+		for Imageindex = 1, 16 do
+			local Image = Dirtframe:WaitForChild(tostring(Imageindex))
+			assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
+			assert(Image.Visible, "RestorationService: " .. Image:GetFullName() .. " doit être visible")
+			Image:SetAttribute("InitialDirtTransparency", Image.ImageTransparency)
+			Totaldirt += 1 - Image.ImageTransparency
 		end
 	end
 	Object:SetAttribute("Total_Dirt", Totaldirt)
@@ -551,7 +563,7 @@ function Restorationservice:Init()
 		if not Sessionobject or not Dirttools[Toolname] then return end
 		if typeof(Target) ~= "Instance" or not Target:IsA("ImageLabel") or not Target:IsDescendantOf(Sessionobject) then return end
 		local Dirtframe = Target.Parent
-		if not Dirtframe or Dirtframe.Name ~= "DirtFrame" or not Dirtframe:IsA("GuiObject") then return end
+		if not Dirtframe or Dirtframe.Name ~= "DirtFrame" or not Dirtframe:IsA("GuiObject") or not Dirtframe.Visible then return end
 		local Surface = Dirtframe.Parent
 		if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled or not Dirtsurfacenames[Surface.Name] then return end
 		if Surface.Parent == nil or not Surface.Parent:IsA("BasePart") then return end

@@ -41,6 +41,7 @@ local Busyplayers: { [Player]: boolean } = {}
 local Displayrevision = 0
 local Displayedobjects: Folder
 local Objecttemplates: Folder
+local Placementparticle: ParticleEmitter
 local Dirtsurfacenames = {
 	UiTop = true,
 	UiBottom = true,
@@ -49,6 +50,53 @@ local Dirtsurfacenames = {
 	UiFront = true,
 	UiBack = true,
 }
+
+local function Playplacementvfx(Attachment: Attachment)
+	local Vfx = Placementparticle:Clone()
+	Vfx.Enabled = true
+	Vfx.Parent = Attachment
+	Vfx.Rate = 100
+	task.wait(0.05)
+	Vfx.Rate = 0
+	task.delay(Vfx.Lifetime.Max, function()
+		Vfx:Destroy()
+	end)
+end
+
+local function Hidedisplayobject(Object: DisplayObject): { [BasePart]: number }
+	local Transparencies: { [BasePart]: number } = {}
+	if Object:IsA("BasePart") then
+		Transparencies[Object] = Object.Transparency
+		Object.Transparency = 1
+	end
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("BasePart") then
+			Transparencies[Descendant] = Descendant.Transparency
+			Descendant.Transparency = 1
+		end
+	end
+	return Transparencies
+end
+
+local function Revealdisplayobject(Object: DisplayObject, Attachment: Attachment)
+	local Transparencies = Hidedisplayobject(Object);
+	(Object :: Instance).Parent = Displayedobjects
+	task.delay(0.1, function()
+		Playplacementvfx(Attachment)
+	end)
+	task.delay(0.2, function()
+		for Part, Transparency in pairs(Transparencies) do
+			Part.Transparency = Transparency
+		end
+	end)
+end
+
+local function Removedisplayobject(Object: DisplayObject)
+	Hidedisplayobject(Object)
+	task.delay(0.2, function()
+		Object:Destroy()
+	end)
+end
 
 local function Ispositiveinteger(Value: any): boolean
 	return type(Value) == "number"
@@ -167,7 +215,9 @@ local function Cleanupplayer(Player: Player)
 			Changed = true
 		end
 	end
-	if Changed then Commitdisplaychange() end
+	if Changed then
+		Commitdisplaychange()
+	end
 end
 
 function Expositionservice:GetDisplayItems(): DisplaySnapshot
@@ -245,7 +295,7 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 		Object = Object,
 		Item = Removeditem,
 	}
-	Object.Parent = Displayedobjects
+	Revealdisplayobject(Object, Slotattachments[Slotindex])
 	Refreshdisplayreputation(Player)
 	Releasereservation(Player, Slotindex)
 
@@ -281,7 +331,7 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 	Occupiedslots[Slotindex] = nil
 	local Basereputation = math.max(tonumber(Placement.Item.Reputation) or 0, 0)
 	if Placement.Object.Parent then
-		Placement.Object:Destroy()
+		Removedisplayobject(Placement.Object)
 	end
 	local Inventoryservice = Core:GetService("InventoryService")
 	Inventoryservice:ReturnRestoredItem(Player, Placement.Item)
@@ -298,7 +348,11 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 end
 
 function Expositionservice:Init()
-	local Etagere = Workspace:WaitForChild("Map"):WaitForChild("Slot1"):WaitForChild("Work"):WaitForChild("Utilities"):WaitForChild("Etagere")
+	local Etagere = Workspace:WaitForChild("Map")
+		:WaitForChild("Slot1")
+		:WaitForChild("Work")
+		:WaitForChild("Utilities")
+		:WaitForChild("Etagere")
 	local Slots = Etagere:WaitForChild("Slots")
 	for Slotindex = 1, 9 do
 		Slotattachments[Slotindex] = Slots:WaitForChild(tostring(Slotindex)) :: Attachment
@@ -308,6 +362,8 @@ function Expositionservice:Init()
 	Displayedobjects.Name = "DisplayedObjects"
 	Displayedobjects.Parent = Etagere
 	Objecttemplates = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object") :: Folder
+	Placementparticle =
+		Replicatedstorage:WaitForChild("Asset"):WaitForChild("Vfx"):WaitForChild("PlacementParticle") :: ParticleEmitter
 
 	Players.PlayerRemoving:Connect(Cleanupplayer)
 	Remotemanager:OnServerInvoke(self.Name, "GetDisplayItems", function()
