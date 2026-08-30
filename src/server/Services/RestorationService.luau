@@ -201,7 +201,6 @@ local function Initializedirt(Object: RestorationObject): number
 		for Imageindex = 1, 16 do
 			local Image = Dirtframe:WaitForChild(tostring(Imageindex))
 			assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
-			assert(Image.Visible, "RestorationService: " .. Image:GetFullName() .. " doit être visible")
 			Image:SetAttribute("InitialDirtTransparency", Image.ImageTransparency)
 			Totaldirt += 1 - Image.ImageTransparency
 		end
@@ -320,7 +319,11 @@ local function Createspots(Object: RestorationObject)
 	Sticker.Parent = Folder
 	Object:SetAttribute("Total_Sticker", 1)
 	Object:SetAttribute("Cleaned_Sticker", 0)
-	Object:SetAttribute("TotalSpots", Totaldirt + Totalscratches + Totalink + 1)
+	local Otherspots = Totalscratches + Totalink + 1
+	local Dirtshare = math.random(67, 73) / 100
+	local Dirtweight = if Totaldirt > 0 then math.min(1, Otherspots * Dirtshare / ((1 - Dirtshare) * Totaldirt)) else 1
+	Object:SetAttribute("DirtWeight", Dirtweight)
+	Object:SetAttribute("TotalSpots", Totaldirt * Dirtweight + Otherspots)
 	Object:SetAttribute("CleanedSpots", 0)
 end
 
@@ -598,8 +601,9 @@ function Restorationservice:Init()
 		local Previouscleaneddirt = tonumber(Sessionobject:GetAttribute("Cleaned_Dirt")) or 0
 		local Appliedprogress = Cleaneddirt - Previouscleaneddirt
 		Sessionobject:SetAttribute("Cleaned_Dirt", Cleaneddirt)
+		local Dirtweight = tonumber(Sessionobject:GetAttribute("DirtWeight")) or 1
 		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
-		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress, Totalspots)
+		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress * Dirtweight, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
 		Sessionobject:SetAttribute("CleanedSpots", Cleanedspots)
 	end)

@@ -188,7 +188,7 @@ function FeedbackController:CleaningPercent(Position: Vector2, Amount: number)
 	Label.Size = UDim2.fromOffset(Size * 2.7, Size)
 	Label.BackgroundTransparency = 1
 	Label.Font = Enum.Font.GothamBlack
-	Label.Text = string.format("+%d%%", Amount)
+	Label.Text = if Amount >= 1 then string.format("+%d%%", Amount) else string.format("+%.1f%%", Amount)
 	Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	Label.TextScaled = true
 	Label.TextStrokeColor3 = Color3.fromRGB(69, 43, 24)

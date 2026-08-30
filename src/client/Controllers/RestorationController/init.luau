@@ -136,6 +136,7 @@ function Controller:Enter()
 		return
 	end
 	Activeobject = Object
+	Core:GetController("CleaningController"):PreloadOverlays(Object)
 	Runtime:SetObject(Object)
 	Core:GetController("CompletionController"):Hide()
 	Core:GetController("InspectionCameraController"):Begin(Object)

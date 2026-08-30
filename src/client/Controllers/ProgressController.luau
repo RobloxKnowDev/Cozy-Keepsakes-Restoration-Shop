@@ -114,10 +114,10 @@ function ProgressController:Update(Object: Model | BasePart, InteractionPosition
 	if GlobalRatio ~= self.previousGlobal then
 		local Previous = self.previousGlobal
 		self.previousGlobal = GlobalRatio
-		local GainedPercent = Percent(GlobalRatio) - Percent(Previous)
 		self:AnimateText(self.globalText, Percent(Previous), Percent(GlobalRatio))
 		if GlobalRatio > Previous then
-			if InteractionPosition and GainedPercent > 0 then
+			if InteractionPosition then
+				local GainedPercent = math.clamp(math.round((GlobalRatio - Previous) * 1000) / 10, 0.1, 1)
 				self.feedback:CleaningPercent(InteractionPosition, GainedPercent)
 			end
 			self.feedback:Pulse(self.globalText, 1.07)
