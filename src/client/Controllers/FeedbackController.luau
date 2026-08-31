@@ -1,6 +1,8 @@
 local Debris = game:GetService("Debris")
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
@@ -12,10 +14,12 @@ local FeedbackController = {
 	tweens = {},
 }
 
+local FormatCurrency = require(ReplicatedStorage.Shared.Utils.CurrencyFormatter)
 local MicroTween = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ReturnTween = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local SuccessColor = Color3.fromRGB(255, 211, 105)
 local ErrorColor = Color3.fromRGB(255, 132, 92)
+local SoundFadeTween = TweenInfo.new(0.2, Enum.EasingStyle.Linear)
 
 local function GetScale(Target: GuiObject): UIScale
 	local Scale = Target:FindFirstChildOfClass("UIScale")
@@ -359,14 +363,51 @@ function FeedbackController:GlobalCompletion()
 end
 
 function FeedbackController:Sale(Name: string, Value: number, Count: number?)
+	local Amount = FormatCurrency(Value)
 	local Text = if Count and Count > 1
-		then string.format("%d ITEMS SOLD  +$%s", Count, tostring(math.round(Value)))
-		else string.format("%s SOLD  +$%s", string.upper(Name), tostring(math.round(Value)))
+		then string.format("%d ITEMS SOLD  +%s", Count, Amount)
+		else string.format("%s SOLD  +%s", string.upper(Name), Amount)
 	self:CenterText(Text, Color3.fromRGB(126, 255, 145), Count ~= nil and Count > 1)
 end
 
-function FeedbackController:PlaySound(_Name: string, _Cooldown: number?, _Pitch: number?)
-	return
+function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: number?)
+	local Template = self.sfxFolder:FindFirstChild(Name)
+	if not Template or not Template:IsA("Sound") then return end
+	local Now = os.clock()
+	if Cooldown and self.soundCooldowns[Name] and Now - self.soundCooldowns[Name] < Cooldown then return end
+	self.soundCooldowns[Name] = Now
+	local Sound = Template:Clone()
+	if Pitch then Sound.PlaybackSpeed = Pitch end
+	Sound.Parent = SoundService
+	Sound:Play()
+	local Length = if Sound.PlaybackSpeed > 0 then Sound.TimeLength / Sound.PlaybackSpeed else 0
+	if Length > 0.3 then
+		task.delay(Length - 0.2, function()
+			if Sound.Parent then
+				TweenService:Create(Sound, SoundFadeTween, { Volume = 0 }):Play()
+			end
+		end)
+	end
+	Sound.Ended:Once(function() Sound:Destroy() end)
+	Debris:AddItem(Sound, 15)
+end
+
+function FeedbackController:SetLoop(Name: string, Playing: boolean)
+	local Current = self.loopSounds[Name]
+	if Playing then
+		if Current then return end
+		local Template = self.sfxFolder:FindFirstChild(Name)
+		if not Template or not Template:IsA("Sound") then return end
+		local Sound = Template:Clone()
+		Sound.Looped = true
+		Sound.Parent = SoundService
+		Sound:Play()
+		self.loopSounds[Name] = Sound
+	elseif Current then
+		self.loopSounds[Name] = nil
+		TweenService:Create(Current, SoundFadeTween, { Volume = 0 }):Play()
+		Debris:AddItem(Current, 0.25)
+	end
 end
 
 function FeedbackController:FovPunch(Amount: number?)
@@ -394,6 +435,9 @@ end
 
 function FeedbackController:Init()
 	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	self.sfxFolder = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Sfx")
+	self.soundCooldowns = {}
+	self.loopSounds = {}
 	self.gui = Instance.new("ScreenGui")
 	self.gui.Name = "FeedbackUi"
 	self.gui.DisplayOrder = 1000

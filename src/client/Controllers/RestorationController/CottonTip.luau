@@ -11,6 +11,7 @@ function Cottontip.OnInputBegan(Context)
 	if Context.Display.Instance and not Context.Display.OnObject then return end
 	local Cleaningcontroller = Core:GetController("CleaningController")
 	Context.SetUsing(true)
+	Core:GetController("FeedbackController"):SetLoop("Scrub", true)
 	if Context.Object then Cleaningcontroller:TryCleanCotton(Context.Object) end
 end
 
@@ -20,10 +21,12 @@ end
 
 function Cottontip.OnInputEnded(Context)
 	Context.SetUsing(false)
+	Core:GetController("FeedbackController"):SetLoop("Scrub", false)
 end
 
 function Cottontip.OnDeselected(Context)
 	Context.SetUsing(false)
+	Core:GetController("FeedbackController"):SetLoop("Scrub", false)
 end
 
 return Cottontip

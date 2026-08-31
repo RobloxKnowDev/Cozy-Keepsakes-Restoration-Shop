@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 
 local Customercontroller = {
 	Name = "CustomerController",
@@ -42,14 +43,6 @@ local TouchRayOffsets = {
 
 local function Isgamepad(Inputtype: Enum.UserInputType): boolean
 	return Inputtype == Enum.UserInputType.Gamepad1
-end
-
-local function Formatcurrency(Value: number): string
-	local Rounded = math.round(Value * 100) / 100
-	if math.abs(Rounded - math.round(Rounded)) < 0.005 then
-		return string.format("$%d", math.round(Rounded))
-	end
-	return string.format("$%.2f", Rounded)
 end
 
 local function GetOrCreateCloseButton(CustomerFrame: Frame): GuiButton
@@ -156,6 +149,7 @@ local function AnimateButton(Button: GuiButton)
 end
 
 function Customercontroller:HideInstant()
+	self.hideId += 1
 	self.activeOfferId = nil
 	self.estimatedOfferId = nil
 	self.estimatedMaxPrice = nil
@@ -186,6 +180,7 @@ function Customercontroller:CanInteract(): boolean
 	local Cameracontroller = Core:GetController("InspectionCameraController")
 	local Restorationcontroller = Core:GetController("RestorationController")
 	return not self:IsVisible()
+		and not self.isBusy
 		and not Computercontroller:IsOpen()
 		and Cameracontroller:IsIntroCameraReady()
 		and not Restorationcontroller:IsEditingObject()
@@ -266,12 +261,14 @@ function Customercontroller:ShowPendingOffer()
 end
 
 function Customercontroller:ShowOffer(Offer)
+	self.hideId += 1
 	local HasCachedEstimate = self.estimatedOfferId == Offer.Id and self.estimatedMaxPrice ~= nil
 	if self.estimatedOfferId ~= nil and self.estimatedOfferId ~= Offer.Id then
 		self.estimatedOfferId = nil
 		self.estimatedMaxPrice = nil
 	end
 	self.activeOfferId = Offer.Id
+	self.activeOfferPrice = tonumber(Offer.Price) or 0
 	self.gui.Enabled = true
 	self.frame.Visible = true
 	self.frame.Position = self.hiddenPosition
@@ -284,7 +281,7 @@ function Customercontroller:ShowOffer(Offer)
 	end
 
 	if self.priceValueLabel then
-		self.priceValueLabel.Text = string.format("$%d", Offer.Price)
+		self.priceValueLabel.Text = Formatcurrency(Offer.Price)
 	end
 
 	if self.iconImage and (self.iconImage:IsA("ImageLabel") or self.iconImage:IsA("ImageButton")) then
@@ -341,7 +338,8 @@ function Customercontroller:RequestPriceEstimate()
 end
 
 function Customercontroller:HideAnimated(Fast: boolean?)
-	local Currentofferid = self.activeOfferId
+	self.hideId += 1
+	local Hideid = self.hideId
 	self.activeOfferId = nil
 	local Tweeninfo = if Fast then Fastframetweeninfo else Frametweeninfo
 	local Selectedobject = Guiservice.SelectedObject
@@ -355,10 +353,11 @@ function Customercontroller:HideAnimated(Fast: boolean?)
 	})
 	Scaletween:Play()
 	Scaletween.Completed:Once(function()
-		if self.activeOfferId == nil or self.activeOfferId == Currentofferid then
-			self.gui.Enabled = false
-			self.frame.Visible = false
+		if self.hideId ~= Hideid then
+			return
 		end
+		self.gui.Enabled = false
+		self.frame.Visible = false
 	end)
 end
 
@@ -376,7 +375,13 @@ function Customercontroller:Respond(Decision: string)
 	end
 
 	self.isBusy = true
-	local Response = Remotemanager:InvokeServer(Customerservicename, "RespondToOffer", self.activeOfferId, Decision)
+	local Offerid = self.activeOfferId
+	local Hidden = Decision ~= "Accept"
+		or Core:GetController("CashController"):GetCash() >= (self.activeOfferPrice or 0)
+	if Hidden then
+		self:HideAnimated(true)
+	end
+	local Response = Remotemanager:InvokeServer(Customerservicename, "RespondToOffer", Offerid, Decision)
 	self.isBusy = false
 
 	local WasAccepted = Response == true
@@ -387,6 +392,9 @@ function Customercontroller:Respond(Decision: string)
 	end
 
 	if not WasAccepted then
+		if Hidden and self.pendingOffer then
+			self:ShowOffer(self.pendingOffer)
+		end
 		if Reason == "NotEnoughCash" then
 			Core:GetController("MessageController"):Show("Not enough money", ErrorMessageColor)
 		elseif Reason == "EmergencyOfferPresented" then
@@ -435,6 +443,7 @@ function Customercontroller:Init()
 	end
 	self.estimatesRemaining = 0
 	self.isEstimating = false
+	self.hideId = 0
 	self.hoverHighlight = Instance.new("Highlight")
 	self.hoverHighlight.Name = "CustomerHoverHighlight"
 	self.hoverHighlight.DepthMode = Enum.HighlightDepthMode.Occluded

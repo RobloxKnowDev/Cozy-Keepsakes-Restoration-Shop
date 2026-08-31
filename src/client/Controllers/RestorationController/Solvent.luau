@@ -111,6 +111,7 @@ function Solvent.OnUpdate(Context)
 	Lastpourtime = os.clock()
 	Lastpuddleposition = Position
 	Depositliquid(Context.Object, Surface, Position, Normal, Target)
+	Core:GetController("FeedbackController"):PlaySound("Solvent", 0.08)
 end
 
 function Solvent.OnInputEnded(Context)

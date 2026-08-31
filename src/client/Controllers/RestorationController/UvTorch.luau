@@ -29,6 +29,25 @@ local function Makeglow(Image: ImageLabel)
 	Glowingimages[Image] = true
 end
 
+local function Getlight(Context): Light?
+	local Tip = Context.Display.Tip
+	if not Tip then return nil end
+	local Light = Tip:FindFirstChild("Light")
+	return if Light and Light:IsA("Light") then Light else nil
+end
+
+function Uvtorch.OnSelected(Context)
+	local Light = Getlight(Context)
+	if Light then Light.Enabled = false end
+end
+
+function Uvtorch.OnInputBegan(Context)
+	local Light = Getlight(Context)
+	if not Light then return end
+	Light.Enabled = not Light.Enabled
+	Core:GetController("FeedbackController"):PlaySound("UvTorch")
+end
+
 function Uvtorch.GetDisplayCFrame(Context): CFrame
 	local Target = Context.SurfacePosition
 	local Torchposition = Target + Vector3.new(0, 2.4 / Sizescale, 0)
@@ -37,9 +56,12 @@ end
 
 function Uvtorch.OnUpdate(Context)
 	local Display = Context.Display
+	local Light = Getlight(Context)
 	local Image: ImageLabel? = nil
 	if
-		Context.Object
+		Light ~= nil
+		and Light.Enabled
+		and Context.Object
 		and Display.OnObject
 		and Display.HitInstance
 		and Display.HitInstance:IsA("BasePart")
@@ -51,7 +73,6 @@ function Uvtorch.OnUpdate(Context)
 			Display.SurfacePosition,
 			Display.SurfaceNormal
 		)
-		if Image and Image.ImageTransparency >= 1 then Image = nil end
 	end
 
 	for Previous in pairs(Glowingimages) do

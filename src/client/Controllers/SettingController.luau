@@ -17,6 +17,7 @@ local OpenTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDir
 local CloseTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 local FastCloseTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 local ControlTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local DefaultVolume = 0.5
 
 function SettingController:IsOpen(): boolean
 	return self.isOpen == true
@@ -135,12 +136,17 @@ end
 function SettingController:BindSlider(Setting: Frame)
 	local FrameBar = Setting:WaitForChild("FrameBar")
 	local Bar = FrameBar:WaitForChild("Bar")
+	local PourcentageText = Setting:WaitForChild("PourcentageText")
 	local Dragging = false
 	FrameBar.Active = true
-	local function Update(Position: Vector3)
-		local Alpha = math.clamp((Position.X - FrameBar.AbsolutePosition.X) / FrameBar.AbsoluteSize.X, 0, 1)
+	local function Apply(Alpha: number)
 		Bar.Size = UDim2.new(Alpha, 0, Bar.Size.Y.Scale, Bar.Size.Y.Offset)
+		PourcentageText.Text = string.format("%d%%", math.round(Alpha * 100))
 	end
+	local function Update(Position: Vector3)
+		Apply(math.clamp((Position.X - FrameBar.AbsolutePosition.X) / FrameBar.AbsoluteSize.X, 0, 1))
+	end
+	Apply(DefaultVolume)
 	FrameBar.InputBegan:Connect(function(Input)
 		if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then return end
 		Dragging = true

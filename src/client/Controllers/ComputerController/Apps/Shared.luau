@@ -1,29 +1,22 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+
+local FormatCurrency = require(ReplicatedStorage.Shared.Utils.CurrencyFormatter)
 
 local Shared = {}
 local ButtonTween = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ActiveButtonScale = 1.03
 
 function Shared.FormatCurrency(Value: number): string
-	local Rounded = math.round(Value * 100) / 100
-	if math.abs(Rounded - math.round(Rounded)) < 0.005 then
-		return string.format("$%d", math.round(Rounded))
-	end
-	return string.format("$%.2f", Rounded)
+	return FormatCurrency(Value)
 end
 
 function Shared.FormatProfit(Value: number): string
 	local Rounded = math.round(Value * 100) / 100
 	if Rounded < 0 then
-		if math.abs(Rounded - math.round(Rounded)) < 0.005 then
-			return string.format("-$%d", math.abs(math.round(Rounded)))
-		end
-		return string.format("-$%.2f", math.abs(Rounded))
+		return "-" .. FormatCurrency(math.abs(Rounded))
 	end
-	if math.abs(Rounded - math.round(Rounded)) < 0.005 then
-		return string.format("+$%d", math.round(Rounded))
-	end
-	return string.format("+$%.2f", Rounded)
+	return "+" .. FormatCurrency(Rounded)
 end
 
 function Shared.EnsureScale(Target: Instance): UIScale

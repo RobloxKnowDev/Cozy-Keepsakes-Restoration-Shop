@@ -5,7 +5,7 @@ local Tweenservice = game:GetService("TweenService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
-local Abbreviatenumber = require(Replicatedstorage.Shared.Utils.NumberAbbreviator)
+local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 
 local Cashcontroller = {
 	Name = "CashController",
@@ -30,10 +30,15 @@ end
 
 function Cashcontroller:SetDisplayedCash(Value: number)
 	self.displayedCash = Value
-	self.cashText.Text = "$" .. Abbreviatenumber(Value)
+	self.cashText.Text = Formatcurrency(Value)
+end
+
+function Cashcontroller:GetCash(): number
+	return self.targetCash or self.displayedCash or 0
 end
 
 function Cashcontroller:AnimateCashTo(TargetValue: number, ShowGainFeedback: boolean?)
+	self.targetCash = TargetValue
 	local Startvalue = self.displayedCash or TargetValue
 	local Delta = TargetValue - Startvalue
 	if math.abs(Delta) < 0.005 then
@@ -46,7 +51,7 @@ function Cashcontroller:AnimateCashTo(TargetValue: number, ShowGainFeedback: boo
 	local Starttime = os.clock()
 	local Targetcolor = Delta > 0 and Gaincolor or Losscolor
 	if Delta > 0 and ShowGainFeedback ~= false then
-		self.feedback:FloatingText(self.cashFrame, "+$" .. Abbreviatenumber(math.abs(Delta)), Targetcolor)
+		self.feedback:FloatingText(self.cashFrame, "+" .. Formatcurrency(math.abs(Delta)), Targetcolor)
 		self.feedback:Burst(self.cashFrame, Gaincolor, math.clamp(math.floor(math.log10(math.abs(Delta) + 1) * 3), 4, 12))
 		self.feedback:PlaySound("CashGain", 0.12, 1 + math.clamp(math.log10(math.abs(Delta) + 1) * 0.025, 0, 0.12))
 	end

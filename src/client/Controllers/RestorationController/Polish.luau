@@ -108,6 +108,7 @@ function Polish.OnUpdate(Context)
 	Lastpourtime = os.clock()
 	Lastpuddleposition = Position
 	Depositliquid(Context.Object, Surface, Position, Normal)
+	Core:GetController("FeedbackController"):PlaySound("Solvent", 0.08)
 end
 
 function Polish.OnInputEnded(Context)

@@ -51,6 +51,7 @@ function Heatgun.OnInputBegan(Context)
 	end
 	Context.SetUsing(true)
 	Setemitter(Context, true)
+	Core:GetController("FeedbackController"):SetLoop("HeatGun", true)
 	if Context.Object then
 		Core:GetController("CleaningController"):TryClean(Context.Object, Heatgun.Name)
 		Cleanliquid(Context)
@@ -67,11 +68,13 @@ end
 function Heatgun.OnInputEnded(Context)
 	Context.SetUsing(false)
 	Setemitter(Context, false)
+	Core:GetController("FeedbackController"):SetLoop("HeatGun", false)
 end
 
 function Heatgun.OnDeselected(Context)
 	Context.SetUsing(false)
 	Setemitter(Context, false)
+	Core:GetController("FeedbackController"):SetLoop("HeatGun", false)
 end
 
 return Heatgun

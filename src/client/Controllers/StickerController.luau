@@ -5,6 +5,7 @@ local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
 local Stickercontroller = { Name = "StickerController", Priority = 9 }
@@ -39,6 +40,7 @@ function Stickercontroller:Reset()
 		self.tensionLine:Destroy()
 	end
 	self.tensionLine = nil
+	Core:GetController("FeedbackController"):SetLoop("Sticker", false)
 end
 
 function Stickercontroller:GetLockedToolPivot(): CFrame?
@@ -143,6 +145,7 @@ function Stickercontroller:Begin(Object: Model | BasePart, Tooltip: Attachment?,
 	Line.ZIndex = 100
 	Line.Parent = self.gui
 	self.tensionLine = Line
+	Core:GetController("FeedbackController"):SetLoop("Sticker", true)
 end
 
 function Stickercontroller:Update()
@@ -188,6 +191,7 @@ function Stickercontroller:Update()
 			self.tensionLine:Destroy()
 		end
 		self.tensionLine = nil
+		Core:GetController("FeedbackController"):SetLoop("Sticker", false)
 		Remotemanager:FireServer("RestorationService", "CompletePeel", self.spot)
 	end
 end

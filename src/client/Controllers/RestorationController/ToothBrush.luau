@@ -13,6 +13,7 @@ function Toothbrush.OnInputBegan(Context)
 	end
 	local Cleaningcontroller = Core:GetController("CleaningController")
 	Context.SetUsing(true)
+	Core:GetController("FeedbackController"):SetLoop("Scrub", true)
 	if Context.Object then
 		Cleaningcontroller:TryCleanDirt(Context.Object, Toothbrush.Name)
 	end
@@ -26,10 +27,12 @@ end
 
 function Toothbrush.OnInputEnded(Context)
 	Context.SetUsing(false)
+	Core:GetController("FeedbackController"):SetLoop("Scrub", false)
 end
 
 function Toothbrush.OnDeselected(Context)
 	Context.SetUsing(false)
+	Core:GetController("FeedbackController"):SetLoop("Scrub", false)
 end
 
 return Toothbrush

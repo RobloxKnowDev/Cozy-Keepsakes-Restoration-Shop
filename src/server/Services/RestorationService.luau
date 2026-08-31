@@ -1,3 +1,4 @@
+local Assetservice = game:GetService("AssetService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Tweenservice = game:GetService("TweenService")
@@ -26,16 +27,13 @@ local Restorationservice = {
 	},
 }
 
-local Dirtgridwidth = 4
-local Dirtcenterpower = 0.1
-local Dirtneighborpower = 0.04
 local Dirtcleaninterval = 0.07
-local Scratchimagecount = 4
-local Inkimagecount = 4
-local Scratchcleanpower = Dirtcenterpower * 0.75
 local Scratchcleaninterval = Dirtcleaninterval
-local Inkcleanpower = Scratchcleanpower
 local Inkcleaninterval = Scratchcleaninterval
+local Coveragegridwidth = 32
+local Coveragecellcount = Coveragegridwidth * Coveragegridwidth
+local Brushradii = { CottonTip = 1 / 12, ToothBrush = 3 / 32 }
+local Maxcleanpoints = 32
 local Dirtsurfacenames = {
 	UiTop = true,
 	UiBottom = true,
@@ -45,10 +43,94 @@ local Dirtsurfacenames = {
 	UiBack = true,
 }
 local Dirttools = { CottonTip = true, ToothBrush = true }
-local Dirttoolpower = { CottonTip = 1, ToothBrush = 1.2 }
 local Spothealth = { Sticker = 3 }
 local Toolpower = { CottonTip = 1, HeatGun = 1, Polish = 1, Solvent = 1, ToothBrush = 1, Tweezers = 1 }
 local Toolsforspot = { Sticker = "Tweezers" }
+type CoverageEntry = { Cells: { boolean }, Covered: number, Premarked: number }
+local Coverage: { [Instance]: CoverageEntry } = {}
+
+type CoverageMask = { Blank: { boolean }, Premarked: number }
+local Maskcache: { [string]: CoverageMask } = {}
+local Textureframenames = { DirtFrame = true, Ink = true, ScratchesFrame = true }
+
+local function Buildmask(Image: string): CoverageMask
+	local Cached = Maskcache[Image]
+	if Cached then
+		return Cached
+	end
+	local Editable = Assetservice:CreateEditableImageAsync(Content.fromUri(Image))
+	local Size = Editable.Size
+	local Pixels = Editable:ReadPixelsBuffer(Vector2.zero, Size)
+	Editable:Destroy()
+	local Width, Height = Size.X, Size.Y
+	local Blank = table.create(Coveragecellcount, false)
+	local Premarked = 0
+	for Row = 0, Coveragegridwidth - 1 do
+		local Minpixely = math.floor(Row * Height / Coveragegridwidth)
+		local Maxpixely = math.floor((Row + 1) * Height / Coveragegridwidth) - 1
+		for Column = 0, Coveragegridwidth - 1 do
+			local Minpixelx = math.floor(Column * Width / Coveragegridwidth)
+			local Maxpixelx = math.floor((Column + 1) * Width / Coveragegridwidth) - 1
+			local Visible = false
+			for Y = Minpixely, Maxpixely, 2 do
+				for X = Minpixelx, Maxpixelx, 2 do
+					if buffer.readu8(Pixels, (Y * Width + X) * 4 + 3) > 32 then
+						Visible = true
+						break
+					end
+				end
+				if Visible then break end
+			end
+			if not Visible then
+				Blank[Row * Coveragegridwidth + Column + 1] = true
+				Premarked += 1
+			end
+		end
+	end
+	local Mask = { Blank = Blank, Premarked = Premarked }
+	Maskcache[Image] = Mask
+	return Mask
+end
+
+local function Warmmasks(Object: RestorationObject)
+	local Missing = {}
+	local Remaining = 0
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if
+			Descendant:IsA("ImageLabel")
+			and Descendant.Name == "Texture"
+			and Textureframenames[Descendant.Parent.Name]
+			and not Maskcache[Descendant.Image]
+			and not Missing[Descendant.Image]
+		then
+			Missing[Descendant.Image] = true
+			Remaining += 1
+		end
+	end
+	if Remaining == 0 then
+		return
+	end
+	for Image in pairs(Missing) do
+		task.spawn(function()
+			pcall(Buildmask, Image)
+			Remaining -= 1
+		end)
+	end
+	local Deadline = os.clock() + 5
+	while Remaining > 0 and os.clock() < Deadline do
+		task.wait()
+	end
+end
+
+local function Buildcoverageentry(Texture: ImageLabel): CoverageEntry
+	local Success, Mask = pcall(Buildmask, Texture.Image)
+	if not Success then
+		warn("RestorationService: lecture impossible de " .. Texture.Image .. " : " .. tostring(Mask))
+		return { Cells = table.create(Coveragecellcount, false), Covered = 0, Premarked = 0 }
+	end
+	assert(Mask.Premarked < Coveragecellcount, "RestorationService: " .. Texture:GetFullName() .. " est entièrement transparente")
+	return { Cells = table.clone(Mask.Blank), Covered = Mask.Premarked, Premarked = Mask.Premarked }
+end
 
 type RestorationObject = Model | BasePart
 
@@ -198,12 +280,11 @@ local function Initializedirt(Object: RestorationObject): number
 			Dirtframe.Visible = false
 			continue
 		end
-		for Imageindex = 1, 16 do
-			local Image = Dirtframe:WaitForChild(tostring(Imageindex))
-			assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
-			Image:SetAttribute("InitialDirtTransparency", Image.ImageTransparency)
-			Totaldirt += 1 - Image.ImageTransparency
-		end
+		local Texture = Dirtframe:WaitForChild("Texture")
+		assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " doit être un ImageLabel")
+		Coverage[Dirtframe] = Buildcoverageentry(Texture)
+		Dirtframe:SetAttribute("Cleaned", false)
+		Totaldirt += 16
 	end
 	Object:SetAttribute("Total_Dirt", Totaldirt)
 	Object:SetAttribute("Cleaned_Dirt", 0)
@@ -225,14 +306,13 @@ local function Initializescratches(Object: RestorationObject): number
 				"RestorationService: la face de " .. Surface:GetFullName() .. " ne correspond pas à son nom"
 			)
 			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " doit être visible")
-			for Index = 1, Scratchimagecount do
-				local Image = Descendant:WaitForChild(tostring(Index))
-				assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
-				assert(Image.Visible, "RestorationService: " .. Image:GetFullName() .. " doit être visible")
-				Image:SetAttribute("InitialScratchTransparency", Image.ImageTransparency)
-				Image:SetAttribute("HasPolish", false)
-				Totalscratches += 1 - Image.ImageTransparency
-			end
+			local Texture = Descendant:WaitForChild("Texture")
+			assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " doit être un ImageLabel")
+			Texture:SetAttribute("Remaining", 1)
+			Texture:SetAttribute("HasPolish", false)
+			Descendant:SetAttribute("Cleaned", false)
+			Coverage[Descendant] = Buildcoverageentry(Texture)
+			Totalscratches += 1
 		end
 	end
 	Object:SetAttribute("Total_Scratch", Totalscratches)
@@ -252,14 +332,13 @@ local function Initializeink(Object: RestorationObject): number
 			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " doit être activé")
 			assert(Surface.Face.Name == string.sub(Surface.Name, 3), "RestorationService: la face de " .. Surface:GetFullName() .. " ne correspond pas à son nom")
 			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " doit être visible")
-			for Index = 1, Inkimagecount do
-				local Image = Descendant:WaitForChild(tostring(Index))
-				assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
-				assert(Image.Visible, "RestorationService: " .. Image:GetFullName() .. " doit être visible")
-				Image:SetAttribute("InitialInkTransparency", Image.ImageTransparency)
-				Image:SetAttribute("HasSolvent", false)
-				Totalink += 1 - Image.ImageTransparency
-			end
+			local Texture = Descendant:WaitForChild("Texture")
+			assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " doit être un ImageLabel")
+			Texture:SetAttribute("Remaining", 1)
+			Texture:SetAttribute("HasSolvent", false)
+			Descendant:SetAttribute("Cleaned", false)
+			Coverage[Descendant] = Buildcoverageentry(Texture)
+			Totalink += 1
 		end
 	end
 	Object:SetAttribute("Total_Ink", Totalink)
@@ -275,10 +354,7 @@ local function Validscratchimage(Object: RestorationObject, Target: any): boolea
 	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled or not Dirtsurfacenames[Surface.Name] then return false end
 	if not Surface.Parent or not Surface.Parent:IsA("BasePart") then return false end
 	if Surface.Face.Name ~= string.sub(Surface.Name, 3) then return false end
-	local Targetindex = tonumber(Target.Name)
-	if not Targetindex or Targetindex < 1 or Targetindex > Scratchimagecount or Targetindex ~= math.floor(Targetindex) then return false end
-	if Scratchframe:WaitForChild(tostring(Targetindex)) ~= Target then return false end
-	return Target.Visible and Target:GetAttribute("InitialScratchTransparency") ~= nil
+	return Target.Name == "Texture" and Target:GetAttribute("Remaining") ~= nil
 end
 
 local function Validinkimage(Object: RestorationObject, Target: any): boolean
@@ -289,13 +365,47 @@ local function Validinkimage(Object: RestorationObject, Target: any): boolean
 	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled or not Dirtsurfacenames[Surface.Name] then return false end
 	if not Surface.Parent or not Surface.Parent:IsA("BasePart") then return false end
 	if Surface.Face.Name ~= string.sub(Surface.Name, 3) then return false end
-	local Targetindex = tonumber(Target.Name)
-	if not Targetindex or Targetindex < 1 or Targetindex > Inkimagecount or Targetindex ~= math.floor(Targetindex) then return false end
-	if Inkframe:WaitForChild(tostring(Targetindex)) ~= Target then return false end
-	return Target.Visible and Target:GetAttribute("InitialInkTransparency") ~= nil
+	return Target.Name == "Texture" and Target:GetAttribute("Remaining") ~= nil
+end
+
+local function Validpoints(Points: any): boolean
+	if type(Points) ~= "table" or #Points == 0 or #Points > Maxcleanpoints then return false end
+	for _, Point in ipairs(Points) do
+		if typeof(Point) ~= "Vector2" or Point.X ~= Point.X or Point.Y ~= Point.Y then return false end
+	end
+	return true
+end
+
+local function Stampcells(Entry: CoverageEntry, Points: { Vector2 }, Radius: number): number
+	local Newlycovered = 0
+	for _, Point in ipairs(Points) do
+		local X = math.clamp(Point.X, 0, 1)
+		local Y = math.clamp(Point.Y, 0, 1)
+		local Mincolumn = math.max(math.floor((X - Radius) * Coveragegridwidth), 0)
+		local Maxcolumn = math.min(math.floor((X + Radius) * Coveragegridwidth), Coveragegridwidth - 1)
+		local Minrow = math.max(math.floor((Y - Radius) * Coveragegridwidth), 0)
+		local Maxrow = math.min(math.floor((Y + Radius) * Coveragegridwidth), Coveragegridwidth - 1)
+		for Row = Minrow, Maxrow do
+			local Centery = (Row + 0.5) / Coveragegridwidth
+			for Column = Mincolumn, Maxcolumn do
+				local Index = Row * Coveragegridwidth + Column + 1
+				if not Entry.Cells[Index] then
+					local Centerx = (Column + 0.5) / Coveragegridwidth
+					if (X - Centerx) ^ 2 + (Y - Centery) ^ 2 <= Radius * Radius then
+						Entry.Cells[Index] = true
+						Newlycovered += 1
+					end
+				end
+			end
+		end
+	end
+	Entry.Covered += Newlycovered
+	return Newlycovered
 end
 
 local function Createspots(Object: RestorationObject)
+	table.clear(Coverage)
+	Warmmasks(Object)
 	local Old = Object:FindFirstChild("RestorationSpots")
 	if Old then
 		Old:Destroy()
@@ -498,30 +608,34 @@ function Restorationservice:Init()
 	Remotemanager:OnServerEvent(self.Name, "ApplyInkSolvent", function(Player, Target)
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Validinkimage(Sessionobject, Target) then return end
-		if Target.ImageTransparency >= 1 then return end
+		if (Target:GetAttribute("Remaining") or 0) <= 0 then return end
 		Target:SetAttribute("HasSolvent", true)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "ApplyScratchPolish", function(Player, Target)
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Validscratchimage(Sessionobject, Target) then return end
-		if Target.ImageTransparency >= 1 then return end
+		if (Target:GetAttribute("Remaining") or 0) <= 0 then return end
 		Target:SetAttribute("HasPolish", true)
 	end)
 
-	Remotemanager:OnServerEvent(self.Name, "CleanInk", function(Player, Target)
+	Remotemanager:OnServerEvent(self.Name, "CleanInk", function(Player, Target, Points)
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Validinkimage(Sessionobject, Target) then return end
 		if Target:GetAttribute("HasSolvent") ~= true then return end
+		if not Validpoints(Points) then return end
+		local Entry = Coverage[Target.Parent]
+		if not Entry then return end
 		local Now = os.clock()
 		if Now - (Lastinkclean[Player] or 0) < Inkcleaninterval then return end
 		Lastinkclean[Player] = Now
 
-		local Previoustransparency = Target.ImageTransparency
-		local Transparency = math.clamp(Previoustransparency + Inkcleanpower, 0, 1)
-		local Removedink = Transparency - Previoustransparency
-		if Removedink <= 0 then return end
-		Target.ImageTransparency = Transparency
+		local Newlycovered = Stampcells(Entry, Points, Brushradii.CottonTip)
+		if Newlycovered <= 0 then return end
+		local Opaquecells = Coveragecellcount - Entry.Premarked
+		local Removedink = Newlycovered / Opaquecells
+		Target:SetAttribute("Remaining", 1 - (Entry.Covered - Entry.Premarked) / Opaquecells)
+		if Entry.Covered >= Coveragecellcount then Target.Parent:SetAttribute("Cleaned", true) end
 
 		local Totalink = tonumber(Sessionobject:GetAttribute("Total_Ink")) or 0
 		local Previouscleanedink = tonumber(Sessionobject:GetAttribute("Cleaned_Ink")) or 0
@@ -535,19 +649,23 @@ function Restorationservice:Init()
 		Sessionobject:SetAttribute("CleanedSpots", Cleanedspots)
 	end)
 
-	Remotemanager:OnServerEvent(self.Name, "CleanScratch", function(Player, Target)
+	Remotemanager:OnServerEvent(self.Name, "CleanScratch", function(Player, Target, Points)
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Validscratchimage(Sessionobject, Target) then return end
 		if Target:GetAttribute("HasPolish") ~= true then return end
+		if not Validpoints(Points) then return end
+		local Entry = Coverage[Target.Parent]
+		if not Entry then return end
 		local Now = os.clock()
 		if Now - (Lastscratchclean[Player] or 0) < Scratchcleaninterval then return end
 		Lastscratchclean[Player] = Now
 
-		local PreviousTransparency = Target.ImageTransparency
-		local Transparency = math.clamp(PreviousTransparency + Scratchcleanpower, 0, 1)
-		local Removedscratch = Transparency - PreviousTransparency
-		if Removedscratch <= 0 then return end
-		Target.ImageTransparency = Transparency
+		local Newlycovered = Stampcells(Entry, Points, Brushradii.CottonTip)
+		if Newlycovered <= 0 then return end
+		local Opaquecells = Coveragecellcount - Entry.Premarked
+		local Removedscratch = Newlycovered / Opaquecells
+		Target:SetAttribute("Remaining", 1 - (Entry.Covered - Entry.Premarked) / Opaquecells)
+		if Entry.Covered >= Coveragecellcount then Target.Parent:SetAttribute("Cleaned", true) end
 
 		local Totalscratches = tonumber(Sessionobject:GetAttribute("Total_Scratch")) or 0
 		local Previouscleanedscratches = tonumber(Sessionobject:GetAttribute("Cleaned_Scratch")) or 0
@@ -561,40 +679,28 @@ function Restorationservice:Init()
 		Sessionobject:SetAttribute("CleanedSpots", Cleanedspots)
 	end)
 
-	Remotemanager:OnServerEvent(self.Name, "CleanDirt", function(Player, Target, Toolname)
+	Remotemanager:OnServerEvent(self.Name, "CleanDirt", function(Player, Target, Toolname, Points)
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Dirttools[Toolname] then return end
 		if typeof(Target) ~= "Instance" or not Target:IsA("ImageLabel") or not Target:IsDescendantOf(Sessionobject) then return end
+		if Target.Name ~= "Texture" then return end
+		if not Validpoints(Points) then return end
 		local Dirtframe = Target.Parent
 		if not Dirtframe or Dirtframe.Name ~= "DirtFrame" or not Dirtframe:IsA("GuiObject") or not Dirtframe.Visible then return end
+		local Entry = Coverage[Dirtframe]
+		if not Entry then return end
 		local Surface = Dirtframe.Parent
 		if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled or not Dirtsurfacenames[Surface.Name] then return end
 		if Surface.Parent == nil or not Surface.Parent:IsA("BasePart") then return end
 		if Surface.Face.Name ~= string.sub(Surface.Name, 3) then return end
-		local Targetindex = tonumber(Target.Name)
-		if not Targetindex or Targetindex < 1 or Targetindex > 16 or Targetindex ~= math.floor(Targetindex) then return end
-		if Dirtframe:WaitForChild(tostring(Targetindex)) ~= Target then return end
-		if Target:GetAttribute("InitialDirtTransparency") == nil then return end
 		local Now = os.clock()
 		if Now - (Lastclean[Player] or 0) < Dirtcleaninterval then return end
 		Lastclean[Player] = Now
 
-		local Targetrow = math.floor((Targetindex - 1) / Dirtgridwidth)
-		local Targetcolumn = (Targetindex - 1) % Dirtgridwidth
-		local Removeddirt = 0
-		for Index = 1, 16 do
-			local Row = math.floor((Index - 1) / Dirtgridwidth)
-			local Column = (Index - 1) % Dirtgridwidth
-			if math.abs(Row - Targetrow) <= 1 and math.abs(Column - Targetcolumn) <= 1 then
-				local Image = Dirtframe:WaitForChild(tostring(Index))
-				assert(Image:IsA("ImageLabel"), "RestorationService: " .. Image:GetFullName() .. " doit être un ImageLabel")
-				local Power = (if Index == Targetindex then Dirtcenterpower else Dirtneighborpower) * Dirttoolpower[Toolname]
-				local Transparency = math.clamp(Image.ImageTransparency + Power, 0, 1)
-				Removeddirt += Transparency - Image.ImageTransparency
-				Image.ImageTransparency = Transparency
-			end
-		end
-		if Removeddirt <= 0 then return end
+		local Newlycovered = Stampcells(Entry, Points, Brushradii[Toolname])
+		if Entry.Covered >= Coveragecellcount then Dirtframe:SetAttribute("Cleaned", true) end
+		if Newlycovered <= 0 then return end
+		local Removeddirt = Newlycovered * 16 / (Coveragecellcount - Entry.Premarked)
 		local Totaldirt = tonumber(Sessionobject:GetAttribute("Total_Dirt")) or 0
 		local Cleaneddirt = math.min((tonumber(Sessionobject:GetAttribute("Cleaned_Dirt")) or 0) + Removeddirt, Totaldirt)
 		if Totaldirt - Cleaneddirt < 0.000001 then Cleaneddirt = Totaldirt end

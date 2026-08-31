@@ -7,6 +7,7 @@ local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
+local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 
 type RestorationObject = Model | BasePart
 
@@ -108,14 +109,6 @@ function Completioncontroller:Init()
 	end
 
 	self:EnsurePreviewObjects()
-end
-
-local function Formatcurrency(Value: number): string
-	if math.abs(Value - math.round(Value)) < 0.005 then
-		return string.format("$%d", math.round(Value))
-	end
-
-	return string.format("$%.2f", Value)
 end
 
 local function Formatreputation(Value: number): string
