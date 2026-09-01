@@ -424,7 +424,7 @@ local function ChooseEmergencyRequest(): CustomerOffer
 	}
 end
 
-local function GetCheapestRegularOfferPrice(Player: Player): number
+local function GetAffordableOfferThreshold(Player: Player): number
 	local Cheapestprice = math.huge
 	for _, Definition in pairs(Objectconfig.Object) do
 		if Definition.Rarity ~= "Exclusive" then
@@ -433,7 +433,8 @@ local function GetCheapestRegularOfferPrice(Player: Player): number
 				0
 			)
 			local Minprice = math.max(math.min(tonumber(Definition.PriceMinValue) or Maxprice, Maxprice), 0)
-			Cheapestprice = math.min(Cheapestprice, Minprice)
+			local Affordableprice = Minprice + (Maxprice - Minprice) * Objectconfig.Offer.EmergencyPriceMargin
+			Cheapestprice = math.min(Cheapestprice, Affordableprice)
 		end
 	end
 	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
@@ -603,7 +604,7 @@ function Customerservice:Init()
 		if NormalizedDecision == "accept" then
 			local Cashservice = Core:GetService("CashService")
 			if not Cashservice:SpendCash(Player, PendingOffer.Price) then
-				if Cashservice:CanSpendCash(Player, GetCheapestRegularOfferPrice(Player)) then
+				if Cashservice:CanSpendCash(Player, GetAffordableOfferThreshold(Player)) then
 					return {
 						Success = false,
 						Reason = "NotEnoughCash",

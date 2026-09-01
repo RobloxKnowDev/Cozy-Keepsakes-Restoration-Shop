@@ -6,6 +6,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
 
 local Cleaningcontroller = { Name = "CleaningController", Priority = 9 }
 
@@ -109,6 +110,34 @@ local Overlayimages: { [ImageLabel]: EditableImage } = {}
 local Overlaypending: { [ImageLabel]: boolean } = {}
 local Overlayradiusratio = 1 / 16
 
+local function Roundcorners(Editable: EditableImage, Ratio: number)
+	if Ratio <= 0 then
+		return
+	end
+	local Size = Editable.Size
+	local Width, Height = Size.X, Size.Y
+	local Radius = Roundedtexture.GetRadius(Width, Height, Ratio)
+	local Span = math.ceil(Radius)
+	local Pixels = Editable:ReadPixelsBuffer(Vector2.zero, Size)
+	for _, Corner in
+		ipairs({
+			Vector2.zero,
+			Vector2.new(Width - Span, 0),
+			Vector2.new(0, Height - Span),
+			Vector2.new(Width - Span, Height - Span),
+		})
+	do
+		for Y = Corner.Y, Corner.Y + Span - 1 do
+			for X = Corner.X, Corner.X + Span - 1 do
+				if Roundedtexture.IsOutside(X, Y, Width, Height, Radius) then
+					buffer.writeu8(Pixels, (Y * Width + X) * 4 + 3, 0)
+				end
+			end
+		end
+	end
+	Editable:WritePixelsBuffer(Vector2.zero, Size, Pixels)
+end
+
 local function Getoverlayimage(Test: ImageLabel): EditableImage?
 	local Editable = Overlayimages[Test]
 	if Editable then return Editable end
@@ -122,6 +151,7 @@ local function Getoverlayimage(Test: ImageLabel): EditableImage?
 			warn("CleaningController: EditableImage impossible pour " .. Test:GetFullName() .. " : " .. tostring(Created))
 			return
 		end
+		Roundcorners(Created, Roundedtexture.GetRatio(Test))
 		Test.ImageContent = Content.fromObject(Created)
 		Overlayimages[Test] = Created
 		Test.Destroying:Connect(function()

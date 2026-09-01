@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Config = require(Replicatedstorage.Shared.Config.Object)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
 
 local Restorationservice = {
 	Name = "RestorationService",
@@ -53,8 +54,9 @@ type CoverageMask = { Blank: { boolean }, Premarked: number }
 local Maskcache: { [string]: CoverageMask } = {}
 local Textureframenames = { DirtFrame = true, Ink = true, ScratchesFrame = true }
 
-local function Buildmask(Image: string): CoverageMask
-	local Cached = Maskcache[Image]
+local function Buildmask(Image: string, Ratio: number): CoverageMask
+	local Key = Image .. "|" .. tostring(Ratio)
+	local Cached = Maskcache[Key]
 	if Cached then
 		return Cached
 	end
@@ -63,6 +65,7 @@ local function Buildmask(Image: string): CoverageMask
 	local Pixels = Editable:ReadPixelsBuffer(Vector2.zero, Size)
 	Editable:Destroy()
 	local Width, Height = Size.X, Size.Y
+	local Radius = Roundedtexture.GetRadius(Width, Height, Ratio)
 	local Blank = table.create(Coveragecellcount, false)
 	local Premarked = 0
 	for Row = 0, Coveragegridwidth - 1 do
@@ -74,7 +77,10 @@ local function Buildmask(Image: string): CoverageMask
 			local Visible = false
 			for Y = Minpixely, Maxpixely, 2 do
 				for X = Minpixelx, Maxpixelx, 2 do
-					if buffer.readu8(Pixels, (Y * Width + X) * 4 + 3) > 32 then
+					if
+						buffer.readu8(Pixels, (Y * Width + X) * 4 + 3) > 32
+						and (Ratio <= 0 or not Roundedtexture.IsOutside(X, Y, Width, Height, Radius))
+					then
 						Visible = true
 						break
 					end
@@ -88,7 +94,7 @@ local function Buildmask(Image: string): CoverageMask
 		end
 	end
 	local Mask = { Blank = Blank, Premarked = Premarked }
-	Maskcache[Image] = Mask
+	Maskcache[Key] = Mask
 	return Mask
 end
 
@@ -100,19 +106,21 @@ local function Warmmasks(Object: RestorationObject)
 			Descendant:IsA("ImageLabel")
 			and Descendant.Name == "Texture"
 			and Textureframenames[Descendant.Parent.Name]
-			and not Maskcache[Descendant.Image]
-			and not Missing[Descendant.Image]
 		then
-			Missing[Descendant.Image] = true
-			Remaining += 1
+			local Ratio = Roundedtexture.GetRatio(Descendant)
+			local Key = Descendant.Image .. "|" .. tostring(Ratio)
+			if not Maskcache[Key] and not Missing[Key] then
+				Missing[Key] = { Image = Descendant.Image, Ratio = Ratio }
+				Remaining += 1
+			end
 		end
 	end
 	if Remaining == 0 then
 		return
 	end
-	for Image in pairs(Missing) do
+	for _, Entry in pairs(Missing) do
 		task.spawn(function()
-			pcall(Buildmask, Image)
+			pcall(Buildmask, Entry.Image, Entry.Ratio)
 			Remaining -= 1
 		end)
 	end
@@ -123,7 +131,7 @@ local function Warmmasks(Object: RestorationObject)
 end
 
 local function Buildcoverageentry(Texture: ImageLabel): CoverageEntry
-	local Success, Mask = pcall(Buildmask, Texture.Image)
+	local Success, Mask = pcall(Buildmask, Texture.Image, Roundedtexture.GetRatio(Texture))
 	if not Success then
 		warn("RestorationService: lecture impossible de " .. Texture.Image .. " : " .. tostring(Mask))
 		return { Cells = table.create(Coveragecellcount, false), Covered = 0, Premarked = 0 }

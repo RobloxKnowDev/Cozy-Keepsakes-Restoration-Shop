@@ -5,6 +5,7 @@ return {
 	},
 
 	Offer = {
+		EmergencyPriceMargin = 0.35,
 		Rarities = {
 			"Common",
 			"Uncommon",
@@ -92,7 +93,7 @@ return {
 			PriceMaxValue = 0,
 			IdImage = "rbxassetid://111157604286387",
 			Rarity = "Exclusive",
-			Reputation = 1,
+			Reputation = 0,
 			Emergency = true,
 		},
 		OldSuitcase = {
@@ -103,6 +104,15 @@ return {
 			IdImage = "rbxassetid://102276550411027",
 			Rarity = "Common",
 			Reputation = 2,
+		},
+		["Réveil"] = {
+			Name = "Alarm clock",
+			MaxValue = 350,
+			PriceMinValue = 160,
+			PriceMaxValue = 280,
+			IdImage = "rbxassetid://99063026148175",
+			Rarity = "Common",
+			Reputation = 7,
 		},
 	},
 }
