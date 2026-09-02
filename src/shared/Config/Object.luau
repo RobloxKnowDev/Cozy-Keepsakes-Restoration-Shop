@@ -6,89 +6,12 @@ return {
 
 	Offer = {
 		EmergencyPriceMargin = 0.35,
-		Rarities = {
-			"Common",
-			"Uncommon",
-			"Rare",
-			"Epic",
-			"Legendary",
-			"Mythic",
-		},
-		ReputationTiers = {
-			{
-				MinimumReputation = 0,
-				Chances = {
-					Common = 80,
-					Uncommon = 20,
-				},
-			},
-			{
-				MinimumReputation = 5,
-				Chances = {
-					Common = 60,
-					Uncommon = 30,
-					Rare = 10,
-				},
-			},
-			{
-				MinimumReputation = 15,
-				Chances = {
-					Common = 40,
-					Uncommon = 35,
-					Rare = 20,
-					Epic = 5,
-				},
-			},
-			{
-				MinimumReputation = 30,
-				Chances = {
-					Common = 25,
-					Uncommon = 30,
-					Rare = 25,
-					Epic = 15,
-					Legendary = 5,
-				},
-			},
-			{
-				MinimumReputation = 60,
-				Chances = {
-					Common = 15,
-					Uncommon = 25,
-					Rare = 25,
-					Epic = 20,
-					Legendary = 12,
-					Mythic = 3,
-				},
-			},
-			{
-				MinimumReputation = 100,
-				Chances = {
-					Common = 10,
-					Uncommon = 15,
-					Rare = 20,
-					Epic = 25,
-					Legendary = 20,
-					Mythic = 10,
-				},
-			},
-			{
-				MinimumReputation = 200,
-				Chances = {
-					Common = 5,
-					Uncommon = 10,
-					Rare = 15,
-					Epic = 25,
-					Legendary = 25,
-					Mythic = 20,
-				},
-			},
-		},
 	},
 
 	Object = {
-		Skate = {
+		Skateboard = {
 			Name = "Skateboard",
-			MaxValue = 15,
+			MaxValue = 45,
 			PriceMinValue = 0,
 			PriceMaxValue = 0,
 			IdImage = "rbxassetid://111157604286387",
@@ -98,21 +21,32 @@ return {
 		},
 		OldSuitcase = {
 			Name = "Old suitcase",
-			MaxValue = 100,
-			PriceMinValue = 35,
-			PriceMaxValue = 90,
+			MaxValue = 260,
+			PriceMinValue = 65,
+			PriceMaxValue = 140,
 			IdImage = "rbxassetid://102276550411027",
-			Rarity = "Common",
-			Reputation = 2,
+			Rarity = "Uncommon",
+			Reputation = 9,
 		},
-		["Réveil"] = {
+		AlarmClock = {
 			Name = "Alarm clock",
-			MaxValue = 350,
-			PriceMinValue = 160,
-			PriceMaxValue = 280,
-			IdImage = "rbxassetid://99063026148175",
+			MaxValue = 100,
+			PriceMinValue = 25,
+			PriceMaxValue = 55,
+			IdImage = "rbxassetid://77332415373242",
 			Rarity = "Common",
-			Reputation = 7,
+			Reputation = 3,
+			Rotation = Vector3.new(0, 180, 0),
+		},
+		PhotoFrame = {
+			Name = "Photo frame",
+			MaxValue = 100,
+			PriceMinValue = 25,
+			PriceMaxValue = 55,
+			IdImage = "rbxassetid://78955971518387",
+			Rarity = "Common",
+			Reputation = 3,
+			Rotation = Vector3.new(0, 180, 0),
 		},
 	},
 }

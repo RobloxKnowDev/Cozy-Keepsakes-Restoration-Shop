@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
+local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 
 type RestorationObject = Model | BasePart
 
@@ -469,7 +470,8 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 			Clone.CanTouch = false
 		end
 
-		Pivotto(Clone, CFrame.Angles(math.rad(90), math.rad(-90), math.rad(90)))
+		local Objectkey = tostring(Object:GetAttribute("ObjectKey"))
+		Pivotto(Clone, CFrame.Angles(math.rad(90), math.rad(-90), math.rad(90)) * Getobjectrotation(Objectkey))
 		Clone.Parent = self.world
 		self.displayObject = Clone
 		self.basePivot = Pivotof(Clone)

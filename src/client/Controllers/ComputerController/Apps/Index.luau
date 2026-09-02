@@ -6,6 +6,10 @@ local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
 local Index = {}
+local Rarityrank = {}
+for Rank, Rarity in ipairs(Rarityconfig.Order) do
+	Rarityrank[Rarity] = Rank
+end
 local GainColor = Color3.fromRGB(126, 255, 145)
 local LockedIconColor = Color3.fromRGB(160, 160, 160)
 local LockedIconTransparency = 0.35
@@ -20,20 +24,33 @@ end
 
 function Index.ApplyEntries(Controller, Entries)
 	local Previous = Controller.indexUnlockedByObject or {}
-	Controller.indexEntries = Entries or {}
+	local Sortedentries = {}
+	for _, Entry in ipairs(Entries or {}) do
+		table.insert(Sortedentries, Entry)
+	end
+	table.sort(Sortedentries, function(Left, Right)
+		local Leftrank = Rarityrank[tostring(Left.Rarity or "Common")] or math.huge
+		local Rightrank = Rarityrank[tostring(Right.Rarity or "Common")] or math.huge
+		if Leftrank ~= Rightrank then
+			return Leftrank < Rightrank
+		end
+		return tostring(Left.Name or "") < tostring(Right.Name or "")
+	end)
+	Controller.indexEntries = Sortedentries
 	Controller.indexUnlockedByObject = {}
 	local NewlyUnlocked = {}
 	for _, Child in ipairs(Controller.indexScrollingFrame:GetChildren()) do
 		if Child ~= Controller.indexTemplate and not Child:IsA("UIGridLayout") then Child:Destroy() end
 	end
 
-	for _, Entry in ipairs(Controller.indexEntries) do
+	for Order, Entry in ipairs(Controller.indexEntries) do
 		Controller.indexUnlockedByObject[Entry.ObjectKey] = Entry.Unlocked == true
 		if Controller.hasLoadedIndexEntries and Entry.Unlocked == true and Previous[Entry.ObjectKey] ~= true then
 			table.insert(NewlyUnlocked, tostring(Entry.Name or Entry.ObjectKey or "Unknown item"))
 		end
 		local Card = Controller.indexTemplate:Clone()
 		Card.Name = "Index_" .. tostring(Entry.ObjectKey or Entry.Name or math.random(1, 999999))
+		Card.LayoutOrder = Order
 		Card.Visible = true
 		Card.Parent = Controller.indexScrollingFrame
 		local RootButton = Card:WaitForChild("Button")
@@ -70,6 +87,7 @@ function Index.Init(Controller)
 	Controller.indexScrollingFrame = Controller.indexFrame:WaitForChild("ScrollingFrame")
 	Controller.indexTemplate = Controller.indexScrollingFrame:WaitForChild("Template")
 	Controller.indexGridLayout = Controller.indexScrollingFrame:WaitForChild("UIGridLayout")
+	Controller.indexGridLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	Controller.restoredText = Controller.indexFrame:WaitForChild("RestoredText")
 	Controller.indexEntries = {}
 	Controller.indexUnlockedByObject = {}

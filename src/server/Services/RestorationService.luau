@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Config = require(Replicatedstorage.Shared.Config.Object)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
 
 local Restorationservice = {
@@ -54,8 +55,8 @@ type CoverageMask = { Blank: { boolean }, Premarked: number }
 local Maskcache: { [string]: CoverageMask } = {}
 local Textureframenames = { DirtFrame = true, Ink = true, ScratchesFrame = true }
 
-local function Buildmask(Image: string, Ratio: number): CoverageMask
-	local Key = Image .. "|" .. tostring(Ratio)
+local function Buildmask(Image: string, Shape): CoverageMask
+	local Key = Image .. "|" .. Roundedtexture.GetKey(Shape)
 	local Cached = Maskcache[Key]
 	if Cached then
 		return Cached
@@ -65,7 +66,8 @@ local function Buildmask(Image: string, Ratio: number): CoverageMask
 	local Pixels = Editable:ReadPixelsBuffer(Vector2.zero, Size)
 	Editable:Destroy()
 	local Width, Height = Size.X, Size.Y
-	local Radius = Roundedtexture.GetRadius(Width, Height, Ratio)
+	local Iscut = Roundedtexture.IsCut(Shape)
+	local Bounds = Roundedtexture.GetBounds(Width, Height, Shape)
 	local Blank = table.create(Coveragecellcount, false)
 	local Premarked = 0
 	for Row = 0, Coveragegridwidth - 1 do
@@ -79,7 +81,7 @@ local function Buildmask(Image: string, Ratio: number): CoverageMask
 				for X = Minpixelx, Maxpixelx, 2 do
 					if
 						buffer.readu8(Pixels, (Y * Width + X) * 4 + 3) > 32
-						and (Ratio <= 0 or not Roundedtexture.IsOutside(X, Y, Width, Height, Radius))
+						and (not Iscut or not Roundedtexture.IsOutside(X, Y, Bounds))
 					then
 						Visible = true
 						break
@@ -107,10 +109,10 @@ local function Warmmasks(Object: RestorationObject)
 			and Descendant.Name == "Texture"
 			and Textureframenames[Descendant.Parent.Name]
 		then
-			local Ratio = Roundedtexture.GetRatio(Descendant)
-			local Key = Descendant.Image .. "|" .. tostring(Ratio)
+			local Shape = Roundedtexture.GetShape(Descendant)
+			local Key = Descendant.Image .. "|" .. Roundedtexture.GetKey(Shape)
 			if not Maskcache[Key] and not Missing[Key] then
-				Missing[Key] = { Image = Descendant.Image, Ratio = Ratio }
+				Missing[Key] = { Image = Descendant.Image, Shape = Shape }
 				Remaining += 1
 			end
 		end
@@ -120,7 +122,7 @@ local function Warmmasks(Object: RestorationObject)
 	end
 	for _, Entry in pairs(Missing) do
 		task.spawn(function()
-			pcall(Buildmask, Entry.Image, Entry.Ratio)
+			pcall(Buildmask, Entry.Image, Entry.Shape)
 			Remaining -= 1
 		end)
 	end
@@ -131,7 +133,7 @@ local function Warmmasks(Object: RestorationObject)
 end
 
 local function Buildcoverageentry(Texture: ImageLabel): CoverageEntry
-	local Success, Mask = pcall(Buildmask, Texture.Image, Roundedtexture.GetRatio(Texture))
+	local Success, Mask = pcall(Buildmask, Texture.Image, Roundedtexture.GetShape(Texture))
 	if not Success then
 		warn("RestorationService: lecture impossible de " .. Texture.Image .. " : " .. tostring(Mask))
 		return { Cells = table.create(Coveragecellcount, false), Covered = 0, Premarked = 0 }
@@ -235,7 +237,7 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 	Object:SetAttribute("ImageId", Definition.IdImage or "")
 	Object:SetAttribute("MaxReputation", Maxreputation)
 	Object.Parent = Generateditems
-	local Spawncframe = Spawnattachment.WorldCFrame * CFrame.Angles(0, math.rad(90), 0)
+	local Spawncframe = Spawnattachment.WorldCFrame * CFrame.Angles(0, math.rad(90), 0) * Getobjectrotation(Objectname)
 	if Object:IsA("Model") then
 		Object:PivotTo(Spawncframe)
 	else
@@ -638,7 +640,7 @@ function Restorationservice:Init()
 		if Now - (Lastinkclean[Player] or 0) < Inkcleaninterval then return end
 		Lastinkclean[Player] = Now
 
-		local Newlycovered = Stampcells(Entry, Points, Brushradii.CottonTip)
+		local Newlycovered = Stampcells(Entry, Points, Brushradii.ToothBrush)
 		if Newlycovered <= 0 then return end
 		local Opaquecells = Coveragecellcount - Entry.Premarked
 		local Removedink = Newlycovered / Opaquecells
@@ -668,7 +670,7 @@ function Restorationservice:Init()
 		if Now - (Lastscratchclean[Player] or 0) < Scratchcleaninterval then return end
 		Lastscratchclean[Player] = Now
 
-		local Newlycovered = Stampcells(Entry, Points, Brushradii.CottonTip)
+		local Newlycovered = Stampcells(Entry, Points, Brushradii.ToothBrush)
 		if Newlycovered <= 0 then return end
 		local Opaquecells = Coveragecellcount - Entry.Premarked
 		local Removedscratch = Newlycovered / Opaquecells

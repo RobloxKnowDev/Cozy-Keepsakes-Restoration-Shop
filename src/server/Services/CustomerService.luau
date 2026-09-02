@@ -7,6 +7,7 @@ local Lighting = game:GetService("Lighting")
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Daynightconfig = require(ReplicatedStorage.Shared.Config.DayNight)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
+local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local Remotemanager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 
 local Customerservice = {
@@ -124,7 +125,7 @@ local function CollectQueueAttachments()
 end
 
 local function CollectOfferObjects()
-	for _, Rarity in ipairs(Objectconfig.Offer.Rarities) do
+	for _, Rarity in ipairs(Rarityconfig.Order) do
 		ObjectsByRarity[Rarity] = {}
 	end
 
@@ -135,7 +136,7 @@ local function CollectOfferObjects()
 		end
 	end
 
-	for _, Rarity in ipairs(Objectconfig.Offer.Rarities) do
+	for _, Rarity in ipairs(Rarityconfig.Order) do
 		table.sort(ObjectsByRarity[Rarity])
 	end
 end
@@ -337,14 +338,16 @@ local function BroadcastOffer(Offer: CustomerOffer?)
 	Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", GetOfferPayload(Offer))
 end
 
+local function GetOfferLuck(Reputation: number): number
+	local Progress = math.max(Reputation, 0) / Rarityconfig.ReputationPerLuck
+	return 1 + math.min(Progress, Rarityconfig.MaximumLuck - 1)
+end
+
 local function GetOfferChances(Reputation: number)
-	local Reputationtiers = Objectconfig.Offer.ReputationTiers
-	local Chances = Reputationtiers[1].Chances
-	for _, Tier in ipairs(Reputationtiers) do
-		if Reputation < Tier.MinimumReputation then
-			break
-		end
-		Chances = Tier.Chances
+	local Luck = GetOfferLuck(Reputation)
+	local Chances = {}
+	for Index, Rarity in ipairs(Rarityconfig.Order) do
+		Chances[Rarity] = Rarityconfig[Rarity].Weight * Luck ^ (Index - 1)
 	end
 	return Chances
 end
@@ -353,7 +356,7 @@ local function ChooseObjectKey(Player: Player): string
 	local Reputation = Core:GetService("StatsService"):GetStats(Player).Reputation
 	local Chances = GetOfferChances(Reputation)
 	local Totalchance = 0
-	for _, Rarity in ipairs(Objectconfig.Offer.Rarities) do
+	for _, Rarity in ipairs(Rarityconfig.Order) do
 		local Chance = Chances[Rarity] or 0
 		if Chance > 0 and #ObjectsByRarity[Rarity] > 0 then
 			Totalchance += Chance
@@ -362,7 +365,7 @@ local function ChooseObjectKey(Player: Player): string
 
 	local Roll = math.random() * Totalchance
 	local Accumulatedchance = 0
-	for _, Rarity in ipairs(Objectconfig.Offer.Rarities) do
+	for _, Rarity in ipairs(Rarityconfig.Order) do
 		local Chance = Chances[Rarity] or 0
 		local Objectpool = ObjectsByRarity[Rarity]
 		if Chance > 0 and #Objectpool > 0 then

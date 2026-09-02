@@ -3,6 +3,7 @@ local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
 local Expositionservice = {
@@ -34,6 +35,7 @@ type DisplaySnapshot = {
 	Items: { DisplayEntry },
 }
 
+local Displayturndegrees = 90
 local Slotattachments: { [number]: Attachment } = {}
 local Occupiedslots: { [number]: DisplayPlacement } = {}
 local Reservedslots: { [number]: Player } = {}
@@ -269,7 +271,8 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 	local Object = Template:Clone() :: DisplayObject
 	Cleandisplayobject(Object)
 	Anchordisplayobject(Object)
-	Pivotdisplayobject(Object, Slotattachments[Slotindex].WorldCFrame)
+	local Slotcframe = Slotattachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
+	Pivotdisplayobject(Object, Slotcframe * Getobjectrotation(Item.ObjectKey))
 
 	if not Player.Parent or Reservedslots[Slotindex] ~= Player then
 		Object:Destroy()

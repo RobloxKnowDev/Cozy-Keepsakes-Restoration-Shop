@@ -8,6 +8,24 @@ local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
 
+local function Countcopies(Name: string): number
+	local Count = 0
+	for _, Child in ipairs(Replicatedstorage.Shared.Utils:GetChildren()) do
+		if Child.Name == Name then
+			Count += 1
+		end
+	end
+	return Count
+end
+
+assert(
+	Roundedtexture.GetShape and Roundedtexture.GetBounds and Roundedtexture.GetRowInset,
+	string.format(
+		"CleaningController: RoundedTexture obsolète (%d copies dans Shared.Utils, supprime les doublons dans Studio)",
+		Countcopies("RoundedTexture")
+	)
+)
+
 local Cleaningcontroller = { Name = "CleaningController", Priority = 9 }
 
 local Cleaninterval = 0.075
@@ -109,30 +127,30 @@ end
 local Overlayimages: { [ImageLabel]: EditableImage } = {}
 local Overlaypending: { [ImageLabel]: boolean } = {}
 local Overlayradiusratio = 1 / 16
+local Cottonscale = 4 / 3
+local Brushscale = 1.5
 
-local function Roundcorners(Editable: EditableImage, Ratio: number)
-	if Ratio <= 0 then
+local function Roundcorners(Editable: EditableImage, Shape)
+	if not Roundedtexture.IsCut(Shape) then
 		return
 	end
 	local Size = Editable.Size
 	local Width, Height = Size.X, Size.Y
-	local Radius = Roundedtexture.GetRadius(Width, Height, Ratio)
-	local Span = math.ceil(Radius)
+	local Bounds = Roundedtexture.GetBounds(Width, Height, Shape)
 	local Pixels = Editable:ReadPixelsBuffer(Vector2.zero, Size)
-	for _, Corner in
-		ipairs({
-			Vector2.zero,
-			Vector2.new(Width - Span, 0),
-			Vector2.new(0, Height - Span),
-			Vector2.new(Width - Span, Height - Span),
-		})
-	do
-		for Y = Corner.Y, Corner.Y + Span - 1 do
-			for X = Corner.X, Corner.X + Span - 1 do
-				if Roundedtexture.IsOutside(X, Y, Width, Height, Radius) then
-					buffer.writeu8(Pixels, (Y * Width + X) * 4 + 3, 0)
-				end
-			end
+	for Y = 0, Height - 1 do
+		local Rowinset = Roundedtexture.GetRowInset(Y + 0.5, Bounds)
+		local Startx, Endx = 0, 0
+		if Rowinset then
+			Startx = math.clamp(math.floor(Bounds.Left + Rowinset), 0, Width)
+			Endx = math.clamp(math.ceil(Bounds.Right - Rowinset), Startx, Width)
+		end
+		local Rowoffset = Y * Width * 4
+		if Startx > 0 then
+			buffer.fill(Pixels, Rowoffset, 0, Startx * 4)
+		end
+		if Endx < Width then
+			buffer.fill(Pixels, Rowoffset + Endx * 4, 0, (Width - Endx) * 4)
 		end
 	end
 	Editable:WritePixelsBuffer(Vector2.zero, Size, Pixels)
@@ -151,7 +169,8 @@ local function Getoverlayimage(Test: ImageLabel): EditableImage?
 			warn("CleaningController: EditableImage impossible pour " .. Test:GetFullName() .. " : " .. tostring(Created))
 			return
 		end
-		Roundcorners(Created, Roundedtexture.GetRatio(Test))
+		local Shape = Roundedtexture.GetShape(Test)
+		Roundcorners(Created, Shape)
 		Test.ImageContent = Content.fromObject(Created)
 		Overlayimages[Test] = Created
 		Test.Destroying:Connect(function()
@@ -370,7 +389,7 @@ function Cleaningcontroller:TryCleanDirt(Object: Model | BasePart, Toolname: str
 	Params.FilterDescendantsInstances = { Object }
 	local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 100, Params)
 	if not Result or not Result.Instance:IsA("BasePart") then return end
-	local Radiusscale = if Toolname == "CottonTip" then 4 / 3 else 1.5
+	local Radiusscale = if Toolname == "CottonTip" then Cottonscale else Brushscale
 	self:EraseCleanedLeftovers(Result.Instance, Result.Position, Result.Normal, Radiusscale)
 	self:EraseDirtOverlay(Result.Instance, Result.Position, Result.Normal, Radiusscale)
 	if os.clock() - self.lastRequest < Cleaninterval then return end
@@ -392,11 +411,11 @@ function Cleaningcontroller:TryCleanCotton(Object: Model | BasePart)
 	local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 100, Params)
 	if not Result or not Result.Instance:IsA("BasePart") then return end
 
-	self:EraseCleanedLeftovers(Result.Instance, Result.Position, Result.Normal, 4 / 3)
+	self:EraseCleanedLeftovers(Result.Instance, Result.Position, Result.Normal, Brushscale)
 	local Ink = self:GetInkImage(Result.Instance, Result.Position, Result.Normal)
 	if Ink then
 		if Ink:GetAttribute("HasSolvent") ~= true then return end
-		self:EraseTextureAt(Result.Instance, Result.Position, Result.Normal, Ink, 4 / 3)
+		self:EraseTextureAt(Result.Instance, Result.Position, Result.Normal, Ink, Brushscale)
 		self:TryCleanInk(Result.Instance, Result.Position, Result.Normal)
 		return
 	end
@@ -404,12 +423,12 @@ function Cleaningcontroller:TryCleanCotton(Object: Model | BasePart)
 	local Scratch = self:GetScratchImage(Result.Instance, Result.Position, Result.Normal)
 	if Scratch then
 		if Scratch:GetAttribute("HasPolish") ~= true then return end
-		self:EraseTextureAt(Result.Instance, Result.Position, Result.Normal, Scratch, 4 / 3)
+		self:EraseTextureAt(Result.Instance, Result.Position, Result.Normal, Scratch, Brushscale)
 		self:TryCleanScratch(Result.Instance, Result.Position, Result.Normal)
 		return
 	end
 
-	self:EraseDirtOverlay(Result.Instance, Result.Position, Result.Normal, 4 / 3)
+	self:EraseDirtOverlay(Result.Instance, Result.Position, Result.Normal, Cottonscale)
 	if os.clock() - self.lastRequest < Cleaninterval then return end
 	local Dirt = self:GetDirtImage(Result.Instance, Result.Position, Result.Normal)
 	if not Dirt then return end
