@@ -353,6 +353,9 @@ local function GetOfferChances(Reputation: number)
 end
 
 local function ChooseObjectKey(Player: Player): string
+	if Core:GetService("TutorialService"):IsActive(Player) then
+		return Objectconfig.Offer.TutorialObject
+	end
 	local Reputation = Core:GetService("StatsService"):GetStats(Player).Reputation
 	local Chances = GetOfferChances(Reputation)
 	local Totalchance = 0

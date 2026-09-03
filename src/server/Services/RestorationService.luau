@@ -54,6 +54,7 @@ local Coverage: { [Instance]: CoverageEntry } = {}
 type CoverageMask = { Blank: { boolean }, Premarked: number }
 local Maskcache: { [string]: CoverageMask } = {}
 local Textureframenames = { DirtFrame = true, Ink = true, ScratchesFrame = true }
+local Frontfacerank = { UiFront = 1, UiBack = 2, UiTop = 3, UiLeft = 4, UiRight = 5, UiBottom = 6 }
 
 local function Buildmask(Image: string, Shape): CoverageMask
 	local Key = Image .. "|" .. Roundedtexture.GetKey(Shape)
@@ -261,7 +262,7 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 	return Object
 end
 
-local function Initializedirt(Object: RestorationObject): number
+local function Initializedirt(Object: RestorationObject, Singleface: boolean): number
 	local Dirtframes = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("GuiObject") and Descendant.Name == "DirtFrame" then
@@ -279,11 +280,28 @@ local function Initializedirt(Object: RestorationObject): number
 			table.insert(Dirtframes, Descendant)
 		end
 	end
-	for Index = #Dirtframes, 2, -1 do
-		local Swap = math.random(Index)
-		Dirtframes[Index], Dirtframes[Swap] = Dirtframes[Swap], Dirtframes[Index]
+	if Singleface then
+		local Preferred = Config.Offer.TutorialDirtFace
+		local function Facerank(Dirtframe: Instance): number
+			local Facename = Dirtframe.Parent.Name
+			if Facename == Preferred then
+				return 0
+			end
+			return Frontfacerank[Facename] or 99
+		end
+		table.sort(Dirtframes, function(Left, Right)
+			return Facerank(Left) < Facerank(Right)
+		end)
+	else
+		for Index = #Dirtframes, 2, -1 do
+			local Swap = math.random(Index)
+			Dirtframes[Index], Dirtframes[Swap] = Dirtframes[Swap], Dirtframes[Index]
+		end
 	end
-	local Keptcount = if #Dirtframes > 0 then math.random(1, #Dirtframes) else 0
+	local Keptcount = 0
+	if #Dirtframes > 0 then
+		Keptcount = if Singleface then 1 else math.random(1, #Dirtframes)
+	end
 	local Totaldirt = 0
 	for Index, Dirtframe in ipairs(Dirtframes) do
 		if Index > Keptcount then
@@ -413,7 +431,7 @@ local function Stampcells(Entry: CoverageEntry, Points: { Vector2 }, Radius: num
 	return Newlycovered
 end
 
-local function Createspots(Object: RestorationObject)
+local function Createspots(Object: RestorationObject, Singleface: boolean)
 	table.clear(Coverage)
 	Warmmasks(Object)
 	local Old = Object:FindFirstChild("RestorationSpots")
@@ -425,7 +443,7 @@ local function Createspots(Object: RestorationObject)
 	Folder.Name = "RestorationSpots"
 	Folder.Parent = Object
 
-	local Totaldirt = Initializedirt(Object)
+	local Totaldirt = Initializedirt(Object, Singleface)
 	local Totalscratches = Initializescratches(Object)
 	local Totalink = Initializeink(Object)
 	local Sticker = Object:WaitForChild("Sticker")
@@ -465,7 +483,8 @@ function Restorationservice:PrepareObject(Objectname: string, Owner: Player?, Ma
 	end
 	Object:SetAttribute("RestorationObject", true)
 	Object:SetAttribute("AwardedUserId", if Owner then Owner.UserId else nil)
-	Createspots(Object)
+	local Istutorial = Owner ~= nil and Core:GetService("TutorialService"):IsActive(Owner)
+	Createspots(Object, Istutorial)
 	Activeobject = Object
 	return Object
 end

@@ -6,6 +6,8 @@ return {
 
 	Offer = {
 		EmergencyPriceMargin = 0.35,
+		TutorialObject = "PhotoFrame",
+		TutorialDirtFace = "UiLeft",
 	},
 
 	Object = {

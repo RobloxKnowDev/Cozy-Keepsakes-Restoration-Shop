@@ -100,6 +100,14 @@ local function Updateprogress(InteractionPosition: Vector2?)
 	end
 end
 
+function Controller:GetInterface()
+	return Interface
+end
+
+function Controller:GetActiveObject(): (Model | BasePart)?
+	return Activeobject
+end
+
 function Controller:SelectTool(Name: string)
 	Runtime:Select(Name)
 end
