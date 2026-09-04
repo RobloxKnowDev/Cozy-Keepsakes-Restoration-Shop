@@ -22,8 +22,7 @@ local function UpdateCount(Controller)
 	Controller.restoredText.Text = string.format("Restored items  (%d/%d)", UnlockedCount, #Controller.indexEntries)
 end
 
-function Index.ApplyEntries(Controller, Entries)
-	local Previous = Controller.indexUnlockedByObject or {}
+function Index.ApplyEntries(Controller, Entries, Unlockedkey)
 	local Sortedentries = {}
 	for _, Entry in ipairs(Entries or {}) do
 		table.insert(Sortedentries, Entry)
@@ -38,15 +37,15 @@ function Index.ApplyEntries(Controller, Entries)
 	end)
 	Controller.indexEntries = Sortedentries
 	Controller.indexUnlockedByObject = {}
-	local NewlyUnlocked = {}
+	local Unlockedname = nil
 	for _, Child in ipairs(Controller.indexScrollingFrame:GetChildren()) do
 		if Child ~= Controller.indexTemplate and not Child:IsA("UIGridLayout") then Child:Destroy() end
 	end
 
 	for Order, Entry in ipairs(Controller.indexEntries) do
 		Controller.indexUnlockedByObject[Entry.ObjectKey] = Entry.Unlocked == true
-		if Controller.hasLoadedIndexEntries and Entry.Unlocked == true and Previous[Entry.ObjectKey] ~= true then
-			table.insert(NewlyUnlocked, tostring(Entry.Name or Entry.ObjectKey or "Unknown item"))
+		if Entry.ObjectKey == Unlockedkey and Entry.Unlocked == true then
+			Unlockedname = tostring(Entry.Name or Entry.ObjectKey or "Unknown item")
 		end
 		local Card = Controller.indexTemplate:Clone()
 		Card.Name = "Index_" .. tostring(Entry.ObjectKey or Entry.Name or math.random(1, 999999))
@@ -71,12 +70,9 @@ function Index.ApplyEntries(Controller, Entries)
 		Icon.ImageTransparency = if IsUnlocked then DefaultTransparency else LockedIconTransparency
 	end
 
-	if Controller.hasLoadedIndexEntries then
-		for _, Name in ipairs(NewlyUnlocked) do
-			Core:GetController("MessageController"):Show(string.format("New index entry unlocked: %s", Name), GainColor)
-		end
+	if Unlockedname then
+		Core:GetController("MessageController"):Show(string.format("New index entry unlocked: %s", Unlockedname), GainColor)
 	end
-	Controller.hasLoadedIndexEntries = true
 	UpdateCount(Controller)
 	task.defer(function()
 		Controller.indexScrollingFrame.CanvasSize = UDim2.fromOffset(0, Controller.indexGridLayout.AbsoluteContentSize.Y)
@@ -91,7 +87,6 @@ function Index.Init(Controller)
 	Controller.restoredText = Controller.indexFrame:WaitForChild("RestoredText")
 	Controller.indexEntries = {}
 	Controller.indexUnlockedByObject = {}
-	Controller.hasLoadedIndexEntries = false
 	Controller.indexTemplate.Visible = false
 	Index.ApplyEntries(Controller, RemoteManager:InvokeServer("InventoryService", "GetIndexEntries"))
 end
@@ -100,7 +95,9 @@ function Index.Start(Controller)
 	Controller.indexGridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		Controller.indexScrollingFrame.CanvasSize = UDim2.fromOffset(0, Controller.indexGridLayout.AbsoluteContentSize.Y)
 	end)
-	RemoteManager:OnClientEvent("InventoryService", "IndexUpdated", function(Entries) Index.ApplyEntries(Controller, Entries) end)
+	RemoteManager:OnClientEvent("InventoryService", "IndexUpdated", function(Entries, Unlockedkey)
+		Index.ApplyEntries(Controller, Entries, Unlockedkey)
+	end)
 end
 
 return Index

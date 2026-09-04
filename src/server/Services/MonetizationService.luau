@@ -203,7 +203,25 @@ function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: n
 	return Core:GetService("UpgradeService"):HandleDeveloperProduct(Player, ProductId)
 end
 
+function MonetizationService:GrantReputationBoost(Player: Player, Seconds: number)
+	PersonalReputationBoostEndsAt[Player] = math.max(PersonalReputationBoostEndsAt[Player] or 0, Now()) + Seconds
+	self:PushAllStates()
+end
+
 function MonetizationService:Init()
+	Core:GetService("DataService"):Register("Monetization", {
+		Load = function(Player, Saved)
+			PersonalReputationBoostEndsAt[Player] = math.max(tonumber(Saved.PersonalReputationBoostEndsAt) or 0, 0)
+			self:PushAllStates()
+		end,
+		Save = function(Player)
+			return { PersonalReputationBoostEndsAt = PersonalReputationBoostEndsAt[Player] or 0 }
+		end,
+		Clear = function(Player)
+			GamePassCache[Player] = nil
+			PersonalReputationBoostEndsAt[Player] = nil
+		end,
+	})
 	local function SetupPlayer(Player: Player)
 		GamePassCache[Player] = {}
 		if RunService:IsStudio() then
@@ -232,11 +250,6 @@ function MonetizationService:Init()
 
 	for _, Player in ipairs(Players:GetPlayers()) do SetupPlayer(Player) end
 	Players.PlayerAdded:Connect(SetupPlayer)
-	Players.PlayerRemoving:Connect(function(Player)
-		GamePassCache[Player] = nil
-		PersonalReputationBoostEndsAt[Player] = nil
-	end)
-
 	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(Player, GamePassId, WasPurchased)
 		if not WasPurchased then return end
 		local PassName = FindGamePassName(GamePassId)
@@ -261,11 +274,11 @@ function MonetizationService:Init()
 			return self:HandleDeveloperProduct(Player, ReceiptInfo.ProductId, tostring(ReceiptInfo.PurchaseId))
 		end)
 		if not Success then
-			warn("MonetizationService: erreur de reçu: " .. tostring(Granted))
+			warn("MonetizationService: receipt error: " .. tostring(Granted))
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 		if not Granted then
-			warn(string.format("MonetizationService: Developer Product inconnu (%d)", ReceiptInfo.ProductId))
+			warn(string.format("MonetizationService: unknown Developer Product (%d)", ReceiptInfo.ProductId))
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 		return Enum.ProductPurchaseDecision.PurchaseGranted

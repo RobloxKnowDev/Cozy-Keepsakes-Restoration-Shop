@@ -120,8 +120,8 @@ function Inventoryservice:PushItems(Player: Player)
 	Remotemanager:FireClient(self.Name, "RestoredItemsUpdated", Player, Items)
 end
 
-function Inventoryservice:PushIndex(Player: Player)
-	Remotemanager:FireClient(self.Name, "IndexUpdated", Player, self:GetIndexEntries(Player))
+function Inventoryservice:PushIndex(Player: Player, Unlockedkey: string?)
+	Remotemanager:FireClient(self.Name, "IndexUpdated", Player, self:GetIndexEntries(Player), Unlockedkey)
 end
 
 function Inventoryservice:AddRestoredItem(Player: Player, Item: RestoredItem): RestoredItem
@@ -176,7 +176,7 @@ function Inventoryservice:UnlockIndexEntry(Player: Player, ObjectKey: string): b
 	end
 
 	Unlockedbyobject[ObjectKey] = true
-	self:PushIndex(Player)
+	self:PushIndex(Player, ObjectKey)
 	return true
 end
 
@@ -231,6 +231,34 @@ function Inventoryservice:SellAllRestoredItems(Player: Player)
 end
 
 function Inventoryservice:Init()
+	Core:GetService("DataService"):Register("Inventory", {
+		Load = function(Player, Saved)
+			self:EnsurePlayer(Player)
+			local Items = {}
+			for _, Item in ipairs(if type(Saved.Items) == "table" then Saved.Items else {}) do
+				local Stored = CloneItem(Item)
+				Stored.Id = math.floor(tonumber(Item.Id) or 0)
+				NextItemId = math.max(NextItemId, Stored.Id)
+				table.insert(Items, Stored)
+			end
+			ItemsByPlayer[Player] = Items
+			local Index = {}
+			for Objectkey, Unlocked in pairs(if type(Saved.Index) == "table" then Saved.Index else {}) do
+				Index[tostring(Objectkey)] = Unlocked == true
+			end
+			IndexByPlayer[Player] = Index
+			self:PushItems(Player)
+			self:PushIndex(Player)
+		end,
+		Save = function(Player)
+			self:EnsurePlayer(Player)
+			return { Items = ItemsByPlayer[Player], Index = IndexByPlayer[Player] }
+		end,
+		Clear = function(Player)
+			ItemsByPlayer[Player] = nil
+			IndexByPlayer[Player] = nil
+		end,
+	})
 	for _, Player in ipairs(Players:GetPlayers()) do
 		self:EnsurePlayer(Player)
 	end
@@ -243,11 +271,6 @@ function Inventoryservice:Init()
 				self:PushItems(Player)
 			end
 		end)
-	end)
-
-	Players.PlayerRemoving:Connect(function(Player)
-		ItemsByPlayer[Player] = nil
-		IndexByPlayer[Player] = nil
 	end)
 
 	Remotemanager:OnServerInvoke(self.Name, "GetIndexEntries", function(Player)

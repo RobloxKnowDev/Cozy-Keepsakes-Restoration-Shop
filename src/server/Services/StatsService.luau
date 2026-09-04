@@ -103,6 +103,22 @@ function Statsservice:SetReputation(Player: Player, Amount: number): number
 end
 
 function Statsservice:Init()
+	Core:GetService("DataService"):Register("Stats", {
+		Load = function(Player, Saved)
+			local Stats = self:EnsurePlayer(Player)
+			Stats.ItemsSold = math.max(tonumber(Saved.ItemsSold) or 0, 0)
+			Stats.Reputation = math.max(tonumber(Saved.Reputation) or 0, 0)
+			Stats.DailyProfit = tonumber(Saved.DailyProfit) or 0
+			Stats.LastDay = tonumber(Saved.LastDay) or Stats.LastDay
+			self:PushStats(Player)
+		end,
+		Save = function(Player)
+			return self:EnsurePlayer(Player)
+		end,
+		Clear = function(Player)
+			StatsByPlayer[Player] = nil
+		end,
+	})
 	for _, Player in ipairs(Players:GetPlayers()) do
 		self:EnsurePlayer(Player)
 	end
@@ -114,10 +130,6 @@ function Statsservice:Init()
 				self:PushStats(Player)
 			end
 		end)
-	end)
-
-	Players.PlayerRemoving:Connect(function(Player)
-		StatsByPlayer[Player] = nil
 	end)
 
 	Lighting:GetAttributeChangedSignal("Day"):Connect(function()

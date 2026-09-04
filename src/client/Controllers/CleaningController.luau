@@ -21,7 +21,7 @@ end
 assert(
 	Roundedtexture.GetShape and Roundedtexture.GetBounds and Roundedtexture.GetRowInset,
 	string.format(
-		"CleaningController: RoundedTexture obsolète (%d copies dans Shared.Utils, supprime les doublons dans Studio)",
+		"CleaningController: outdated RoundedTexture (%d copies in Shared.Utils, delete the duplicates in Studio)",
 		Countcopies("RoundedTexture")
 	)
 )
@@ -49,7 +49,7 @@ end
 local function Getinkimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel?
 	local Inkframe = Surface:FindFirstChild("Ink")
 	if not Inkframe then return nil end
-	assert(Inkframe:IsA("GuiObject"), "CleaningController: " .. Inkframe:GetFullName() .. " doit être un GuiObject")
+	assert(Inkframe:IsA("GuiObject"), "CleaningController: " .. Inkframe:GetFullName() .. " must be a GuiObject")
 	if not Inkframe.Visible or Inkframe:GetAttribute("Cleaned") == true then return nil end
 	local Texture = Inkframe:FindFirstChild("Texture")
 	if not Texture or not Texture:IsA("ImageLabel") then return nil end
@@ -88,7 +88,7 @@ end
 local function Getdirtimage(Surface: SurfaceGui, Facepoint: Vector2): (ImageLabel?, Vector2?)
 	local Dirtframe = Surface:FindFirstChild("DirtFrame")
 	if not Dirtframe then return nil end
-	assert(Dirtframe:IsA("GuiObject"), "CleaningController: " .. Dirtframe:GetFullName() .. " doit être un GuiObject")
+	assert(Dirtframe:IsA("GuiObject"), "CleaningController: " .. Dirtframe:GetFullName() .. " must be a GuiObject")
 	if not Dirtframe.Visible or Dirtframe:GetAttribute("Cleaned") == true then return nil end
 	local Texture = Dirtframe:FindFirstChild("Texture")
 	if not Texture or not Texture:IsA("ImageLabel") then return nil end
@@ -104,7 +104,7 @@ local function Getscratchimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLa
 		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
 	for _, Scratchframe in ipairs(Surface:GetChildren()) do
 		if Scratchframe.Name == "ScratchesFrame" then
-			assert(Scratchframe:IsA("GuiObject"), "CleaningController: " .. Scratchframe:GetFullName() .. " doit être un GuiObject")
+			assert(Scratchframe:IsA("GuiObject"), "CleaningController: " .. Scratchframe:GetFullName() .. " must be a GuiObject")
 			if not Scratchframe.Visible or Scratchframe:GetAttribute("Cleaned") == true then continue end
 			local Texture = Scratchframe:FindFirstChild("Texture")
 			if not Texture or not Texture:IsA("ImageLabel") then continue end
@@ -166,7 +166,7 @@ local function Getoverlayimage(Test: ImageLabel): EditableImage?
 			return Assetservice:CreateEditableImageAsync(Content.fromUri(Test.Image))
 		end)
 		if not Success then
-			warn("CleaningController: EditableImage impossible pour " .. Test:GetFullName() .. " : " .. tostring(Created))
+			warn("CleaningController: EditableImage failed for " .. Test:GetFullName() .. ": " .. tostring(Created))
 			return
 		end
 		local Shape = Roundedtexture.GetShape(Test)
@@ -300,7 +300,7 @@ function Cleaningcontroller:GetDirtImage(
 	local Facename = Getfacename(Localnormal)
 	local Surface = Part:FindFirstChild("Ui" .. Facename)
 	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return nil end
-	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " doit utiliser la face " .. Facename)
+	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " must use the face " .. Facename)
 	return Getdirtimage(Surface, Getfacepoint(Part, Worldposition, Facename))
 end
 
@@ -313,7 +313,7 @@ function Cleaningcontroller:GetScratchImage(
 	local Facename = Getfacename(Localnormal)
 	local Surface = Part:FindFirstChild("Ui" .. Facename)
 	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return nil end
-	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " doit utiliser la face " .. Facename)
+	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " must use the face " .. Facename)
 	return Getscratchimage(Surface, Getfacepoint(Part, Worldposition, Facename))
 end
 
@@ -326,7 +326,7 @@ function Cleaningcontroller:GetInkImage(
 	local Facename = Getfacename(Localnormal)
 	local Surface = Part:FindFirstChild("Ui" .. Facename)
 	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return nil end
-	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " doit utiliser la face " .. Facename)
+	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " must use the face " .. Facename)
 	return Getinkimage(Surface, Getfacepoint(Part, Worldposition, Facename))
 end
 

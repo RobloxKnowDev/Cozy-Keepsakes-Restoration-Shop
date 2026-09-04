@@ -244,7 +244,7 @@ local function MoveCustomerTo(Customer: Model, Attachment: Attachment, OnComplet
 		end
 	end
 	if not Humanoid then
-		warn(string.format("CustomerService: %s n'a pas de Humanoid, déplacement instantané utilisé", Customer.Name))
+		warn(string.format("CustomerService: %s has no Humanoid, teleporting instead", Customer.Name))
 		FinishArrival()
 		return
 	end
@@ -379,7 +379,7 @@ local function ChooseObjectKey(Player: Player): string
 		end
 	end
 
-	error("CustomerService: aucun objet disponible pour les offres")
+	error("CustomerService: no object available for offers")
 end
 
 local function ChooseCustomerRequest(Player: Player): CustomerOffer

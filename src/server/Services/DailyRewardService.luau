@@ -86,13 +86,9 @@ end
 
 function DailyRewardService:LoadPlayer(Player: Player)
 	DataByPlayer[Player] = NewData()
-	local Success = true
-	local Saved = nil
-	if not RunService:IsStudio() then
-		Success, Saved = pcall(function()
-			return Store:GetAsync(tostring(Player.UserId))
-		end)
-	end
+	local Success, Saved = pcall(function()
+		return Store:GetAsync(tostring(Player.UserId))
+	end)
 	if not Player.Parent then
 		DataByPlayer[Player] = nil
 		return
@@ -114,9 +110,18 @@ function DailyRewardService:WaitForData(Player: Player): DailyRewardData?
 	return DataByPlayer[Player]
 end
 
+function DailyRewardService:Wipe(Player: Player)
+	DataByPlayer[Player] = NewData()
+	local Success, Error = pcall(function()
+		Store:RemoveAsync(tostring(Player.UserId))
+	end)
+	if not Success then
+		warn("DailyRewardService: could not erase data for " .. Player.Name .. ": " .. tostring(Error))
+	end
+end
+
 function DailyRewardService:SavePlayer(Player: Player): boolean
 	if not LoadedByPlayer[Player] then return false end
-	if RunService:IsStudio() then return true end
 	local Snapshot = SerializeData(DataByPlayer[Player])
 	local Success, Error = pcall(function()
 		Store:SetAsync(tostring(Player.UserId), Snapshot)
@@ -217,6 +222,16 @@ function DailyRewardService:UnlockNextReward(Player: Player, PurchaseId: string?
 	end
 	self:PushState(Player)
 	return { Success = true, Day = Day, State = self:BuildState(Player) }
+end
+
+function DailyRewardService:GrantSaleBoost(Player: Player, Seconds: number)
+	local Data = self:WaitForData(Player)
+	if not Data then
+		return
+	end
+	Data.SaleBoostEndsAt = math.max(Data.SaleBoostEndsAt, Now()) + Seconds
+	self:PushState(Player)
+	Core:GetService("InventoryService"):PushItems(Player)
 end
 
 function DailyRewardService:GetSaleMultiplier(Player: Player): number

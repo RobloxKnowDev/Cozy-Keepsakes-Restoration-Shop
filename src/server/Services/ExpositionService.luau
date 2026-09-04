@@ -236,6 +236,30 @@ function Expositionservice:RefreshAllReputations()
 	end
 end
 
+function Expositionservice:RestoreDisplayItem(Player: Player, Slotindex: number, Item: any): boolean
+	if not Ispositiveinteger(Slotindex) or Slotindex > 9 or Occupiedslots[Slotindex] then
+		return false
+	end
+	local Template = Objecttemplates:FindFirstChild(tostring(Item.ObjectKey))
+	if not Template or (not Template:IsA("Model") and not Template:IsA("BasePart")) then
+		warn("ExpositionService: model not found for " .. tostring(Item.ObjectKey))
+		return false
+	end
+	local Object = Template:Clone() :: DisplayObject
+	Cleandisplayobject(Object)
+	Anchordisplayobject(Object)
+	local Slotcframe = Slotattachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
+	Pivotdisplayobject(Object, Slotcframe * Getobjectrotation(Item.ObjectKey))
+	Object.Name = "Display_" .. Player.UserId .. "_" .. Slotindex
+	Object:SetAttribute("OwnerUserId", Player.UserId)
+	Object:SetAttribute("SlotIndex", Slotindex)
+	Object:SetAttribute("ItemId", Item.Id)
+	Object:SetAttribute("ObjectKey", Item.ObjectKey)
+	Object.Parent = Displayedobjects
+	Occupiedslots[Slotindex] = { Player = Player, Object = Object, Item = Item }
+	return true
+end
+
 function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Itemid: any)
 	if not Ispositiveinteger(Slotindex) or Slotindex > 9 then
 		return { Success = false, Reason = "InvalidSlot" }
@@ -266,7 +290,7 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 	local Template = Objecttemplates:WaitForChild(Item.ObjectKey)
 	if not Template:IsA("Model") and not Template:IsA("BasePart") then
 		Releasereservation(Player, Slotindex)
-		error("ExpositionService: le modèle '" .. Item.ObjectKey .. "' doit être un Model ou une BasePart")
+		error("ExpositionService: model '" .. Item.ObjectKey .. "' must be a Model or a BasePart")
 	end
 	local Object = Template:Clone() :: DisplayObject
 	Cleandisplayobject(Object)
@@ -368,7 +392,29 @@ function Expositionservice:Init()
 	Placementparticle =
 		Replicatedstorage:WaitForChild("Asset"):WaitForChild("Vfx"):WaitForChild("PlacementParticle") :: ParticleEmitter
 
-	Players.PlayerRemoving:Connect(Cleanupplayer)
+	Core:GetService("DataService"):Register("Exposition", {
+		Load = function(Player, Saved)
+			for Slotkey, Item in pairs(if type(Saved) == "table" then Saved else {}) do
+				local Slotindex = tonumber(Slotkey)
+				if Slotindex and type(Item) == "table" then
+					self:RestoreDisplayItem(Player, Slotindex, Item)
+				end
+			end
+			Refreshdisplayreputation(Player)
+			Commitdisplaychange()
+		end,
+		Save = function(Player)
+			local Snapshot = {}
+			for Slotindex, Placement in pairs(Occupiedslots) do
+				if Placement.Player == Player then
+					Snapshot[tostring(Slotindex)] = Placement.Item
+				end
+			end
+			return Snapshot
+		end,
+		Clear = Cleanupplayer,
+	})
+
 	Remotemanager:OnServerInvoke(self.Name, "GetDisplayItems", function()
 		return self:GetDisplayItems()
 	end)

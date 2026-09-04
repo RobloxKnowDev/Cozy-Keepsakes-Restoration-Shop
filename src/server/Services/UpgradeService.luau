@@ -227,6 +227,25 @@ function UpgradeService:HandleDeveloperProduct(Player: Player, ProductId: number
 end
 
 function UpgradeService:Init()
+	Core:GetService("DataService"):Register("Upgrades", {
+		Load = function(Player, Saved)
+			local Data = self:EnsurePlayer(Player)
+			if type(Saved.Levels) == "table" then
+				for Upgradename, Level in pairs(Saved.Levels) do
+					Data.Levels[Upgradename] = math.max(math.floor(tonumber(Level) or 0), 0)
+				end
+			end
+			Data.EstimatesUsed = math.max(math.floor(tonumber(Saved.EstimatesUsed) or 0), 0)
+			Data.EstimateDay = tonumber(Saved.EstimateDay) or Data.EstimateDay
+			self:PushUpgrades(Player)
+		end,
+		Save = function(Player)
+			return self:EnsurePlayer(Player)
+		end,
+		Clear = function(Player)
+			DataByPlayer[Player] = nil
+		end,
+	})
 	for _, Player in ipairs(Players:GetPlayers()) do
 		self:EnsurePlayer(Player)
 	end
@@ -238,9 +257,6 @@ function UpgradeService:Init()
 				self:PushUpgrades(Player)
 			end
 		end)
-	end)
-	Players.PlayerRemoving:Connect(function(Player)
-		DataByPlayer[Player] = nil
 	end)
 	Lighting:GetAttributeChangedSignal("Day"):Connect(function()
 		for _, Player in ipairs(Players:GetPlayers()) do

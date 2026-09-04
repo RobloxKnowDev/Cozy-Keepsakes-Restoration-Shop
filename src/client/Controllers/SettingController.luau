@@ -5,6 +5,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
 local SettingController = {
@@ -87,7 +88,7 @@ function SettingController:CloseForSwitch()
 	self.topbarIcon:deselect()
 end
 
-function SettingController:BindToggle(Setting: Frame)
+function SettingController:BindToggle(Setting: Frame, Name: string)
 	local FrameBar = Setting:WaitForChild("FrameBar")
 	local Bar = FrameBar:WaitForChild("Bar")
 	local Text1 = FrameBar:WaitForChild("Text1")
@@ -101,11 +102,8 @@ function SettingController:BindToggle(Setting: Frame)
 	Text2.Visible = false
 	Shared.AnimateButton(Bar, function() return false end)
 	local Lasttoggle = 0
-	local function Toggle()
-		local Now = os.clock()
-		if Now - Lasttoggle < 0.1 then return end
-		Lasttoggle = Now
-		Enabled = not Enabled
+	local function Apply(Value: boolean, Animate: boolean)
+		Enabled = Value
 		local DisabledPosition = UDim2.new(
 			1,
 			-Padding - Bar.AbsoluteSize.X * (1 - Bar.AnchorPoint.X),
@@ -114,11 +112,25 @@ function SettingController:BindToggle(Setting: Frame)
 		)
 		Text1.Visible = Enabled
 		Text2.Visible = not Enabled
-		TweenService:Create(Bar, ControlTweenInfo, {
+		local Goal = {
 			Position = if Enabled then EnabledPosition else DisabledPosition,
 			BackgroundColor3 = if Enabled then EnabledColor else self.disabledColor,
 			Rotation = if Enabled then EnabledRotation else EnabledRotation + 180,
-		}):Play()
+		}
+		if Animate then
+			TweenService:Create(Bar, ControlTweenInfo, Goal):Play()
+			return
+		end
+		Bar.Position = Goal.Position
+		Bar.BackgroundColor3 = Goal.BackgroundColor3
+		Bar.Rotation = Goal.Rotation
+	end
+	local function Toggle()
+		local Now = os.clock()
+		if Now - Lasttoggle < 0.1 then return end
+		Lasttoggle = Now
+		Apply(not Enabled, true)
+		RemoteManager:FireServer("SettingsService", "SetSetting", Name, Enabled)
 	end
 	local function Ontogglepress(Input: InputObject)
 		if
@@ -131,15 +143,20 @@ function SettingController:BindToggle(Setting: Frame)
 	FrameBar.Active = true
 	FrameBar.InputBegan:Connect(Ontogglepress)
 	Bar.InputBegan:Connect(Ontogglepress)
+	self.applysetting[Name] = function(Value)
+		Apply(Value == true, false)
+	end
 end
 
-function SettingController:BindSlider(Setting: Frame)
+function SettingController:BindSlider(Setting: Frame, Name: string)
 	local FrameBar = Setting:WaitForChild("FrameBar")
 	local Bar = FrameBar:WaitForChild("Bar")
 	local PourcentageText = Setting:WaitForChild("PourcentageText")
 	local Dragging = false
+	local Current = DefaultVolume
 	FrameBar.Active = true
 	local function Apply(Alpha: number)
+		Current = Alpha
 		Bar.Size = UDim2.new(Alpha, 0, Bar.Size.Y.Scale, Bar.Size.Y.Offset)
 		PourcentageText.Text = string.format("%d%%", math.round(Alpha * 100))
 	end
@@ -160,9 +177,13 @@ function SettingController:BindSlider(Setting: Frame)
 	end)
 	UserInputService.InputEnded:Connect(function(Input)
 		if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+			if Dragging then
+				RemoteManager:FireServer("SettingsService", "SetSetting", Name, Current)
+			end
 			Dragging = false
 		end
 	end)
+	self.applysetting[Name] = Apply
 end
 
 function SettingController:Init()
@@ -177,11 +198,12 @@ function SettingController:Init()
 	self.frameScale = Shared.EnsureScale(self.frame)
 	self.frame.Visible = false
 	self.frame.Active = true
+	self.applysetting = {}
 
-	self:BindToggle(Settings:WaitForChild("Graphism"))
-	self:BindToggle(Settings:WaitForChild("Effect"))
-	self:BindSlider(Settings:WaitForChild("MusicVolume"))
-	self:BindSlider(Settings:WaitForChild("SoundEffect"))
+	self:BindToggle(Settings:WaitForChild("Graphism"), "Graphism")
+	self:BindToggle(Settings:WaitForChild("Effect"), "Effect")
+	self:BindSlider(Settings:WaitForChild("MusicVolume"), "MusicVolume")
+	self:BindSlider(Settings:WaitForChild("SoundEffect"), "SoundEffect")
 
 	self.topbarIcon = Icon.new()
 		:setName("Settings")
@@ -192,6 +214,18 @@ function SettingController:Init()
 	self.topbarIcon.deselected:Connect(function() self:Close() end)
 	Shared.AnimateButton(self.exitButton, function() return false end)
 	self.exitButton.Activated:Connect(function() self.topbarIcon:deselect() end)
+end
+
+function SettingController:Start()
+	task.spawn(function()
+		local Saved = RemoteManager:InvokeServer("SettingsService", "GetSettings")
+		for Name, Value in pairs(Saved) do
+			local Apply = self.applysetting[Name]
+			if Apply then
+				Apply(Value)
+			end
+		end
+	end)
 end
 
 return SettingController

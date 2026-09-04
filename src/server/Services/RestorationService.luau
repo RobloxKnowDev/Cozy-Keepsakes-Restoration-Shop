@@ -136,10 +136,10 @@ end
 local function Buildcoverageentry(Texture: ImageLabel): CoverageEntry
 	local Success, Mask = pcall(Buildmask, Texture.Image, Roundedtexture.GetShape(Texture))
 	if not Success then
-		warn("RestorationService: lecture impossible de " .. Texture.Image .. " : " .. tostring(Mask))
+		warn("RestorationService: could not read " .. Texture.Image .. ": " .. tostring(Mask))
 		return { Cells = table.create(Coveragecellcount, false), Covered = 0, Premarked = 0 }
 	end
-	assert(Mask.Premarked < Coveragecellcount, "RestorationService: " .. Texture:GetFullName() .. " est entièrement transparente")
+	assert(Mask.Premarked < Coveragecellcount, "RestorationService: " .. Texture:GetFullName() .. " is fully transparent")
 	return { Cells = table.clone(Mask.Blank), Covered = Mask.Premarked, Premarked = Mask.Premarked }
 end
 
@@ -267,16 +267,16 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean): n
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("GuiObject") and Descendant.Name == "DirtFrame" then
 			local Surface = Descendant.Parent
-			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " doit être dans un SurfaceGui")
-			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " doit utiliser un nom Ui valide")
+			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " must be inside a SurfaceGui")
+			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " must use a valid Ui name")
 			local Part = Surface.Parent
-			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " doit être dans une BasePart")
-			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " doit être activé")
+			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " must be inside a BasePart")
+			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " must be enabled")
 			assert(
 				Surface.Face.Name == string.sub(Surface.Name, 3),
-				"RestorationService: la face de " .. Surface:GetFullName() .. " ne correspond pas à son nom"
+				"RestorationService: the face of " .. Surface:GetFullName() .. " does not match its name"
 			)
-			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " doit être visible")
+			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " must be visible")
 			table.insert(Dirtframes, Descendant)
 		end
 	end
@@ -309,7 +309,7 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean): n
 			continue
 		end
 		local Texture = Dirtframe:WaitForChild("Texture")
-		assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " doit être un ImageLabel")
+		assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " must be an ImageLabel")
 		Coverage[Dirtframe] = Buildcoverageentry(Texture)
 		Dirtframe:SetAttribute("Cleaned", false)
 		Totaldirt += 16
@@ -324,18 +324,18 @@ local function Initializescratches(Object: RestorationObject): number
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("GuiObject") and Descendant.Name == "ScratchesFrame" then
 			local Surface = Descendant.Parent
-			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " doit être dans un SurfaceGui")
-			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " doit utiliser un nom Ui valide")
+			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " must be inside a SurfaceGui")
+			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " must use a valid Ui name")
 			local Part = Surface.Parent
-			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " doit être dans une BasePart")
-			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " doit être activé")
+			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " must be inside a BasePart")
+			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " must be enabled")
 			assert(
 				Surface.Face.Name == string.sub(Surface.Name, 3),
-				"RestorationService: la face de " .. Surface:GetFullName() .. " ne correspond pas à son nom"
+				"RestorationService: the face of " .. Surface:GetFullName() .. " does not match its name"
 			)
-			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " doit être visible")
+			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " must be visible")
 			local Texture = Descendant:WaitForChild("Texture")
-			assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " doit être un ImageLabel")
+			assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " must be an ImageLabel")
 			Texture:SetAttribute("Remaining", 1)
 			Texture:SetAttribute("HasPolish", false)
 			Descendant:SetAttribute("Cleaned", false)
@@ -353,15 +353,15 @@ local function Initializeink(Object: RestorationObject): number
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("GuiObject") and Descendant.Name == "Ink" then
 			local Surface = Descendant.Parent
-			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " doit être dans un SurfaceGui")
-			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " doit utiliser un nom Ui valide")
+			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " must be inside a SurfaceGui")
+			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " must use a valid Ui name")
 			local Part = Surface.Parent
-			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " doit être dans une BasePart")
-			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " doit être activé")
-			assert(Surface.Face.Name == string.sub(Surface.Name, 3), "RestorationService: la face de " .. Surface:GetFullName() .. " ne correspond pas à son nom")
-			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " doit être visible")
+			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " must be inside a BasePart")
+			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " must be enabled")
+			assert(Surface.Face.Name == string.sub(Surface.Name, 3), "RestorationService: the face of " .. Surface:GetFullName() .. " does not match its name")
+			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " must be visible")
 			local Texture = Descendant:WaitForChild("Texture")
-			assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " doit être un ImageLabel")
+			assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " must be an ImageLabel")
 			Texture:SetAttribute("Remaining", 1)
 			Texture:SetAttribute("HasSolvent", false)
 			Descendant:SetAttribute("Cleaned", false)
@@ -447,7 +447,7 @@ local function Createspots(Object: RestorationObject, Singleface: boolean)
 	local Totalscratches = Initializescratches(Object)
 	local Totalink = Initializeink(Object)
 	local Sticker = Object:WaitForChild("Sticker")
-	assert(Sticker:IsA("BasePart"), "RestorationService: " .. Sticker:GetFullName() .. " doit être une BasePart")
+	assert(Sticker:IsA("BasePart"), "RestorationService: " .. Sticker:GetFullName() .. " must be a BasePart")
 	Sticker:SetAttribute("SpotKind", "Sticker")
 	Sticker:SetAttribute("Health", Spothealth.Sticker)
 	Sticker.CanCollide = false

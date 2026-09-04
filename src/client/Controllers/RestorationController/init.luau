@@ -70,7 +70,7 @@ local function Disableplayercontrols()
 			end
 			task.wait(0.25)
 		end
-		warn("RestorationController: impossible de désactiver le bouton Reset")
+		warn("RestorationController: could not disable the Reset button")
 	end)
 end
 

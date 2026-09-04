@@ -6,26 +6,26 @@ local Controllers: { [string]: any } = {}
 local Isserver: boolean = game:GetService("RunService"):IsServer()
 
 function Core:RegisterService(Service: any)
-	assert(Service.Name, "[Framework] Un Service doit avoir un champ 'Name'")
-	assert(not Services[Service.Name], "[Framework] Service déjà enregistré : " .. Service.Name)
+	assert(Service.Name, "[Framework] A Service must have a 'Name' field")
+	assert(not Services[Service.Name], "[Framework] Service already registered: " .. Service.Name)
 	Services[Service.Name] = Service
 end
 
 function Core:RegisterController(Controller: any)
-	assert(Controller.Name, "[Framework] Un Controller doit avoir un champ 'Name'")
-	assert(not Controllers[Controller.Name], "[Framework] Controller déjà enregistré : " .. Controller.Name)
+	assert(Controller.Name, "[Framework] A Controller must have a 'Name' field")
+	assert(not Controllers[Controller.Name], "[Framework] Controller already registered: " .. Controller.Name)
 	Controllers[Controller.Name] = Controller
 end
 
 function Core:GetService(Name: string): any
 	local S = Services[Name]
-	assert(S, "[Framework] Service introuvable : " .. Name)
+	assert(S, "[Framework] Service not found: " .. Name)
 	return S
 end
 
 function Core:GetController(Name: string): any
 	local C = Controllers[Name]
-	assert(C, "[Framework] Controller introuvable : " .. Name)
+	assert(C, "[Framework] Controller not found: " .. Name)
 	return C
 end
 
@@ -50,7 +50,7 @@ function Core:Start()
 				Module:Init()
 			end)
 			if not Ok then
-				warn("[Framework] Erreur dans Init de '" .. Module.Name .. "' : " .. tostring(Err))
+				warn("[Framework] Error in Init of '" .. Module.Name .. "': " .. tostring(Err))
 			end
 		end
 	end
@@ -61,7 +61,7 @@ function Core:Start()
 				Module:Start()
 			end)
 			if not Ok then
-				warn("[Framework] Erreur dans Start de '" .. Module.Name .. "' : " .. tostring(Err))
+				warn("[Framework] Error in Start of '" .. Module.Name .. "': " .. tostring(Err))
 			end
 		end
 	end

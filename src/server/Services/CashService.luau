@@ -67,6 +67,18 @@ function Cashservice:SpendCash(Player: Player, Amount: number): boolean
 end
 
 function Cashservice:Init()
+	Core:GetService("DataService"):Register("Cash", {
+		Load = function(Player, Saved)
+			Cashbyplayer[Player] = math.max(tonumber(Saved) or Startingcash, 0)
+			self:PushCash(Player)
+		end,
+		Save = function(Player)
+			return self:EnsurePlayer(Player)
+		end,
+		Clear = function(Player)
+			Cashbyplayer[Player] = nil
+		end,
+	})
 	for _, Player in ipairs(Players:GetPlayers()) do
 		self:EnsurePlayer(Player)
 	end
@@ -78,10 +90,6 @@ function Cashservice:Init()
 				self:PushCash(Player)
 			end
 		end)
-	end)
-
-	Players.PlayerRemoving:Connect(function(Player)
-		Cashbyplayer[Player] = nil
 	end)
 
 	Remotemanager:OnServerInvoke(self.Name, "GetCash", function(Player)
