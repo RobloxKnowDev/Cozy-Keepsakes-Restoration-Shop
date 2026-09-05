@@ -17,6 +17,7 @@ type InspectionTarget = Model | BasePart
 local Target: InspectionTarget? = nil
 local Yaw = 0
 local Pitch = math.rad(-38)
+local Orbittravel = 0
 local Distance = 8
 local Targetdistance = 8
 local Mindistance = 4
@@ -199,6 +200,10 @@ function Controller:SetEnabled(Value: boolean)
 	end
 end
 
+function Controller:GetOrbitTravel(): number
+	return Orbittravel
+end
+
 function Controller:SetTransformMode(Mode: string)
 	if Mode ~= "Rotate" and Mode ~= "Locked" then
 		return
@@ -305,6 +310,7 @@ function Controller:Begin(Object: InspectionTarget)
 	Groundy = Object:GetAttribute("SpawnFloorY") or Findgroundy(Object)
 	Yaw = math.pi
 	Pitch = math.rad(-38)
+	Orbittravel = 0
 
 	local Radius = math.max(Objectsize(Object).Magnitude * 0.5, 1)
 	Panlimit = math.max(Radius * 0.65, 1)
@@ -375,6 +381,8 @@ function Controller:Start()
 				Setobjectselected(true)
 				if Transformmode == "Rotate" then
 					Begindrag(Input, "RotateObject")
+				else
+					Begindrag(Input, "OrbitCamera")
 				end
 			elseif Enabled then
 				Setobjectselected(false)
@@ -446,6 +454,7 @@ function Controller:Start()
 			elseif Dragmode == "OrbitCamera" then
 				Yaw -= Delta.X * 0.008
 				Pitch = math.clamp(Pitch - Delta.Y * 0.008, math.rad(-82), math.rad(82))
+				Orbittravel += math.abs(Delta.X * 0.008) + math.abs(Delta.Y * 0.008)
 			else
 				local Movement = (-Camera.CFrame.RightVector * Delta.X + Camera.CFrame.UpVector * Delta.Y)
 					* Distance

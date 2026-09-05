@@ -14,8 +14,8 @@ return {
 		},
 		{
 			Type = "Cash",
-			Amount = 250,
-			ValueText = "$250",
+			Amount = 400,
+			ValueText = "$400",
 		},
 		{
 			Type = "SaleBoost",
@@ -30,13 +30,13 @@ return {
 		},
 		{
 			Type = "Cash",
-			Amount = 500,
-			ValueText = "$500",
+			Amount = 1_500,
+			ValueText = "$1,500",
 		},
 		{
 			Type = "Cash",
-			Amount = 1_000,
-			ValueText = "$1,000",
+			Amount = 5_000,
+			ValueText = "$5,000",
 		},
 	},
 }

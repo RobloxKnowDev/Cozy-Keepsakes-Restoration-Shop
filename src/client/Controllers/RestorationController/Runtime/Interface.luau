@@ -1,7 +1,10 @@
 local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
+local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Tweenservice = game:GetService("TweenService")
 local Userinputservice = game:GetService("UserInputService")
+
+local Core = require(Replicatedstorage.Shared.Packages.Core)
 
 local Interface = {}
 Interface.__index = Interface
@@ -92,6 +95,9 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 	self.Actions = {}
 	local Lastactivations: { [GuiButton]: number } = {}
 	local function Activate(Button: GuiButton)
+		if Button == self.ContinueButton and self.ContinueLocked then
+			return
+		end
 		local Callback = self.Actions[Button]
 		if not Callback then
 			return
@@ -101,6 +107,7 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 			return
 		end
 		Lastactivations[Button] = Now
+		Core:GetController("FeedbackController"):UiClick()
 		Callback()
 	end
 	for Name, Button in pairs(self.Buttons) do
@@ -113,10 +120,15 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 		Animate(Button)
 	end
 	self.TurnButton.BackgroundTransparency = 0
-	local Locked = false
+	local Locked = true
 	local function Refreshlock()
 		self.LockImage.Visible, self.UnlockImage.Visible = Locked, not Locked
 		self.LockButton.BackgroundTransparency = 0
+	end
+	self.Resetlock = function()
+		Locked = true
+		Setmode("Locked")
+		Refreshlock()
 	end
 	self.Actions[self.TurnButton] = function()
 		Locked = false
@@ -177,7 +189,12 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 	Refreshlock()
 end
 
+function Interface:SetContinueLocked(Locked: boolean)
+	self.ContinueLocked = Locked == true
+end
+
 function Interface:ShowForRestoration()
+	self.Resetlock()
 	for _, Item in ipairs({
 		self.FrameTool,
 		self.PercentFrame,

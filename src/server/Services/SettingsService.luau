@@ -16,7 +16,7 @@ local Defaults = {
 	Graphism = true,
 	Effect = true,
 	MusicVolume = 0.5,
-	SoundEffect = 0.5,
+	SoundEffect = 1,
 }
 
 local Settingsbyplayer: { [Player]: { [string]: any } } = {}

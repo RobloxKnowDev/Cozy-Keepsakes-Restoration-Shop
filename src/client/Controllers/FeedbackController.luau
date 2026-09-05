@@ -1,5 +1,6 @@
 local Debris = game:GetService("Debris")
 local GuiService = game:GetService("GuiService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
@@ -20,6 +21,11 @@ local ReturnTween = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirecti
 local SuccessColor = Color3.fromRGB(255, 211, 105)
 local ErrorColor = Color3.fromRGB(255, 132, 92)
 local SoundFadeTween = TweenInfo.new(0.2, Enum.EasingStyle.Linear)
+local MaxMusicVolume = 0.5
+local MusicFadeTween = TweenInfo.new(2, Enum.EasingStyle.Linear)
+local MusicLoopFadeTween = TweenInfo.new(1.2, Enum.EasingStyle.Linear)
+local UiClickCooldown = 0.08
+local ConfirmCooldown = 0.15
 
 local function GetScale(Target: GuiObject): UIScale
 	local Scale = Target:FindFirstChildOfClass("UIScale")
@@ -378,6 +384,7 @@ function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: nu
 	self.soundCooldowns[Name] = Now
 	local Sound = Template:Clone()
 	if Pitch then Sound.PlaybackSpeed = Pitch end
+	Sound.Volume *= self.soundVolume
 	Sound.Parent = SoundService
 	Sound:Play()
 	local Length = if Sound.PlaybackSpeed > 0 then Sound.TimeLength / Sound.PlaybackSpeed else 0
@@ -400,6 +407,7 @@ function FeedbackController:SetLoop(Name: string, Playing: boolean)
 		if not Template or not Template:IsA("Sound") then return end
 		local Sound = Template:Clone()
 		Sound.Looped = true
+		Sound.Volume *= self.soundVolume
 		Sound.Parent = SoundService
 		Sound:Play()
 		self.loopSounds[Name] = Sound
@@ -433,11 +441,84 @@ function FeedbackController:Error(Target: GuiObject)
 	self:PlaySound("UIError", 0.3)
 end
 
+function FeedbackController:UiClick()
+	self:PlaySound("UiClick", UiClickCooldown)
+end
+
+function FeedbackController:Confirm()
+	self:PlaySound("Confirm", ConfirmCooldown)
+end
+
+function FeedbackController:FadeMusicIn(Info: TweenInfo)
+	if self.musicTween then
+		self.musicTween:Cancel()
+	end
+	self.music.Volume = 0
+	self.musicTween = TweenService:Create(self.music, Info, { Volume = self.musicVolume })
+	self.musicTween:Play()
+end
+
+function FeedbackController:SetMusicVolume(Alpha: number)
+	self.musicVolume = math.clamp(Alpha, 0, 1) * MaxMusicVolume
+	if not self.music then return end
+	if self.musicTween then
+		self.musicTween:Cancel()
+		self.musicTween = nil
+	end
+	self.music.Volume = self.musicVolume
+end
+
+function FeedbackController:SetSoundVolume(Alpha: number)
+	self.soundVolume = math.clamp(Alpha, 0, 1)
+end
+
+function FeedbackController:StartMusic()
+	local Template = self.sfxFolder:FindFirstChild("Music")
+	if not Template or not Template:IsA("Sound") then return end
+	local Music = Template:Clone()
+	Music.Looped = true
+	Music.Volume = 0
+	Music.Parent = SoundService
+	Music:Play()
+	self.music = Music
+	self:FadeMusicIn(MusicFadeTween)
+	Music.DidLoop:Connect(function()
+		self:FadeMusicIn(MusicLoopFadeTween)
+	end)
+end
+
+function FeedbackController:BindClicksIn(Root: Instance)
+	local function Bind(Target: Instance)
+		if not Target:IsA("GuiButton") then return end
+		Target.Activated:Connect(function()
+			if Target:GetAttribute("SilentClick") == true then return end
+			self:UiClick()
+		end)
+	end
+	for _, Descendant in ipairs(Root:GetDescendants()) do
+		Bind(Descendant)
+	end
+	Root.DescendantAdded:Connect(Bind)
+end
+
+function FeedbackController:Start()
+	self:BindClicksIn(Players.LocalPlayer:WaitForChild("PlayerGui"))
+	self:StartMusic()
+	MarketplaceService.PromptProductPurchaseFinished:Connect(function(_UserId, _ProductId, WasPurchased)
+		if WasPurchased then self:Confirm() end
+	end)
+	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(_Player, _GamePassId, WasPurchased)
+		if WasPurchased then self:Confirm() end
+	end)
+end
+
 function FeedbackController:Init()
 	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.sfxFolder = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Sfx")
 	self.soundCooldowns = {}
 	self.loopSounds = {}
+	self.soundVolume = 1
+	self.musicVolume = MaxMusicVolume * 0.5
 	self.gui = Instance.new("ScreenGui")
 	self.gui.Name = "FeedbackUi"
 	self.gui.DisplayOrder = 1000

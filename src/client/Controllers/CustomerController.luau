@@ -230,6 +230,7 @@ function Customercontroller:TryInteractAtPosition(Screenposition: Vector2?, Expa
 	if self:IsVisible() or not self:CanInteract() then return false end
 	local Clickedcustomer = self:GetCustomerAtPosition(Screenposition, Expandtouch)
 	if not Clickedcustomer or not self.pendingOffer then return false end
+	Core:GetController("FeedbackController"):UiClick()
 	self:SetHoveredCustomer(Clickedcustomer)
 	self:ShowPendingOffer()
 	return true
@@ -281,7 +282,7 @@ function Customercontroller:ShowOffer(Offer)
 	end
 
 	if self.priceValueLabel then
-		self.priceValueLabel.Text = Formatcurrency(Offer.Price)
+		self.priceValueLabel.Text = if self.activeOfferPrice > 0 then Formatcurrency(Offer.Price) else "Free"
 	end
 
 	if self.iconImage and (self.iconImage:IsA("ImageLabel") or self.iconImage:IsA("ImageButton")) then
@@ -378,6 +379,14 @@ function Customercontroller:Respond(Decision: string)
 	local Offerid = self.activeOfferId
 	local Hidden = Decision ~= "Accept"
 		or Core:GetController("CashController"):GetCash() >= (self.activeOfferPrice or 0)
+	if Decision == "Accept" then
+		local Feedback = Core:GetController("FeedbackController")
+		if Core:GetController("CashController"):GetCash() >= (self.activeOfferPrice or 0) then
+			Feedback:Confirm()
+		else
+			Feedback:UiClick()
+		end
+	end
 	if Hidden then
 		self:HideAnimated(true)
 	end
@@ -415,6 +424,7 @@ function Customercontroller:Init()
 	self.gui = Playergui:WaitForChild("CustomerUi") :: ScreenGui
 	self.frame = self.gui:WaitForChild("CustomerFrame") :: Frame
 	self.acceptButton = self.frame:WaitForChild("AcceptButton") :: GuiButton
+	self.acceptButton:SetAttribute("SilentClick", true)
 	self.declineButton = self.frame:WaitForChild("DeclineButton") :: GuiButton
 	self.closeButton = GetOrCreateCloseButton(self.frame)
 	self.frameScale = EnsureScale(self.frame)

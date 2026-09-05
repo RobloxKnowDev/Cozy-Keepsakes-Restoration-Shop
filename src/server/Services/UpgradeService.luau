@@ -23,8 +23,7 @@ type PlayerUpgradeData = {
 }
 
 local DataByPlayer: { [Player]: PlayerUpgradeData } = {}
-local StandardPriceGrowth = 1.5
-local PurchaseDiscountPriceGrowth = 2
+local DefaultPriceGrowth = 1.5
 
 local function CurrentDay(): number
 	return tonumber(Lighting:GetAttribute("Day")) or 1
@@ -114,7 +113,7 @@ function UpgradeService:GetCashPrice(Player: Player, UpgradeName: string): numbe
 		return nil
 	end
 	local TargetLevel = Level + 1
-	local Growth = if UpgradeName == "PurchaseDiscount" then PurchaseDiscountPriceGrowth else StandardPriceGrowth
+	local Growth = tonumber(Definition.PriceGrowth) or DefaultPriceGrowth
 	local BasePrice = math.max(tonumber(Definition.CashPriceLevel1) or 0, 0)
 	local Price = BasePrice * Growth ^ (TargetLevel - 1)
 	return math.max(math.round(Price), 0)

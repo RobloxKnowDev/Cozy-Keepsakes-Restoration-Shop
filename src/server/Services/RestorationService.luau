@@ -217,7 +217,7 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 	local Definition = Config.Object[Objectname]
 	local Asset = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object"):WaitForChild(Objectname)
 	local Object = Asset:Clone() :: RestorationObject
-	if Objectname == "Skate" then
+	if Objectname == "Skateboard" then
 		local Objectcore = Object:WaitForChild("Core")
 		local Grip = Objectcore:WaitForChild("Grip")
 		local Uitop = Grip:WaitForChild("UiTop") :: SurfaceGui
@@ -600,6 +600,7 @@ function Restorationservice:Init()
 		Destroyobject(Sessionobject)
 
 		local Restoreditem = Inventoryservice:AddRestoredItem(Player, Itemdata)
+		Core:GetService("TutorialService"):MarkObjectDone(Player)
 		if Completionratio >= 0.5 and Player.Parent then
 			Inventoryservice:UnlockIndexEntry(Player, Objectkey)
 		end

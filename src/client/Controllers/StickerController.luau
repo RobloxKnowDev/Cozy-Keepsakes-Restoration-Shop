@@ -2,6 +2,7 @@ local Debris = game:GetService("Debris")
 local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
+local Tweenservice = game:GetService("TweenService")
 local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
@@ -10,6 +11,7 @@ local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
 local Stickercontroller = { Name = "StickerController", Priority = 9 }
 local Peeldistance = 200
+local Loosefadetween = TweenInfo.new(0.3, Enum.EasingStyle.Linear)
 local function Instancepivot(Instance: Instance?): CFrame?
 	if not Instance then
 		return nil
@@ -29,6 +31,18 @@ function Stickercontroller:Init()
 	self.generatedItems = Workspace:WaitForChild("Map"):WaitForChild("Slot1"):WaitForChild("GeneratedItems")
 	self.looseStickers = {}
 	self:Reset()
+end
+
+function Stickercontroller:ClearLoose()
+	for _, Loose in ipairs(self.looseStickers) do
+		if Loose.Parent then
+			Loose.CanQuery = false
+			Loose.CanCollide = false
+			Tweenservice:Create(Loose, Loosefadetween, { Transparency = 1 }):Play()
+			Debris:AddItem(Loose, 0.35)
+		end
+	end
+	table.clear(self.looseStickers)
 end
 
 function Stickercontroller:Reset()

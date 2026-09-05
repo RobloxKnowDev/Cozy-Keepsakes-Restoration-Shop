@@ -1,5 +1,7 @@
+local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -19,6 +21,50 @@ local CloseTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDir
 local FastCloseTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 local ControlTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local DefaultVolume = 0.5
+local HeavyEffects = {
+	BlurEffect = true,
+	BloomEffect = true,
+	SunRaysEffect = true,
+	DepthOfFieldEffect = true,
+}
+
+local MutedEmitters: { [ParticleEmitter]: boolean } = {}
+local EffectsOn = true
+
+local function MuteEmitter(Emitter: ParticleEmitter)
+	if MutedEmitters[Emitter] ~= nil then
+		return
+	end
+	MutedEmitters[Emitter] = Emitter.Enabled
+	Emitter.Enabled = false
+end
+
+local function SetParticles(On: boolean)
+	EffectsOn = On
+	if not On then
+		for _, Descendant in ipairs(Workspace:GetDescendants()) do
+			if Descendant:IsA("ParticleEmitter") then
+				MuteEmitter(Descendant)
+			end
+		end
+		return
+	end
+	for Emitter, WasEnabled in pairs(MutedEmitters) do
+		if Emitter.Parent then
+			Emitter.Enabled = WasEnabled
+		end
+	end
+	table.clear(MutedEmitters)
+end
+
+local function SetGraphics(High: boolean)
+	Lighting.GlobalShadows = High
+	for _, Effect in ipairs(Lighting:GetChildren()) do
+		if HeavyEffects[Effect.ClassName] then
+			(Effect :: PostEffect).Enabled = High
+		end
+	end
+end
 
 function SettingController:IsOpen(): boolean
 	return self.isOpen == true
@@ -88,6 +134,19 @@ function SettingController:CloseForSwitch()
 	self.topbarIcon:deselect()
 end
 
+function SettingController:Applyeffect(Name: string, Value: any)
+	if Name == "Graphism" then
+		SetGraphics(Value == true)
+	elseif Name == "Effect" then
+		Player:SetAttribute("EffectsIntensity", if Value == true then "Full" else "Off")
+		SetParticles(Value == true)
+	elseif Name == "MusicVolume" then
+		Core:GetController("FeedbackController"):SetMusicVolume(Value)
+	elseif Name == "SoundEffect" then
+		Core:GetController("FeedbackController"):SetSoundVolume(Value)
+	end
+end
+
 function SettingController:BindToggle(Setting: Frame, Name: string)
 	local FrameBar = Setting:WaitForChild("FrameBar")
 	local Bar = FrameBar:WaitForChild("Bar")
@@ -130,6 +189,7 @@ function SettingController:BindToggle(Setting: Frame, Name: string)
 		if Now - Lasttoggle < 0.1 then return end
 		Lasttoggle = Now
 		Apply(not Enabled, true)
+		self:Applyeffect(Name, Enabled)
 		RemoteManager:FireServer("SettingsService", "SetSetting", Name, Enabled)
 	end
 	local function Ontogglepress(Input: InputObject)
@@ -162,6 +222,7 @@ function SettingController:BindSlider(Setting: Frame, Name: string)
 	end
 	local function Update(Position: Vector3)
 		Apply(math.clamp((Position.X - FrameBar.AbsolutePosition.X) / FrameBar.AbsoluteSize.X, 0, 1))
+		self:Applyeffect(Name, Current)
 	end
 	Apply(DefaultVolume)
 	FrameBar.InputBegan:Connect(function(Input)
@@ -199,6 +260,11 @@ function SettingController:Init()
 	self.frame.Visible = false
 	self.frame.Active = true
 	self.applysetting = {}
+	Workspace.DescendantAdded:Connect(function(Descendant)
+		if not EffectsOn and Descendant:IsA("ParticleEmitter") then
+			MuteEmitter(Descendant)
+		end
+	end)
 
 	self:BindToggle(Settings:WaitForChild("Graphism"), "Graphism")
 	self:BindToggle(Settings:WaitForChild("Effect"), "Effect")
@@ -223,6 +289,7 @@ function SettingController:Start()
 			local Apply = self.applysetting[Name]
 			if Apply then
 				Apply(Value)
+				self:Applyeffect(Name, Value)
 			end
 		end
 	end)

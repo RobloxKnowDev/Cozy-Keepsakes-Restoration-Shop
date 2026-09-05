@@ -8,7 +8,8 @@ return {
 		"Mythic",
 	},
 
-	ReputationPerLuck = 90,
+	FullLuckReputation = 1000,
+	LuckCurve = 0.5,
 	MaximumLuck = 5,
 
 	Common = {

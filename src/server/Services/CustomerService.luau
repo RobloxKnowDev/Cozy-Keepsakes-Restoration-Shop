@@ -24,6 +24,9 @@ local Customerservice = {
 local QueueFolderName = "SpawnCustomer"
 local TurnTweenDuration = 0.35
 local SlotTurnDegrees = -90
+local FastEntryIndex = 2
+local WalkInStuds = 12
+local WalkInFadeDuration = 0.4
 type CustomerOffer = {
 	Id: number,
 	ObjectKey: string,
@@ -48,7 +51,6 @@ local PendingOffer: CustomerOffer? = nil
 local RefreshFrontCustomerAttribute: () -> ()
 local PresentFrontOffer: () -> ()
 local CurrentDay = 1
-local SpawnedCustomersToday = 0
 local ArrivedCustomersToday = 0
 
 local function GetShopPlayer(): Player?
@@ -72,7 +74,6 @@ local function SyncDayState()
 	local Day = Lighting:GetAttribute("Day") or 1
 	if Day ~= CurrentDay then
 		CurrentDay = Day
-		SpawnedCustomersToday = 0
 		ArrivedCustomersToday = 0
 	end
 	ReplicateCustomerCount()
@@ -94,9 +95,19 @@ local function IsBusinessHours(): boolean
 	return ClockTime >= Daynightconfig.DayStartHour and ClockTime < Daynightconfig.NightStartHour
 end
 
+local function PendingCustomerCount(): number
+	local Count = 0
+	for _, Customer in pairs(OccupiedSlots) do
+		if Customer.Parent and Customer:GetAttribute("CountedAtSlot1") ~= true then
+			Count += 1
+		end
+	end
+	return Count
+end
+
 local function CanSpawnMoreCustomersToday(): boolean
 	SyncDayState()
-	return SpawnedCustomersToday < GetMaxCustomersPerDay()
+	return ArrivedCustomersToday + PendingCustomerCount() < GetMaxCustomersPerDay()
 end
 
 local function CollectQueueAttachments()
@@ -277,6 +288,35 @@ local function MoveCustomerTo(Customer: Model, Attachment: Attachment, OnComplet
 	StartMove()
 end
 
+local function GetEntryCFrame(Index: number): CFrame
+	local Back = AttachmentsByIndex[HighestQueueIndex]
+	if Index < HighestQueueIndex then
+		return Back.WorldCFrame
+	end
+	local Ahead = AttachmentsByIndex[HighestQueueIndex - 1]
+	if not Ahead then
+		return Back.WorldCFrame
+	end
+	local Direction = Back.WorldPosition - Ahead.WorldPosition
+	if Direction.Magnitude <= 0.001 then
+		return Back.WorldCFrame
+	end
+	return Back.WorldCFrame + Direction.Unit * WalkInStuds
+end
+
+local function FadeCustomerIn(Customer: Model)
+	local Transparencies: { [Instance]: number } = {}
+	for _, Descendant in ipairs(Customer:GetDescendants()) do
+		if Descendant:IsA("BasePart") or Descendant:IsA("Decal") then
+			Transparencies[Descendant] = Descendant.Transparency
+			Descendant.Transparency = 1
+		end
+	end
+	for Descendant, Transparency in pairs(Transparencies) do
+		TweenService:Create(Descendant, TweenInfo.new(WalkInFadeDuration), { Transparency = Transparency }):Play()
+	end
+end
+
 local function SpawnCustomerAt(Index: number)
 	local Attachment = AttachmentsByIndex[Index]
 	if not Attachment or OccupiedSlots[Index] then
@@ -287,18 +327,37 @@ local function SpawnCustomerAt(Index: number)
 	end
 
 	local Customer = CreateCustomerInstance()
-	Customer:PivotTo(GetTargetCFrame(Attachment))
-	Customer:SetAttribute("ArrivedAtSlot1", Index == 1)
 	OccupiedSlots[Index] = Customer
-	SpawnedCustomersToday += 1
+
 	if Index == 1 then
+		Customer:PivotTo(GetTargetCFrame(Attachment) * CFrame.Angles(0, math.rad(SlotTurnDegrees), 0))
+		Customer:SetAttribute("ArrivedAtSlot1", true)
+		Customer:SetAttribute("TurnedAtSlot1", true)
+		local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
+		if Humanoid then
+			Humanoid.AutoRotate = false
+		end
 		MarkCustomerArrivedAtSlot1(Customer)
-	end
-	RefreshFrontCustomerAttribute()
-	if Index == 1 then
+		RefreshFrontCustomerAttribute()
 		task.defer(function()
 			PresentFrontOffer()
 		end)
+		return
+	end
+
+	Customer:PivotTo(GetEntryCFrame(Index))
+	FadeCustomerIn(Customer)
+	RefreshFrontCustomerAttribute()
+	MoveCustomerTo(Customer, Attachment)
+end
+
+local function SpawnNextCustomer()
+	if not next(OccupiedSlots) then
+		SpawnCustomerAt(math.min(FastEntryIndex, HighestQueueIndex))
+		return
+	end
+	if not OccupiedSlots[HighestQueueIndex] then
+		SpawnCustomerAt(HighestQueueIndex)
 	end
 end
 
@@ -339,8 +398,8 @@ local function BroadcastOffer(Offer: CustomerOffer?)
 end
 
 local function GetOfferLuck(Reputation: number): number
-	local Progress = math.max(Reputation, 0) / Rarityconfig.ReputationPerLuck
-	return 1 + math.min(Progress, Rarityconfig.MaximumLuck - 1)
+	local Progress = math.min(math.max(Reputation, 0) / Rarityconfig.FullLuckReputation, 1) ^ Rarityconfig.LuckCurve
+	return 1 + (Rarityconfig.MaximumLuck - 1) * Progress
 end
 
 local function GetOfferChances(Reputation: number)
@@ -413,7 +472,7 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer
 end
 
 local function ChooseEmergencyRequest(): CustomerOffer
-	local ObjectKey = "Skate"
+	local ObjectKey = Objectconfig.Offer.EmergencyObject
 	local Definition = Objectconfig.Object[ObjectKey]
 	local Maximums = Core:GetService("RestorationService"):GenerateObjectMaximums(ObjectKey)
 	OfferSerial += 1
@@ -522,11 +581,7 @@ local function AdvanceQueue()
 	OccupiedSlots = NewOccupiedSlots
 	RefreshFrontCustomerAttribute()
 
-	if not OccupiedSlots[HighestQueueIndex] then
-		StartQueueMove(function()
-			SpawnCustomerAt(HighestQueueIndex)
-		end)
-	end
+	StartQueueMove(SpawnNextCustomer)
 end
 
 local function ClearPendingOffer()
@@ -550,6 +605,9 @@ PresentFrontOffer = function()
 
 	local Player = GetShopPlayer()
 	if not Player then
+		return
+	end
+	if not Core:GetService("TutorialService"):CanTakeNewObject(Player) then
 		return
 	end
 	PendingOffer = ChooseCustomerRequest(Player)
@@ -629,6 +687,7 @@ function Customerservice:Init()
 				MaxReputation = PendingOffer.MaxReputation,
 			})
 			Restorationobject:SetAttribute("PurchasePrice", PendingOffer.Price)
+			Core:GetService("TutorialService"):MarkObjectBought(Player)
 			local ExitAttachment = AttachmentsByIndex[0]
 			OccupiedSlots[1] = nil
 			FrontCustomer:SetAttribute("IsFrontCustomer", false)
@@ -679,9 +738,7 @@ function Customerservice:RefreshCustomerLimit()
 	if HighestQueueIndex <= 0 or not AttachmentsByIndex[0] then
 		return
 	end
-	if IsBusinessHours() and CanSpawnMoreCustomersToday() and not OccupiedSlots[HighestQueueIndex] then
-		SpawnCustomerAt(HighestQueueIndex)
-	end
+	SpawnNextCustomer()
 end
 
 function Customerservice:Start()
@@ -689,9 +746,7 @@ function Customerservice:Start()
 		return
 	end
 
-	if IsBusinessHours() and CanSpawnMoreCustomersToday() then
-		SpawnCustomerAt(HighestQueueIndex)
-	end
+	SpawnCustomerAt(1)
 
 	task.spawn(function()
 		while true do

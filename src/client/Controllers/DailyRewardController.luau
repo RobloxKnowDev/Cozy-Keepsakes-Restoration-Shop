@@ -19,6 +19,8 @@ local ErrorColor = Color3.fromRGB(255, 138, 138)
 local OpenTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local CloseTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 local FastCloseTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+local PulseTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+local PulseRotation = 3
 
 local function FormatTime(Seconds: number): string
 	local Total = math.max(math.ceil(Seconds), 0)
@@ -48,6 +50,20 @@ function DailyRewardController:DeselectOtherTopbarIcons()
 	end
 end
 
+function DailyRewardController:SetPulse(Card, Active: boolean)
+	if Card.Pulsing == Active then return end
+	Card.Pulsing = Active
+	if Card.PulseTween then
+		Card.PulseTween:Cancel()
+		Card.PulseTween = nil
+	end
+	Card.Button.Rotation = 0
+	if not Active then return end
+	Card.Button.Rotation = -PulseRotation
+	Card.PulseTween = TweenService:Create(Card.Button, PulseTweenInfo, { Rotation = PulseRotation })
+	Card.PulseTween:Play()
+end
+
 function DailyRewardController:Refresh()
 	if not self.state then return end
 	local ClaimedDays = self.state.ClaimedDays
@@ -70,6 +86,7 @@ function DailyRewardController:Refresh()
 		Card.Button.Active = Enabled
 		Card.Button.Interactable = Enabled
 		Card.Button.AutoButtonColor = Enabled
+		self:SetPulse(Card, IsCurrent and Available and not Claimed)
 	end
 
 	local Remaining = self.state.NextClaimAt - workspace:GetServerTimeNow()
@@ -130,6 +147,10 @@ function DailyRewardController:Close(Fast: boolean?)
 		self.scaleTween = nil
 		Core:GetController("RestorationController"):ResumePendingEnter()
 	end)
+end
+
+function DailyRewardController:OpenFromTutorial()
+	self.topbarIcon:select()
 end
 
 function DailyRewardController:CloseForSwitch()

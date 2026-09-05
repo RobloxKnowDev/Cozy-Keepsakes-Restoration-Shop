@@ -89,10 +89,21 @@ local function BindCard(Controller, UpgradeName: string)
 	Controller.upgradeCards[UpgradeName] = CardData
 	Shared.AnimateButton(CashButton, function() return not CashButton.Active end)
 	Shared.AnimateButton(RobuxButton, function() return not RobuxButton.Active end)
+	CashButton:SetAttribute("SilentClick", true)
 	CashButton.Activated:Connect(function()
 		if not CashButton.Active then return end
+		local Feedback = Core:GetController("FeedbackController")
+		local State = Controller.upgradeState and Controller.upgradeState[UpgradeName]
+		local Price = tonumber(State and State.CashPrice) or 0
+		if Core:GetController("CashController"):GetCash() >= Price then
+			Feedback:Confirm()
+		else
+			Feedback:UiClick()
+		end
 		local Response = RemoteManager:InvokeServer("UpgradeService", "PurchaseWithCash", UpgradeName)
-		if type(Response) == "table" and Response.Success == true then return end
+		if type(Response) == "table" and Response.Success == true then
+			return
+		end
 		local Reason = type(Response) == "table" and Response.Reason or "UpgradeFailed"
 		local Message = if Reason == "NotEnoughCash" then "Not enough money" elseif Reason == "MaxLevel" then "Maximum level reached" else "Upgrade purchase failed"
 		Core:GetController("MessageController"):Show(Message, ErrorColor)

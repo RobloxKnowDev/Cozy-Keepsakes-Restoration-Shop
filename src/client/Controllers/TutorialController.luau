@@ -24,6 +24,13 @@ local Holepadding = 14
 local Textwidth = 320
 local Textheight = 96
 local Textgap = 18
+local Behindtext = "It's on the other side!"
+local Handimage = "rbxassetid://116068912861302"
+local Mouseimage = "rbxassetid://104031075394631"
+local Handsize = 96
+local Handswipe = 72
+local Handheightscale = 0.45
+local Handtweeninfo = TweenInfo.new(1.1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, -1, true)
 local Steptweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Pulsetweeninfo = TweenInfo.new(0.65, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 
@@ -69,6 +76,15 @@ function Tutorialcontroller:Buildgui()
 	self.ringStroke.Thickness = 4
 	self.ringStroke.Transparency = 0.15
 	self.ringStroke.Parent = self.ring
+
+	self.hand = Instance.new("ImageLabel")
+	self.hand.Name = "Hand"
+	self.hand.AnchorPoint = Vector2.new(0.5, 0.5)
+	self.hand.BackgroundTransparency = 1
+	self.hand.Image = Handimage
+	self.hand.Size = UDim2.fromOffset(Handsize, Handsize)
+	self.hand.Visible = false
+	self.hand.Parent = self.gui
 
 	self.bubble = Instance.new("Frame")
 	self.bubble.Name = "Bubble"
@@ -131,6 +147,25 @@ local function Facelocalpoint(Size: Vector3, Facename: string, U: number, V: num
 	return Vector3.new((0.5 - V) * Size.X, -Half.Y, (0.5 - U) * Size.Z)
 end
 
+local function Facenormal(Facename: string): Vector3
+	if Facename == "Front" then
+		return Vector3.new(0, 0, -1)
+	end
+	if Facename == "Back" then
+		return Vector3.new(0, 0, 1)
+	end
+	if Facename == "Left" then
+		return Vector3.new(-1, 0, 0)
+	end
+	if Facename == "Right" then
+		return Vector3.new(1, 0, 0)
+	end
+	if Facename == "Top" then
+		return Vector3.new(0, 1, 0)
+	end
+	return Vector3.new(0, -1, 0)
+end
+
 function Tutorialcontroller:Projectrect(Points: { Vector3 }): (Vector2?, Vector2?)
 	local Camera = Workspace.CurrentCamera
 	local Minimum = Vector2.new(math.huge, math.huge)
@@ -173,7 +208,35 @@ function Tutorialcontroller:Getsurfacerect(Target: GuiObject): (Vector2?, Vector
 			table.insert(Points, Part.CFrame:PointToWorldSpace(Localpoint))
 		end
 	end
-	return self:Projectrect(Points)
+	local Center = (Points[1] + Points[4]) * 0.5
+	local Worldnormal = Part.CFrame:VectorToWorldSpace(Facenormal(Facename))
+	local Toviewer = Workspace.CurrentCamera.CFrame.Position - Center
+	local Position, Size = self:Projectrect(Points)
+	return Position, Size, Toviewer.Unit:Dot(Worldnormal) <= 0
+end
+
+local function Thinaxis(Target: BasePart): Vector3
+	local Size = Target.Size
+	if Size.X <= Size.Y and Size.X <= Size.Z then
+		return Target.CFrame.RightVector
+	end
+	if Size.Y <= Size.Z then
+		return Target.CFrame.UpVector
+	end
+	return Target.CFrame.LookVector
+end
+
+local function Isbehindobject(Target: BasePart): boolean
+	local Object = Core:GetController("RestorationController"):GetActiveObject()
+	if not Object then
+		return false
+	end
+	local Center = if Object:IsA("Model") then (Object:GetBoundingBox()).Position else Object.Position
+	local Visibleside = Thinaxis(Target)
+	if Visibleside:Dot(Target.Position - Center) > 0 then
+		Visibleside = -Visibleside
+	end
+	return Visibleside:Dot(Workspace.CurrentCamera.CFrame.Position - Target.Position) <= 0
 end
 
 function Tutorialcontroller:Getworldrect(Target: Model | BasePart): (Vector2?, Vector2?)
@@ -195,7 +258,7 @@ function Tutorialcontroller:Getworldrect(Target: Model | BasePart): (Vector2?, V
 	return self:Projectrect(Points)
 end
 
-function Tutorialcontroller:Resolvetarget(): (Vector2?, Vector2?)
+function Tutorialcontroller:Resolvetarget(): (Vector2?, Vector2?, boolean?)
 	local Step = self.steps[self.index]
 	if not Step or not Step.Target then
 		return nil, nil
@@ -213,7 +276,11 @@ function Tutorialcontroller:Resolvetarget(): (Vector2?, Vector2?)
 		end
 		return self:Getguirect(Target)
 	end
-	if Target:IsA("Model") or Target:IsA("BasePart") then
+	if Target:IsA("BasePart") then
+		local Position, Size = self:Getworldrect(Target)
+		return Position, Size, Isbehindobject(Target)
+	end
+	if Target:IsA("Model") then
 		return self:Getworldrect(Target)
 	end
 	return nil, nil
@@ -224,6 +291,7 @@ function Tutorialcontroller:Clearshades()
 		Shade.Size = UDim2.fromOffset(0, 0)
 	end
 	self.ring.Size = UDim2.fromOffset(0, 0)
+	self.ring.Visible = false
 end
 
 function Tutorialcontroller:Applyspotlight(Position: Vector2?, Size: Vector2?)
@@ -236,6 +304,7 @@ function Tutorialcontroller:Applyspotlight(Position: Vector2?, Size: Vector2?)
 			self.shades[Index].Size = UDim2.fromOffset(0, 0)
 		end
 		self.ring.Size = UDim2.fromOffset(0, 0)
+		self.ring.Visible = false
 		return
 	end
 
@@ -255,6 +324,7 @@ function Tutorialcontroller:Applyspotlight(Position: Vector2?, Size: Vector2?)
 
 	self.ring.Position = UDim2.fromOffset(Left, Top)
 	self.ring.Size = UDim2.fromOffset(Right - Left, Bottom - Top)
+	self.ring.Visible = true
 end
 
 function Tutorialcontroller:Placebubble(Position: Vector2?, Size: Vector2?)
@@ -281,6 +351,54 @@ function Tutorialcontroller:Placebubble(Position: Vector2?, Size: Vector2?)
 	self.bubble.Position = UDim2.fromOffset(Centerx, Bubbley)
 end
 
+function Tutorialcontroller:Sethand(Show: boolean)
+	if self.handTween then
+		self.handTween:Cancel()
+		self.handTween = nil
+	end
+	self.hand.Visible = Show
+	if not Show then
+		return
+	end
+	local Istouch = Userinputservice.TouchEnabled and not Userinputservice.MouseEnabled
+	self.hand.Image = if Istouch then Handimage else Mouseimage
+	local Viewport = self.gui.AbsoluteSize
+	local Centery = math.floor(Viewport.Y * Handheightscale)
+	self.hand.Position = UDim2.fromOffset(math.floor(Viewport.X * 0.5) - Handswipe, Centery)
+	self.handTween = Tweenservice:Create(self.hand, Handtweeninfo, {
+		Position = UDim2.fromOffset(math.floor(Viewport.X * 0.5) + Handswipe, Centery),
+	})
+	self.handTween:Play()
+end
+
+function Tutorialcontroller:Resumeediting()
+	local Restoration = Core:GetController("RestorationController")
+	for _ = 1, 20 do
+		if Restoration:GetActiveObject() then
+			return
+		end
+		Restoration:Enter()
+		task.wait(0.15)
+	end
+	warn(
+		string.format(
+			"TutorialController: could not resume editing (computer %s, customer %s, completion %s, pending %s)",
+			tostring(Core:GetController("ComputerController"):IsOpen()),
+			tostring(Core:GetController("CustomerController"):IsVisible()),
+			tostring(Core:GetController("CompletionController"):IsVisible()),
+			tostring(Restoration.pendingEnter)
+		)
+	)
+end
+
+function Tutorialcontroller:Resumeindex(Saved: number): number
+	local Index = math.min(math.max(math.floor(Saved), 1), #self.steps)
+	while Index > 1 and not self.steps[Index].Checkpoint do
+		Index -= 1
+	end
+	return Index
+end
+
 function Tutorialcontroller:Showstep(Index: number)
 	self.index = Index
 	local Step = self.steps[Index]
@@ -288,6 +406,9 @@ function Tutorialcontroller:Showstep(Index: number)
 		self:Finish()
 		return
 	end
+	Remotemanager:FireServer(Servicename, "SetStep", Index)
+	self.behind = false
+	self:Sethand(Step.Gesture == true)
 	self.text.Text = Step.Text
 	self.bubbleScale.Scale = 0.86
 	Tweenservice:Create(self.bubbleScale, Steptweeninfo, { Scale = 1 }):Play()
@@ -301,8 +422,11 @@ end
 
 function Tutorialcontroller:Finish()
 	self.running = false
+	self:Sethand(false)
 	self.gui.Enabled = false
+	Core:GetController("RestorationController"):GetInterface():SetContinueLocked(false)
 	Remotemanager:FireServer(Servicename, "Complete")
+	Core:GetController("DailyRewardController"):OpenFromTutorial()
 end
 
 function Tutorialcontroller:Update()
@@ -313,13 +437,24 @@ function Tutorialcontroller:Update()
 	if not Step then
 		return
 	end
-	local Position, Size = self:Resolvetarget()
-	if Step.Target and not Position then
-		self:Clearshades()
-	else
-		self:Applyspotlight(Position, Size)
+	Core:GetController("RestorationController"):GetInterface():SetContinueLocked(Step.AllowFinish ~= true)
+	local Position, Size, Behind = self:Resolvetarget()
+	if Behind ~= self.behind then
+		self.behind = Behind
+		self.text.Text = if Behind then Behindtext else Step.Text
+		self:Sethand(Behind == true or Step.Gesture == true)
 	end
-	self:Placebubble(Position, Size)
+	if Behind then
+		self:Applyspotlight(nil, nil)
+		self:Placebubble(nil, nil)
+	else
+		if Step.Target and not Position then
+			self:Clearshades()
+		else
+			self:Applyspotlight(Position, Size)
+		end
+		self:Placebubble(Position, Size)
+	end
 	if os.clock() - self.stepStart < (Step.MinimumSeconds or 0.35) then
 		return
 	end
@@ -428,6 +563,16 @@ function Tutorialcontroller:Buildsteps()
 			end,
 			Done = function()
 				return Restoration():IsEditingObject() and Restoration():GetActiveObject() ~= nil
+			end,
+		},
+		{
+			Text = "Turn it around!",
+			Checkpoint = true,
+			NeedsObject = true,
+			Gesture = true,
+			MinimumSeconds = 1,
+			Done = function()
+				return Core:GetController("InspectionCameraController"):GetOrbitTravel() >= 1.2
 			end,
 		},
 		{
@@ -542,6 +687,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "All clean! Tap to finish.",
+			AllowFinish = true,
 			Target = function()
 				return Restoration():GetInterface().ContinueButton
 			end,
@@ -561,6 +707,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Open your shelf.",
+			Checkpoint = true,
 			Target = function()
 				return Core:GetController("ExpositionController").reputationButtonR
 			end,
@@ -597,6 +744,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Go back to your desk.",
+			Checkpoint = true,
 			Target = function()
 				return Core:GetController("ExpositionController").reputationButtonL
 			end,
@@ -658,9 +806,13 @@ function Tutorialcontroller:Start()
 		if State and State.Completed == true then
 			return
 		end
+		local Index = self:Resumeindex(tonumber(State and State.Step) or 1)
+		if self.steps[Index].NeedsObject then
+			self:Resumeediting()
+		end
 		self.running = true
 		self.gui.Enabled = true
-		self:Showstep(1)
+		self:Showstep(Index)
 	end)
 end
 

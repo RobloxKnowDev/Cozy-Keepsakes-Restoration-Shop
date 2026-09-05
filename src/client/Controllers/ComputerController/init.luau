@@ -351,6 +351,7 @@ function ComputerController:Init()
 	self.screenModel = self.computer:WaitForChild("Ecran"):WaitForChild("Model") :: BasePart
 	self.screenModel.CanQuery = true
 	self.surfaceGui = self.computerModel:WaitForChild("SurfaceGui") :: SurfaceGui
+	Core:GetController("FeedbackController"):BindClicksIn(self.surfaceGui)
 	self.surfaceGui.Active = false
 	self.frame = self.surfaceGui:WaitForChild("Frame") :: Frame
 	self.header = self.frame:WaitForChild("Header") :: Frame
@@ -451,6 +452,7 @@ function ComputerController:Start()
 	end)
 	local function TryOpen(ScreenPosition: Vector2?, ExpandTouch: boolean?): boolean
 		if not self:CanOpen() or not self:IsComputerAtPosition(ScreenPosition, ExpandTouch) then return false end
+		Core:GetController("FeedbackController"):UiClick()
 		self:SetHoveredComputer(self.computer)
 		self:Open()
 		return true

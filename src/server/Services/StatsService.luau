@@ -108,12 +108,16 @@ function Statsservice:Init()
 			local Stats = self:EnsurePlayer(Player)
 			Stats.ItemsSold = math.max(tonumber(Saved.ItemsSold) or 0, 0)
 			Stats.Reputation = math.max(tonumber(Saved.Reputation) or 0, 0)
-			Stats.DailyProfit = tonumber(Saved.DailyProfit) or 0
-			Stats.LastDay = tonumber(Saved.LastDay) or Stats.LastDay
+			Stats.DailyProfit = 0
+			Stats.LastDay = GetCurrentDay()
 			self:PushStats(Player)
 		end,
 		Save = function(Player)
-			return self:EnsurePlayer(Player)
+			local Stats = self:EnsurePlayer(Player)
+			return {
+				ItemsSold = Stats.ItemsSold,
+				Reputation = Stats.Reputation,
+			}
 		end,
 		Clear = function(Player)
 			StatsByPlayer[Player] = nil

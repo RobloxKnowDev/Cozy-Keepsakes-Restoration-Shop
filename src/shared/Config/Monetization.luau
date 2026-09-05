@@ -6,9 +6,9 @@ return {
 
 	CashProducts = {
 		Cash1 = { Id = 3708631458, Amount = 2_500 },
-		Cash2 = { Id = 3708631478, Amount = 15_000 },
-		Cash3 = { Id = 3708631495, Amount = 200_000 },
-		Cash4 = { Id = 3708631522, Amount = 1_000_000 },
+		Cash2 = { Id = 3708631478, Amount = 12_000 },
+		Cash3 = { Id = 3708631495, Amount = 60_000 },
+		Cash4 = { Id = 3708631522, Amount = 250_000 },
 	},
 
 	SkipDayProductId = 3709374250,
@@ -16,10 +16,10 @@ return {
 	StarterPack = {
 		Id =  1949649693, 
 		PurchaseType = "GamePass",
-		Cash = 1_000,
+		Cash = 3_000,
 		ObjectKey = "OldSuitcase",
 		ReputationMultiplier = 2,
-		ReputationDurationSeconds = 10 * 60,
+		ReputationDurationSeconds = 30 * 60,
 	},
 
 	ServerReputationLuck = {
