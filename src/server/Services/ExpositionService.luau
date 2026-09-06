@@ -3,6 +3,7 @@ local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Mutationvfx = require(Replicatedstorage.Shared.Utils.MutationVfx)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
@@ -43,7 +44,9 @@ local Busyplayers: { [Player]: boolean } = {}
 local Displayrevision = 0
 local Displayedobjects: Folder
 local Objecttemplates: Folder
-local Placementparticle: ParticleEmitter
+local Vfxfolder: Folder
+local Placementparticle: Attachment
+local Placementburst = 0.05
 local Dirtsurfacenames = {
 	UiTop = true,
 	UiBottom = true,
@@ -53,15 +56,27 @@ local Dirtsurfacenames = {
 	UiBack = true,
 }
 
-local function Playplacementvfx(Attachment: Attachment)
-	local Vfx = Placementparticle:Clone()
-	Vfx.Enabled = true
-	Vfx.Parent = Attachment
-	Vfx.Rate = 100
-	task.wait(0.05)
-	Vfx.Rate = 0
-	task.delay(Vfx.Lifetime.Max, function()
-		Vfx:Destroy()
+local function Getanchorpart(Object: DisplayObject): BasePart
+	if Object:IsA("BasePart") then
+		return Object
+	end
+	return Object.PrimaryPart or Object:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function Attachmutationvfx(Object: DisplayObject, Mutation: string)
+	Mutationvfx.Attach(Object, Mutation, true)
+end
+
+local function Playplacementvfx(Object: DisplayObject)
+	local Vfx = Placementparticle:Clone() :: Attachment
+	local Emitter = Vfx.PlacementParticle :: ParticleEmitter
+	Emitter.Enabled = true
+	Vfx.Parent = Getanchorpart(Object)
+	task.delay(Placementburst, function()
+		Emitter.Enabled = false
+		task.delay(Emitter.Lifetime.Max, function()
+			Vfx:Destroy()
+		end)
 	end)
 end
 
@@ -80,11 +95,11 @@ local function Hidedisplayobject(Object: DisplayObject): { [BasePart]: number }
 	return Transparencies
 end
 
-local function Revealdisplayobject(Object: DisplayObject, Attachment: Attachment)
+local function Revealdisplayobject(Object: DisplayObject)
 	local Transparencies = Hidedisplayobject(Object);
 	(Object :: Instance).Parent = Displayedobjects
 	task.delay(0.1, function()
-		Playplacementvfx(Attachment)
+		Playplacementvfx(Object)
 	end)
 	task.delay(0.2, function()
 		for Part, Transparency in pairs(Transparencies) do
@@ -246,6 +261,7 @@ function Expositionservice:RestoreDisplayItem(Player: Player, Slotindex: number,
 		return false
 	end
 	local Object = Template:Clone() :: DisplayObject
+	Attachmutationvfx(Object, tostring(Item.Mutation or "Normal"))
 	Cleandisplayobject(Object)
 	Anchordisplayobject(Object)
 	local Slotcframe = Slotattachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
@@ -293,6 +309,7 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 		error("ExpositionService: model '" .. Item.ObjectKey .. "' must be a Model or a BasePart")
 	end
 	local Object = Template:Clone() :: DisplayObject
+	Attachmutationvfx(Object, tostring(Item.Mutation or "Normal"))
 	Cleandisplayobject(Object)
 	Anchordisplayobject(Object)
 	local Slotcframe = Slotattachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
@@ -322,7 +339,7 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 		Object = Object,
 		Item = Removeditem,
 	}
-	Revealdisplayobject(Object, Slotattachments[Slotindex])
+	Revealdisplayobject(Object)
 	Refreshdisplayreputation(Player)
 	Releasereservation(Player, Slotindex)
 
@@ -389,8 +406,8 @@ function Expositionservice:Init()
 	Displayedobjects.Name = "DisplayedObjects"
 	Displayedobjects.Parent = Etagere
 	Objecttemplates = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object") :: Folder
-	Placementparticle =
-		Replicatedstorage:WaitForChild("Asset"):WaitForChild("Vfx"):WaitForChild("PlacementParticle") :: ParticleEmitter
+	Vfxfolder = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Vfx") :: Folder
+	Placementparticle = Vfxfolder:WaitForChild("PlacementParticle") :: Attachment
 
 	Core:GetService("DataService"):Register("Exposition", {
 		Load = function(Player, Saved)

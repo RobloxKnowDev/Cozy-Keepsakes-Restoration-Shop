@@ -36,6 +36,7 @@ type CustomerOffer = {
 	Price: number,
 	MaxValue: number,
 	MaxReputation: number,
+	Mutation: string,
 	Emergency: boolean,
 }
 
@@ -467,6 +468,7 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer
 		Price = DiscountedPrice,
 		MaxValue = Maximums.MaxValue,
 		MaxReputation = Maximums.MaxReputation,
+		Mutation = Maximums.Mutation,
 		Emergency = false,
 	}
 end
@@ -485,6 +487,7 @@ local function ChooseEmergencyRequest(): CustomerOffer
 		Price = 0,
 		MaxValue = Maximums.MaxValue,
 		MaxReputation = Maximums.MaxReputation,
+		Mutation = Maximums.Mutation,
 		Emergency = true,
 	}
 end
@@ -643,6 +646,7 @@ function Customerservice:Init()
 		return {
 			Success = true,
 			MaxPrice = PendingOffer.MaxValue,
+			Mutation = PendingOffer.Mutation,
 		}
 	end)
 
@@ -681,12 +685,11 @@ function Customerservice:Init()
 					Reason = "EmergencyOfferPresented",
 				}
 			end
-			local Restorationservice = Core:GetService("RestorationService")
-			local Restorationobject = Restorationservice:PrepareObject(PendingOffer.ObjectKey, Player, {
+			Core:GetService("InventoryService"):AddPurchasedItem(Player, PendingOffer.ObjectKey, {
 				MaxValue = PendingOffer.MaxValue,
 				MaxReputation = PendingOffer.MaxReputation,
-			})
-			Restorationobject:SetAttribute("PurchasePrice", PendingOffer.Price)
+				Mutation = PendingOffer.Mutation,
+			}, PendingOffer.Price)
 			Core:GetService("TutorialService"):MarkObjectBought(Player)
 			local ExitAttachment = AttachmentsByIndex[0]
 			OccupiedSlots[1] = nil

@@ -5,6 +5,7 @@ local Tweenservice = game:GetService("TweenService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
+local Mutationlabel = require(Replicatedstorage.Shared.Utils.MutationLabel)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
@@ -256,7 +257,7 @@ function Controller:ShowSelectionDetails(Item, Animate: boolean?)
 
 	self.selectedDisplayItemId = Item.Id
 	local Rarity = Rarityconfig[tostring(Item.Rarity or "Common")]
-	self.selectDetailsNameText.Text = tostring(Item.Name or "")
+	Mutationlabel.Apply(self.selectDetailsNameText, Item)
 	self.selectDetailsRarityText.Text = Rarity.Name
 	self.selectDetailsRarityText.TextColor3 = Rarity.Color
 	self.selectDetailsRestorationText.Text = string.format("%d%%", Item.RestorationPercent or 0)

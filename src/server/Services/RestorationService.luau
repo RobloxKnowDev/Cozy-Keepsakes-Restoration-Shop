@@ -6,6 +6,8 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Config = require(Replicatedstorage.Shared.Config.Object)
+local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
+local Mutationvfx = require(Replicatedstorage.Shared.Utils.MutationVfx)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
@@ -15,6 +17,7 @@ local Restorationservice = {
 	Priority = 10,
 	Remotes = {
 		BeginSession = "Function",
+		BeginItem = "Function",
 		BeginPeel = "Function",
 		ApplyInkSolvent = "Event",
 		ApplyScratchPolish = "Event",
@@ -151,15 +154,18 @@ local Generateditems: Folder
 type ObjectMaximums = {
 	MaxValue: number,
 	MaxReputation: number,
+	Mutation: string,
 }
 
+local Mutationbyobject: { [Instance]: string } = {}
+
 local Sessions: { [Player]: RestorationObject } = {}
+local Sessionitem: { [Player]: any } = {}
 local Lastclean: { [Player]: number } = {}
 local Lastscratchclean: { [Player]: number } = {}
 local Lastinkclean: { [Player]: number } = {}
 local Peeling: { [Player]: BasePart } = {}
 local Activeobject: RestorationObject? = nil
-local Grantedobjectqueue: { { Player: Player, Objectname: string, OnReady: (() -> ())? } } = {}
 local Randomgenerator = Random.new()
 
 local function Roundtwodecimals(Value: number): number
@@ -172,16 +178,42 @@ local function Randomizemaximum(Value: number): number
 	return Roundtwodecimals(Value * Randomgenerator:NextNumber(Minimum, Maximum))
 end
 
+local Testmutationindex = 0
+
+local function Rollmutation(): string
+	if Testmutationindex < #Mutationconfig.TestSequence then
+		Testmutationindex += 1
+		return Mutationconfig.TestSequence[Testmutationindex]
+	end
+	local Total = 0
+	for _, Name in ipairs(Mutationconfig.Order) do
+		Total += Mutationconfig[Name].Weight
+	end
+	local Roll = Randomgenerator:NextNumber(0, Total)
+	local Accumulated = 0
+	for _, Name in ipairs(Mutationconfig.Order) do
+		Accumulated += Mutationconfig[Name].Weight
+		if Roll < Accumulated then
+			return Name
+		end
+	end
+	return "Normal"
+end
+
 local function Generateobjectmaximums(Objectname: string): ObjectMaximums
 	local Definition = Config.Object[Objectname]
+	local Mutation = Rollmutation()
+	local Multipliers = Mutationconfig[Mutation]
 	return {
-		MaxValue = Randomizemaximum(Definition.MaxValue),
-		MaxReputation = Randomizemaximum(Definition.Reputation),
+		MaxValue = Randomizemaximum(Definition.MaxValue) * Multipliers.ValueMultiplier,
+		MaxReputation = Randomizemaximum(Definition.Reputation) * Multipliers.ReputationMultiplier,
+		Mutation = Mutation,
 	}
 end
 
 local function Destroyobject(Object: RestorationObject?)
 	if Object and Object.Parent then
+		Mutationbyobject[Object] = nil
 		Object:Destroy()
 	end
 end
@@ -194,6 +226,124 @@ local function Getcompletionratio(Object: RestorationObject): number
 	end
 
 	return math.clamp(Cleanedspots / Totalspots, 0, 1)
+end
+
+local function Revealmutation(Object: RestorationObject)
+	local Mutation = Mutationbyobject[Object]
+	if not Mutation or Object:GetAttribute("Mutation") ~= nil then
+		return
+	end
+	if Getcompletionratio(Object) < Mutationconfig.RevealRatio then
+		return
+	end
+	Object:SetAttribute("Mutation", Mutation)
+	Mutationvfx.Attach(Object, Mutation, false)
+end
+
+local Precleankinds = {
+	DirtFrame = { Kind = "Dirt", Units = 16, Weighted = true },
+	ScratchesFrame = { Kind = "Scratch", Units = 1, Weighted = false },
+	Ink = { Kind = "Ink", Units = 1, Weighted = false },
+}
+
+local Progresskinds = { "Dirt", "Ink", "Scratch", "Sticker" }
+
+local function Captureprogress(Object: RestorationObject): { [string]: number }
+	local Progress = {}
+	for _, Kind in ipairs(Progresskinds) do
+		Progress[Kind] = tonumber(Object:GetAttribute("Cleaned_" .. Kind)) or 0
+	end
+	return Progress
+end
+
+local function Precleanobject(Object: RestorationObject, Ratio: number, Progress: { [string]: number }?)
+	if Ratio <= 0 then
+		return
+	end
+	local Totalspots = tonumber(Object:GetAttribute("TotalSpots")) or 0
+	local Target = Totalspots * math.clamp(Ratio, 0, 1)
+	local Dirtweight = tonumber(Object:GetAttribute("DirtWeight")) or 1
+	local Cleanedbykind = {}
+	for _, Kind in ipairs(Progresskinds) do
+		local Total = tonumber(Object:GetAttribute("Total_" .. Kind)) or 0
+		local Stored = if Progress then tonumber(Progress[Kind]) or 0 else Total * math.clamp(Ratio, 0, 1)
+		Cleanedbykind[Kind] = math.clamp(Stored, 0, Total)
+	end
+
+	local Hideable = table.clone(Cleanedbykind)
+	local Cleaned = 0
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		local Entry = Precleankinds[Descendant.Name]
+		if Entry and Descendant:IsA("GuiObject") and Descendant.Visible and Hideable[Entry.Kind] >= Entry.Units then
+			Descendant.Visible = false
+			Descendant:SetAttribute("Cleaned", true)
+			Hideable[Entry.Kind] -= Entry.Units
+			Cleaned += Entry.Units * (if Entry.Weighted then Dirtweight else 1)
+		end
+	end
+
+	local Sticker = Object.RestorationSpots:FindFirstChild("Sticker")
+	if Sticker and Cleanedbykind.Sticker >= 1 then
+		Sticker:Destroy()
+		Cleaned += 1
+	end
+
+	for _, Kind in ipairs(Progresskinds) do
+		Object:SetAttribute("Cleaned_" .. Kind, Cleanedbykind[Kind])
+	end
+	Object:SetAttribute("CleanedSpots", math.max(Cleaned, Target))
+	print(
+		string.format(
+			"[Preclean] ratio=%.2f target=%.1f total=%.1f cleaned=%.1f progress=%s dirt=%s ink=%s scratch=%s sticker=%s",
+			Ratio,
+			Target,
+			Totalspots,
+			Cleaned,
+			if Progress then "yes" else "nil",
+			tostring(Object:GetAttribute("Cleaned_Dirt")),
+			tostring(Object:GetAttribute("Cleaned_Ink")),
+			tostring(Object:GetAttribute("Cleaned_Scratch")),
+			tostring(Object:GetAttribute("Cleaned_Sticker"))
+		)
+	)
+	Revealmutation(Object)
+end
+
+local function Setcleanedspots(Object: RestorationObject, Value: number)
+	Object:SetAttribute("CleanedSpots", Value)
+	Revealmutation(Object)
+end
+
+local function Applyratiotoitem(Item: any, Ratio: number, Object: RestorationObject?)
+	if Object then
+		Item.Progress = Captureprogress(Object)
+	end
+	Item.RestorationPercent = math.floor(Ratio * 100 + 0.5)
+	Item.CurrentValue = Roundtwodecimals(Item.MaxValue * Ratio)
+	Item.Reputation = Roundtwodecimals(Item.MaxReputation * Ratio)
+	Item.NetProfit = Roundtwodecimals(Item.CurrentValue - Item.PurchasePrice)
+	return Item
+end
+
+function Restorationservice:GetSessionItem(Player: Player): any
+	local Item = Sessionitem[Player]
+	local Object = Sessions[Player]
+	if not Item then
+		return nil
+	end
+	return Applyratiotoitem(Item, if Object then Getcompletionratio(Object) else Item.RestorationPercent / 100, Object)
+end
+
+local function Returnsessionitem(Player: Player, Object: RestorationObject?)
+	local Item = Sessionitem[Player]
+	Sessionitem[Player] = nil
+	if not Item then
+		return
+	end
+	Applyratiotoitem(Item, if Object then Getcompletionratio(Object) else Item.RestorationPercent / 100, Object)
+	local Inventoryservice = Core:GetService("InventoryService")
+	Inventoryservice:ReturnRestoredItem(Player, Item)
+	Inventoryservice:PushItems(Player)
 end
 
 local function Cleanupactiveobjectifidle()
@@ -226,6 +376,7 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 	local Objectmaximums = Maximums or Generateobjectmaximums(Objectname)
 	local Maxvalue = Objectmaximums.MaxValue
 	local Maxreputation = Objectmaximums.MaxReputation
+	Mutationbyobject[Object] = Objectmaximums.Mutation or "Normal"
 	Object.Name = Objectname
 	Object:SetAttribute("RestorationObject", true)
 	Object:SetAttribute("KeepSpawnPosition", true)
@@ -469,7 +620,13 @@ function Restorationservice:GenerateObjectMaximums(Objectname: string): ObjectMa
 	return Generateobjectmaximums(Objectname)
 end
 
-function Restorationservice:PrepareObject(Objectname: string, Owner: Player?, Maximums: ObjectMaximums?): RestorationObject
+function Restorationservice:PrepareObject(
+	Objectname: string,
+	Owner: Player?,
+	Maximums: ObjectMaximums?,
+	Percent: number?,
+	Progress: { [string]: number }?
+): RestorationObject
 	Destroyobject(Activeobject)
 	local Object = Spawnconfiguredobject(Objectname, Maximums)
 	if Object:IsA("BasePart") then
@@ -485,32 +642,18 @@ function Restorationservice:PrepareObject(Objectname: string, Owner: Player?, Ma
 	Object:SetAttribute("AwardedUserId", if Owner then Owner.UserId else nil)
 	local Istutorial = Owner ~= nil and Core:GetService("TutorialService"):IsActive(Owner)
 	Createspots(Object, Istutorial)
+	Precleanobject(Object, (tonumber(Percent) or 0) / 100, Progress)
 	Activeobject = Object
 	return Object
 end
 
-function Restorationservice:TryPrepareNextGrantedObject(): RestorationObject?
-	if self:HasActiveObject() or self:HasActiveSession() then return nil end
-	while #Grantedobjectqueue > 0 do
-		local Entry = table.remove(Grantedobjectqueue, 1)
-		if Entry.Player.Parent then
-			local Object = self:PrepareObject(Entry.Objectname, Entry.Player)
-			if Entry.OnReady then Entry.OnReady() end
-			return Object
-		end
-	end
-	return nil
-end
-
 function Restorationservice:GrantObject(Player: Player, Objectname: string, OnReady: (() -> ())?): (boolean, boolean)
 	if Config.Object[Objectname] == nil then return false, false end
-	if not self:HasActiveObject() and not self:HasActiveSession() then
-		self:PrepareObject(Objectname, Player)
-		return true, true
-	else
-		table.insert(Grantedobjectqueue, { Player = Player, Objectname = Objectname, OnReady = OnReady })
-		return true, false
+	Core:GetService("InventoryService"):AddPurchasedItem(Player, Objectname, Generateobjectmaximums(Objectname), 0)
+	if OnReady then
+		OnReady()
 	end
+	return true, true
 end
 
 function Restorationservice:HasActiveSession(): boolean
@@ -534,6 +677,25 @@ function Restorationservice:Init()
 		if Object:GetAttribute("CompletingRestoration") then return nil end
 		local AwardedUserId = tonumber(Object:GetAttribute("AwardedUserId"))
 		if AwardedUserId and AwardedUserId ~= Player.UserId then return nil end
+		Sessions[Player] = Object
+		return Object
+	end)
+
+	Remotemanager:OnServerInvoke(self.Name, "BeginItem", function(Player, ItemId)
+		if Activeobject or Sessions[Player] then
+			return nil
+		end
+		local Item = Core:GetService("InventoryService"):TakeRestoredItem(Player, tonumber(ItemId) or 0)
+		if not Item then
+			return nil
+		end
+		local Object = self:PrepareObject(Item.ObjectKey, Player, {
+			MaxValue = Item.MaxValue,
+			MaxReputation = Item.MaxReputation,
+			Mutation = Item.Mutation,
+		}, Item.RestorationPercent, Item.Progress)
+		Object:SetAttribute("PurchasePrice", Item.PurchasePrice)
+		Sessionitem[Player] = Item
 		Sessions[Player] = Object
 		return Object
 	end)
@@ -575,10 +737,12 @@ function Restorationservice:Init()
 			Name = tostring(Sessionobject:GetAttribute("DisplayName") or Sessionobject.Name),
 			ImageId = tostring(Sessionobject:GetAttribute("ImageId") or ""),
 			Rarity = tostring(Sessionobject:GetAttribute("Rarity") or "Common"),
+			Mutation = Mutationbyobject[Sessionobject] or "Normal",
 			RestorationPercent = math.floor(Completionratio * 100 + 0.5),
 			PurchasePrice = Purchaseprice,
 			CurrentValue = Salevalue,
 			MaxValue = Maxvalue,
+			MaxReputation = Maxreputation,
 			NetProfit = Roundtwodecimals(Salevalue - Purchaseprice),
 			Reputation = Reputation,
 		}
@@ -594,17 +758,27 @@ function Restorationservice:Init()
 		Lastscratchclean[Player] = nil
 		Lastinkclean[Player] = nil
 
+		local Sessioniteminstance = Sessionitem[Player]
+		Sessionitem[Player] = nil
+		if Sessioniteminstance then
+			Applyratiotoitem(Sessioniteminstance, Completionratio, Sessionobject)
+		end
+
 		if Activeobject == Sessionobject then
 			Activeobject = nil
 		end
 		Destroyobject(Sessionobject)
 
-		local Restoreditem = Inventoryservice:AddRestoredItem(Player, Itemdata)
+		local Restoreditem
+		if Sessioniteminstance then
+			Restoreditem = Inventoryservice:ReturnRestoredItem(Player, Sessioniteminstance)
+		else
+			Restoreditem = Inventoryservice:AddRestoredItem(Player, Itemdata)
+		end
 		Core:GetService("TutorialService"):MarkObjectDone(Player)
 		if Completionratio >= 0.5 and Player.Parent then
 			Inventoryservice:UnlockIndexEntry(Player, Objectkey)
 		end
-		task.defer(function() self:TryPrepareNextGrantedObject() end)
 
 		return Restoreditem
 	end)
@@ -619,7 +793,7 @@ function Restorationservice:Init()
 		local Totalspots = tonumber(Object:GetAttribute("TotalSpots")) or 0
 		local Cleanedspots = math.min((tonumber(Object:GetAttribute("CleanedSpots")) or 0) + 1, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Object:SetAttribute("CleanedSpots", Cleanedspots)
+		Setcleanedspots(Object, Cleanedspots)
 		Object:SetAttribute("Cleaned_Sticker", (Object:GetAttribute("Cleaned_Sticker") or 0) + 1)
 		Spot:Destroy()
 	end)
@@ -676,7 +850,7 @@ function Restorationservice:Init()
 		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
 		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Sessionobject:SetAttribute("CleanedSpots", Cleanedspots)
+		Setcleanedspots(Sessionobject, Cleanedspots)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanScratch", function(Player, Target, Points)
@@ -706,7 +880,7 @@ function Restorationservice:Init()
 		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
 		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Sessionobject:SetAttribute("CleanedSpots", Cleanedspots)
+		Setcleanedspots(Sessionobject, Cleanedspots)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanDirt", function(Player, Target, Toolname, Points)
@@ -741,7 +915,7 @@ function Restorationservice:Init()
 		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
 		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress * Dirtweight, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Sessionobject:SetAttribute("CleanedSpots", Cleanedspots)
+		Setcleanedspots(Sessionobject, Cleanedspots)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanSpot", function(Player, Spot, Toolname)
@@ -772,7 +946,7 @@ function Restorationservice:Init()
 		Lastclean[Player] = Now
 		local Health = (Spot:GetAttribute("Health") or 1) - (Toolpower[Toolname] or 0)
 		if Health <= 0 then
-			Sessionobject:SetAttribute("CleanedSpots", (Sessionobject:GetAttribute("CleanedSpots") or 0) + 1)
+			Setcleanedspots(Sessionobject, (Sessionobject:GetAttribute("CleanedSpots") or 0) + 1)
 			Sessionobject:SetAttribute("Cleaned_" .. Kind, (Sessionobject:GetAttribute("Cleaned_" .. Kind) or 0) + 1)
 			if Kind == "Sticker" and Toolname == "Tweezers" then
 				Spot.CanQuery = false
@@ -808,8 +982,8 @@ function Restorationservice:Init()
 		Lastclean[Player] = nil
 		Lastscratchclean[Player] = nil
 		Lastinkclean[Player] = nil
+		Returnsessionitem(Player, Sessionobject)
 		if Sessionobject and Activeobject == Sessionobject then Cleanupactiveobjectifidle() end
-		task.defer(function() self:TryPrepareNextGrantedObject() end)
 	end)
 
 	Players.PlayerRemoving:Connect(function(Player)
@@ -819,19 +993,16 @@ function Restorationservice:Init()
 			Spot:SetAttribute("PeelingBy", nil)
 		end
 		Peeling[Player] = nil
+		Sessionitem[Player] = nil
 		Sessions[Player] = nil
 		Lastclean[Player] = nil
 		Lastscratchclean[Player] = nil
 		Lastinkclean[Player] = nil
-		for Index = #Grantedobjectqueue, 1, -1 do
-			if Grantedobjectqueue[Index].Player == Player then table.remove(Grantedobjectqueue, Index) end
-		end
 		local Activeowneruserid = if Activeobject then tonumber(Activeobject:GetAttribute("AwardedUserId")) else nil
 		if next(Sessions) == nil and (Activeobject == Sessionobject or Activeowneruserid == Player.UserId) then
 			Destroyobject(Activeobject)
 			Activeobject = nil
 		end
-		task.defer(function() self:TryPrepareNextGrantedObject() end)
 	end)
 end
 

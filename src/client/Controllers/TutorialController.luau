@@ -26,7 +26,7 @@ local Textheight = 96
 local Textgap = 18
 local Behindtext = "It's on the other side!"
 local Handimage = "rbxassetid://116068912861302"
-local Mouseimage = "rbxassetid://104031075394631"
+local Mouseimage = "rbxassetid://123373213717142"
 local Handsize = 96
 local Handswipe = 72
 local Handheightscale = 0.45
@@ -371,26 +371,6 @@ function Tutorialcontroller:Sethand(Show: boolean)
 	self.handTween:Play()
 end
 
-function Tutorialcontroller:Resumeediting()
-	local Restoration = Core:GetController("RestorationController")
-	for _ = 1, 20 do
-		if Restoration:GetActiveObject() then
-			return
-		end
-		Restoration:Enter()
-		task.wait(0.15)
-	end
-	warn(
-		string.format(
-			"TutorialController: could not resume editing (computer %s, customer %s, completion %s, pending %s)",
-			tostring(Core:GetController("ComputerController"):IsOpen()),
-			tostring(Core:GetController("CustomerController"):IsVisible()),
-			tostring(Core:GetController("CompletionController"):IsVisible()),
-			tostring(Restoration.pendingEnter)
-		)
-	)
-end
-
 function Tutorialcontroller:Resumeindex(Saved: number): number
 	local Index = math.min(math.max(math.floor(Saved), 1), #self.steps)
 	while Index > 1 and not self.steps[Index].Checkpoint do
@@ -558,17 +538,55 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Buy this old frame!",
+			OnEnter = function()
+				self.boughtBaseline = #Core:GetController("ComputerController").inventoryItems
+			end,
 			Target = function()
 				return Core:GetController("CustomerController").acceptButton
 			end,
 			Done = function()
-				return Restoration():IsEditingObject() and Restoration():GetActiveObject() ~= nil
+				return #Core:GetController("ComputerController").inventoryItems > (self.boughtBaseline or 0)
+			end,
+		},
+		{
+			Text = "Open your computer.",
+			Checkpoint = true,
+			Target = function()
+				return Core:GetController("ComputerController").computer
+			end,
+			Done = function()
+				return Core:GetController("ComputerController"):IsOpen()
+			end,
+		},
+		{
+			Text = "Open your inventory.",
+			Target = function()
+				return Core:GetController("ComputerController").inventoryNavButton
+			end,
+			Done = function()
+				return Core:GetController("ComputerController").activePage == "Inventory"
+			end,
+		},
+		{
+			Text = "Tap your frame.",
+			Target = function()
+				return Core:GetController("ComputerController").inventoryScrollingFrame
+			end,
+			Done = function()
+				return Core:GetController("ComputerController").selectedInventoryItemId ~= nil
+			end,
+		},
+		{
+			Text = "Now clean it!",
+			Target = function()
+				return Core:GetController("ComputerController").inventoryCleanButton
+			end,
+			Done = function()
+				return Restoration():GetActiveObject() ~= nil
 			end,
 		},
 		{
 			Text = "Turn it around!",
-			Checkpoint = true,
-			NeedsObject = true,
 			Gesture = true,
 			MinimumSeconds = 1,
 			Done = function()
@@ -807,9 +825,6 @@ function Tutorialcontroller:Start()
 			return
 		end
 		local Index = self:Resumeindex(tonumber(State and State.Step) or 1)
-		if self.steps[Index].NeedsObject then
-			self:Resumeediting()
-		end
 		self.running = true
 		self.gui.Enabled = true
 		self:Showstep(Index)

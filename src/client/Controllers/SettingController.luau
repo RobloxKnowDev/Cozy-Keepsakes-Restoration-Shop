@@ -189,6 +189,7 @@ function SettingController:BindToggle(Setting: Frame, Name: string)
 		if Now - Lasttoggle < 0.1 then return end
 		Lasttoggle = Now
 		Apply(not Enabled, true)
+		Core:GetController("FeedbackController"):UiClick()
 		self:Applyeffect(Name, Enabled)
 		RemoteManager:FireServer("SettingsService", "SetSetting", Name, Enabled)
 	end

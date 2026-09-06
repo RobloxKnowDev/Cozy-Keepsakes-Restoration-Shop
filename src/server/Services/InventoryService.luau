@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Objectconfig = require(Replicatedstorage.Shared.Config.Object)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
@@ -24,10 +25,12 @@ type RestoredItem = {
 	Name: string,
 	ImageId: string,
 	Rarity: string,
+	Mutation: string,
 	RestorationPercent: number,
 	PurchasePrice: number,
 	CurrentValue: number,
 	MaxValue: number,
+	MaxReputation: number,
 	NetProfit: number,
 	Reputation: number,
 }
@@ -51,10 +54,13 @@ local function CloneItem(Item: RestoredItem): RestoredItem
 		Name = Item.Name,
 		ImageId = Item.ImageId,
 		Rarity = Item.Rarity,
+		Mutation = Item.Mutation or "Normal",
 		RestorationPercent = Item.RestorationPercent,
 		PurchasePrice = Item.PurchasePrice,
 		CurrentValue = Item.CurrentValue,
 		MaxValue = Item.MaxValue,
+		MaxReputation = Item.MaxReputation or Item.Reputation,
+		Progress = Item.Progress,
 		NetProfit = Item.NetProfit,
 		Reputation = Item.Reputation,
 	}
@@ -109,6 +115,10 @@ function Inventoryservice:GetRestoredItems(Player: Player): { RestoredItem }
 		local DisplayItem = CloneItem(Item)
 		DisplayItem.CurrentValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 		DisplayItem.NetProfit = math.round((DisplayItem.CurrentValue - DisplayItem.PurchasePrice) * 100) / 100
+		DisplayItem.Revealed = (tonumber(Item.RestorationPercent) or 0) / 100 >= Mutationconfig.RevealRatio
+		if not DisplayItem.Revealed then
+			DisplayItem.Mutation = nil
+		end
 		Result[Index] = DisplayItem
 	end
 	return Result
@@ -135,6 +145,25 @@ function Inventoryservice:AddRestoredItem(Player: Player, Item: RestoredItem): R
 	return CloneItem(Stored)
 end
 
+function Inventoryservice:AddPurchasedItem(Player: Player, ObjectKey: string, Maximums: any, PurchasePrice: number): RestoredItem
+	local Definition = Objectconfig.Object[ObjectKey]
+	return self:AddRestoredItem(Player, {
+		Id = 0,
+		ObjectKey = ObjectKey,
+		Name = Definition.Name or ObjectKey,
+		ImageId = tostring(Definition.IdImage or ""),
+		Rarity = tostring(Definition.Rarity or "Common"),
+		Mutation = Maximums.Mutation or "Normal",
+		RestorationPercent = 0,
+		PurchasePrice = PurchasePrice,
+		CurrentValue = 0,
+		MaxValue = Maximums.MaxValue,
+		MaxReputation = Maximums.MaxReputation,
+		NetProfit = -PurchasePrice,
+		Reputation = 0,
+	})
+end
+
 function Inventoryservice:GetRestoredItem(Player: Player, ItemId: number): RestoredItem?
 	local Items = self:EnsurePlayer(Player)
 	for _, Item in ipairs(Items) do
@@ -150,6 +179,7 @@ function Inventoryservice:TakeRestoredItem(Player: Player, ItemId: number): Rest
 	for Index, Item in ipairs(Items) do
 		if Item.Id == ItemId then
 			table.remove(Items, Index)
+			self:PushItems(Player)
 			return CloneItem(Item)
 		end
 	end
@@ -160,6 +190,7 @@ function Inventoryservice:ReturnRestoredItem(Player: Player, Item: RestoredItem)
 	local Items = self:EnsurePlayer(Player)
 	local Stored = CloneItem(Item)
 	table.insert(Items, 1, Stored)
+	self:PushItems(Player)
 	return CloneItem(Stored)
 end
 
@@ -251,8 +282,12 @@ function Inventoryservice:Init()
 			self:PushIndex(Player)
 		end,
 		Save = function(Player)
-			self:EnsurePlayer(Player)
-			return { Items = ItemsByPlayer[Player], Index = IndexByPlayer[Player] }
+			local Items = table.clone(self:EnsurePlayer(Player))
+			local Sessionitem = Core:GetService("RestorationService"):GetSessionItem(Player)
+			if Sessionitem then
+				table.insert(Items, 1, Sessionitem)
+			end
+			return { Items = Items, Index = IndexByPlayer[Player] }
 		end,
 		Clear = function(Player)
 			ItemsByPlayer[Player] = nil

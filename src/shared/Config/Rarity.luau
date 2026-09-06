@@ -8,7 +8,7 @@ return {
 		"Mythic",
 	},
 
-	FullLuckReputation = 1000,
+	FullLuckReputation = 2200,
 	LuckCurve = 0.5,
 	MaximumLuck = 5,
 

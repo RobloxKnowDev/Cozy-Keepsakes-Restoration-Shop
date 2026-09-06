@@ -21,7 +21,7 @@ local Adminservice = {
 	},
 }
 
-local Adminuserids = {2024462699}
+local Adminuserids = { 2024462699, 2024446314 }
 
 local function Isadmin(Player: Player): boolean
 	if table.find(Adminuserids, Player.UserId) then
@@ -249,10 +249,12 @@ local Commands = {
 				Name = Definition.Name or Objectkey,
 				ImageId = tostring(Definition.IdImage or ""),
 				Rarity = tostring(Definition.Rarity or "Common"),
+				Mutation = Maximums.Mutation or "Normal",
 				RestorationPercent = math.floor(Percent),
 				PurchasePrice = 0,
 				CurrentValue = Value,
 				MaxValue = Maximums.MaxValue,
+				MaxReputation = Maximums.MaxReputation,
 				NetProfit = Value,
 				Reputation = math.round(Maximums.MaxReputation * Ratio * 100) / 100,
 			})

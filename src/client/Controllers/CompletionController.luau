@@ -6,7 +6,11 @@ local Tweenservice = game:GetService("TweenService")
 local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
+
+local MutationAmbientBlend = 0.65
+local MutationLightBlend = 0.45
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 
@@ -470,6 +474,7 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 			Clone.CanTouch = false
 		end
 
+		self.mutation = tostring(Object:GetAttribute("Mutation") or "Normal")
 		local Objectkey = tostring(Object:GetAttribute("ObjectKey"))
 		Pivotto(Clone, CFrame.Angles(math.rad(90), math.rad(-90), math.rad(90)) * Getobjectrotation(Objectkey))
 		Clone.Parent = self.world
@@ -563,6 +568,25 @@ function Completioncontroller:Update(Deltatime: number)
 	if self.displayObject then
 		Pivotto(self.displayObject, self.basePivot * CFrame.Angles(0, self.rotation, 0))
 	end
+	self:Tintpreview()
+end
+
+function Completioncontroller:Tintpreview()
+	if not self.viewport then
+		return
+	end
+	if not self.baseAmbient then
+		self.baseAmbient = self.viewport.Ambient
+		self.baseLightColor = self.viewport.LightColor
+	end
+	local Color = Core:GetController("MutationController"):GetColor(self.mutation)
+	if not Color then
+		self.viewport.Ambient = self.baseAmbient
+		self.viewport.LightColor = self.baseLightColor
+		return
+	end
+	self.viewport.Ambient = self.baseAmbient:Lerp(Color, MutationAmbientBlend)
+	self.viewport.LightColor = self.baseLightColor:Lerp(Color, MutationLightBlend)
 end
 
 function Completioncontroller:Start()

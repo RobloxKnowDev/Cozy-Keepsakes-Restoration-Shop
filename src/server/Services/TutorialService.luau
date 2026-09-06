@@ -3,7 +3,6 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
-local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Remotemanager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 
 local Tutorialservice = {
@@ -34,7 +33,6 @@ local function Loadplayer(Player: Player)
 		if type(Saved) == "table" then
 			Completedbyplayer[Player] = Saved.Completed == true
 			Stepbyplayer[Player] = math.max(math.floor(tonumber(Saved.Step) or 1), 1)
-			Boughtbyplayer[Player] = Saved.Bought == true
 		else
 			Completedbyplayer[Player] = Saved == true
 		end
@@ -42,11 +40,6 @@ local function Loadplayer(Player: Player)
 		warn("TutorialService: could not read data for " .. Player.Name .. ": " .. tostring(Saved))
 	end
 	Loadedbyplayer[Player] = true
-	if Completedbyplayer[Player] == false and Boughtbyplayer[Player] and Player.Parent then
-		task.spawn(function()
-			Core:GetService("RestorationService"):GrantObject(Player, Objectconfig.Offer.TutorialObject)
-		end)
-	end
 end
 
 function Tutorialservice:Wipe(Player: Player)
@@ -70,7 +63,6 @@ local function Saveplayer(Player: Player)
 		Store:SetAsync(tostring(Player.UserId), {
 			Completed = Completedbyplayer[Player] == true,
 			Step = Stepbyplayer[Player] or 1,
-			Bought = Boughtbyplayer[Player] == true,
 		})
 	end)
 	if not Success then

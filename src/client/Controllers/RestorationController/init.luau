@@ -7,6 +7,7 @@ local Startergui = game:GetService("StarterGui")
 local Userinputservice = game:GetService("UserInputService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Interfacemodule = require(script.Runtime.Interface)
 local Toolruntime = require(script.Runtime.ToolRuntime)
@@ -145,6 +146,13 @@ function Controller:Enter()
 		return
 	end
 	Activeobject = Object
+	Object:GetAttributeChangedSignal("Mutation"):Connect(function()
+		local Definition = Mutationconfig[tostring(Object:GetAttribute("Mutation"))]
+		if not Definition or Definition == Mutationconfig.Normal then return end
+		task.delay(Mutationconfig.RevealDelaySeconds, function()
+			Core:GetController("FeedbackController"):CenterText(string.upper(Definition.Name) .. "!", Definition.Color, true)
+		end)
+	end)
 	Core:GetController("CleaningController"):PreloadOverlays(Object)
 	Runtime:SetObject(Object)
 	Core:GetController("CompletionController"):Hide()

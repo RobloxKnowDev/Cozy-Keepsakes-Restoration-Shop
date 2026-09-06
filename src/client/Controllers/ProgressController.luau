@@ -74,19 +74,22 @@ end
 
 function ProgressController:Reset(Object: Model | BasePart)
 	self.sessionObject = Object
-	self.previousGlobal = 0
-	self.globalCompleted = false
+	self.previousGlobal = if Object then (GetRatio(Object)) else 0
+	self.globalCompleted = self.previousGlobal >= 1
 	table.clear(self.previousRatios)
 	table.clear(self.completed)
 	for _, Kind in ipairs(Kinds) do
+		local Ratio = if Object then (GetRatio(Object, Kind)) else 0
 		self:CancelTween(self.bars[Kind])
 		self.textIds[self.texts[Kind]] = (self.textIds[self.texts[Kind]] or 0) + 1
-		self.texts[Kind].Text = "0%"
+		self.previousRatios[Kind] = Ratio
+		self.completed[Kind] = Ratio >= 1
+		self.texts[Kind].Text = string.format("%d%%", Percent(Ratio))
 		self.texts[Kind].TextColor3 = self.baseColors[Kind]
-		self.bars[Kind].Size = UDim2.fromScale(0, 1)
-		self.rows[Kind]:SetAttribute("Completed", false)
+		self.bars[Kind].Size = UDim2.fromScale(Ratio, 1)
+		self.rows[Kind]:SetAttribute("Completed", Ratio >= 1)
 	end
-	self.globalText.Text = "0%"
+	self.globalText.Text = string.format("%d%%", Percent(self.previousGlobal))
 end
 
 function ProgressController:CompleteCategory(Kind: string)

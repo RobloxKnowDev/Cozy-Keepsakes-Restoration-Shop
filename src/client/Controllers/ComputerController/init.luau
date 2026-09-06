@@ -10,7 +10,7 @@ local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Home = require(script.Apps.Home)
 local Index = require(script.Apps.Index)
-local Sell = require(script.Apps.Sell)
+local Inventory = require(script.Apps.Inventory)
 local Shop = require(script.Apps.Shop)
 local Shared = require(script.Apps.Shared)
 local Upgrades = require(script.Apps.Upgrades)
@@ -20,7 +20,7 @@ local ComputerController = {
 	Priority = 3,
 }
 
-local Applications = { Home, Index, Sell, Upgrades, Shop }
+local Applications = { Home, Index, Inventory, Upgrades, Shop }
 local HighlightFillColor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
 local ButtonTweenInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -264,12 +264,12 @@ function ComputerController:SetPage(PageName: string)
 	self.activePage = PageName
 	self.homeFrame.Visible = PageName == "Home"
 	self.indexFrame.Visible = PageName == "Index"
-	self.sellFrame.Visible = PageName == "Sell"
+	self.inventoryFrame.Visible = PageName == "Inventory"
 	self.upgradesFrame.Visible = PageName == "Upgrades"
 	self.shopFrame.Visible = PageName == "Shop"
 	self:ApplyNavButtonStyle(self.homeButton, PageName == "Home")
 	self:ApplyNavButtonStyle(self.indexButton, PageName == "Index")
-	self:ApplyNavButtonStyle(self.sellNavButton, PageName == "Sell")
+	self:ApplyNavButtonStyle(self.inventoryNavButton, PageName == "Inventory")
 	self:ApplyNavButtonStyle(self.upgradesButton, PageName == "Upgrades")
 	self:ApplyNavButtonStyle(self.shopButton, PageName == "Shop")
 end
@@ -291,7 +291,7 @@ function ComputerController:Open()
 	self.surfaceGui.Enabled = true
 	self.surfaceGui.Active = true
 	self.frame.Visible = true
-	self:SetPage("Home")
+	self:SetPage(self.activePage or "Home")
 	if IsGamepad(UserInputService:GetLastInputType()) then GuiService.SelectedObject = self.homeButton end
 	self:FocusCamera()
 end
@@ -358,14 +358,14 @@ function ComputerController:Init()
 	self.pageFrame = self.frame:WaitForChild("PageFrame")
 	self.homeFrame = self.pageFrame:WaitForChild("HomeFrame")
 	self.indexFrame = self.pageFrame:WaitForChild("IndexFrame")
-	self.sellFrame = self.pageFrame:WaitForChild("SellFrame")
+	self.inventoryFrame = self.pageFrame:WaitForChild("InventoryFrame")
 	self.upgradesFrame = self.pageFrame:WaitForChild("UpgradeFrame")
 	self.shopFrame = self.pageFrame:WaitForChild("ShopFrame")
 	self.LeftFrame = self.frame:WaitForChild("Left")
 	self.exitButton = self.header:WaitForChild("ExitButton")
 	self.homeButton = self.LeftFrame:WaitForChild("HomeButton")
 	self.indexButton = self.LeftFrame:WaitForChild("IndexButton")
-	self.sellNavButton = self.LeftFrame:WaitForChild("SellButton")
+	self.inventoryNavButton = self.LeftFrame:WaitForChild("InventoryButton")
 	self.upgradesButton = self.LeftFrame:WaitForChild("UpgradeButton")
 	self.shopButton = self.LeftFrame:WaitForChild("ShopButton")
 	self.cashText = self.header:WaitForChild("CashFrame").CashText
@@ -398,13 +398,13 @@ function ComputerController:Init()
 	self.frame.Visible = true
 	self.homeFrame.Visible = false
 	self.indexFrame.Visible = false
-	self.sellFrame.Visible = false
+	self.inventoryFrame.Visible = false
 	self.upgradesFrame.Visible = false
 	self.shopFrame.Visible = false
 	for _, Button in ipairs({
 		self.homeButton,
 		self.indexButton,
-		self.sellNavButton,
+		self.inventoryNavButton,
 		self.upgradesButton,
 		self.shopButton,
 	}) do
@@ -419,8 +419,8 @@ function ComputerController:Init()
 	Shared.AnimateButton(self.indexButton, function()
 		return self.activePage == "Index"
 	end)
-	Shared.AnimateButton(self.sellNavButton, function()
-		return self.activePage == "Sell"
+	Shared.AnimateButton(self.inventoryNavButton, function()
+		return self.activePage == "Inventory"
 	end)
 	Shared.AnimateButton(self.upgradesButton, function()
 		return self.activePage == "Upgrades"
@@ -492,8 +492,8 @@ function ComputerController:Start()
 	self.indexButton.Activated:Connect(function()
 		self:SetPage("Index")
 	end)
-	self.sellNavButton.Activated:Connect(function()
-		self:SetPage("Sell")
+	self.inventoryNavButton.Activated:Connect(function()
+		self:SetPage("Inventory")
 	end)
 	self.upgradesButton.Activated:Connect(function()
 		self:SetPage("Upgrades")
