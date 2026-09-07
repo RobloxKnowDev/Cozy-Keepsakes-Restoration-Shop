@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Mutationconfig = require(ReplicatedStorage.Shared.Config.Mutation)
@@ -29,6 +30,7 @@ end
 
 function Inventory.ShowDetails(Controller, Item)
 	Controller.inventoryDetailsFrame.Visible = true
+	Controller.inventoryRainbowDetails = nil
 	if not Item then
 		Controller.selectedInventoryItemId = nil
 		Controller.inventoryNameText.Text = "No item selected"
@@ -69,6 +71,9 @@ function Inventory.ShowDetails(Controller, Item)
 	local Mutation = Mutationconfig[tostring(Item.Mutation or "Normal")]
 	Controller.inventoryMutationText.Text = Mutation.Name
 	Controller.inventoryMutationText.TextColor3 = Mutation.Color
+	if Item.Mutation == "Rainbow" then
+		Controller.inventoryRainbowDetails = { Controller.inventoryMutationText, Controller.inventoryNameText }
+	end
 end
 
 function Inventory.ApplyItems(Controller, Items)
@@ -96,6 +101,7 @@ function Inventory.ApplyItems(Controller, Items)
 		return (tonumber(Left.Id) or 0) > (tonumber(Right.Id) or 0)
 	end)
 	Controller.inventoryItems = Sorteditems
+	Controller.inventoryRainbowCards = {}
 
 	local SelectedItem
 	for _, Child in ipairs(Controller.inventoryScrollingFrame:GetChildren()) do
@@ -117,7 +123,11 @@ function Inventory.ApplyItems(Controller, Items)
 		RootButton.Activated:Connect(function()
 			Inventory.ShowDetails(Controller, Item)
 		end)
-		Mutationlabel.Apply(RootButton:WaitForChild("NameText"), Item)
+		local Nametext = RootButton:WaitForChild("NameText")
+		Mutationlabel.Apply(Nametext, Item)
+		if Item.Mutation == "Rainbow" then
+			table.insert(Controller.inventoryRainbowCards, Nametext)
+		end
 		RootButton:WaitForChild("PriceText").Text = Shared.FormatCurrency(Item.CurrentValue or 0)
 		RootButton:WaitForChild("PourcentageText").Text = string.format("%d%%", tonumber(Item.RestorationPercent) or 0)
 		RootButton:WaitForChild("Icon").Image = tostring(Item.ImageId or "")
@@ -169,6 +179,21 @@ function Inventory.Init(Controller)
 end
 
 function Inventory.Start(Controller)
+	RunService.Heartbeat:Connect(function()
+		local Color = Core:GetController("MutationController"):GetColor("Rainbow")
+		if not Color then
+			return
+		end
+		for _, Label in ipairs(Controller.inventoryRainbowCards or {}) do
+			if Label.Parent then
+				Label.TextColor3 = Color
+			end
+		end
+		for _, Label in ipairs(Controller.inventoryRainbowDetails or {}) do
+			Label.TextColor3 = Color
+		end
+	end)
+
 	Controller.inventoryGridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		Controller.inventoryScrollingFrame.CanvasSize =
 			UDim2.fromOffset(0, Controller.inventoryGridLayout.AbsoluteContentSize.Y)

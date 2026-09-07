@@ -5,6 +5,7 @@ local Tweenservice = game:GetService("TweenService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
+local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Mutationlabel = require(Replicatedstorage.Shared.Utils.MutationLabel)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
@@ -242,9 +243,12 @@ function Controller:ShowSelectionDetails(Item, Animate: boolean?)
 	if self.selectProgressTween then self.selectProgressTween:Cancel() end
 	if not Item then
 		self.selectedDisplayItemId = nil
+		self.selectRainbowLabels = nil
 		self.selectDetailsNameText.Text = "No item selected"
 		self.selectDetailsRarityText.Text = "-"
 		self.selectDetailsRarityText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		self.selectDetailsMutationText.Text = "-"
+		self.selectDetailsMutationText.TextColor3 = self.selectBaseMutationColor
 		self.selectDetailsRestorationText.Text = "0%"
 		self.selectDetailsValueText.Text = "$0"
 		self.selectDetailsReputationText.Text = "0"
@@ -260,6 +264,12 @@ function Controller:ShowSelectionDetails(Item, Animate: boolean?)
 	Mutationlabel.Apply(self.selectDetailsNameText, Item)
 	self.selectDetailsRarityText.Text = Rarity.Name
 	self.selectDetailsRarityText.TextColor3 = Rarity.Color
+	local Mutation = Mutationconfig[tostring(Item.Mutation or "Normal")]
+	self.selectDetailsMutationText.Text = Mutation.Name
+	self.selectDetailsMutationText.TextColor3 = Mutation.Color
+	self.selectRainbowLabels = if Item.Mutation == "Rainbow"
+		then { self.selectDetailsMutationText, self.selectDetailsNameText }
+		else nil
 	self.selectDetailsRestorationText.Text = string.format("%d%%", Item.RestorationPercent or 0)
 	self.selectDetailsValueText.Text = Shared.FormatCurrency(Item.CurrentValue or 0)
 	self.selectDetailsReputationText.Text = "+" .. FormatReputation(self:GetBaseReputation(Item))
@@ -648,6 +658,8 @@ function Controller:Init()
 	self.selectDetailsIcon = Selectdetailsframe:WaitForChild("Icon") :: ImageLabel
 	self.selectDetailsNameText = Selectdetailsframe:WaitForChild("NameText") :: TextLabel
 	self.selectDetailsRarityText = Selectdetailsframe:WaitForChild("RarityText") :: TextLabel
+	self.selectDetailsMutationText = Selectdetailsframe:WaitForChild("MutationText") :: TextLabel
+	self.selectBaseMutationColor = self.selectDetailsMutationText.TextColor3
 	self.selectDetailsRestorationText = Selectdetailsframe:WaitForChild("RestorationText") :: TextLabel
 	self.selectDetailsValueText = Selectdetailsframe:WaitForChild("ValueText") :: TextLabel
 	self.selectDetailsReputationText = Selectdetailsframe:WaitForChild("ReputationText") :: TextLabel
@@ -729,6 +741,18 @@ function Controller:Start()
 	self.dailyRewardController = Core:GetController("DailyRewardController")
 	self.settingController = Core:GetController("SettingController")
 	self.completionController = Core:GetController("CompletionController")
+	Runservice.Heartbeat:Connect(function()
+		if not self.selectRainbowLabels then
+			return
+		end
+		local Color = Core:GetController("MutationController"):GetColor("Rainbow")
+		if not Color then
+			return
+		end
+		for _, Label in ipairs(self.selectRainbowLabels) do
+			Label.TextColor3 = Color
+		end
+	end)
 	for _, Button in ipairs(self.animatedButtons) do self:BindButtonAnimation(Button) end
 	Shared.AnimateButton(self.selectCloseButton, function() return not self.selectCloseButton.Active end)
 	Shared.AnimateButton(self.selectDetailsSelectButton, function() return not self.selectDetailsSelectButton.Active end)

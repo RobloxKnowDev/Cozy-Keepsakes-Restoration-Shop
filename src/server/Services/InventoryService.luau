@@ -40,11 +40,11 @@ type IndexEntry = {
 	Name: string,
 	ImageId: string,
 	Rarity: string,
-	Unlocked: boolean,
+	Unlocked: { [string]: boolean },
 }
 
 local ItemsByPlayer: { [Player]: { RestoredItem } } = {}
-local IndexByPlayer: { [Player]: { [string]: boolean } } = {}
+local IndexByPlayer: { [Player]: { [string]: { [string]: boolean } } } = {}
 local NextItemId = 0
 
 local function CloneItem(Item: RestoredItem): RestoredItem
@@ -70,6 +70,33 @@ local function ApplySaleMultiplier(BaseValue: number, Multiplier: number): numbe
 	return math.round(BaseValue * Multiplier * 100) / 100
 end
 
+local function Newindex(): { [string]: { [string]: boolean } }
+	local Index = {}
+	for _, Mutation in ipairs(Mutationconfig.Order) do
+		Index[Mutation] = {}
+	end
+	return Index
+end
+
+local function Readsavedindex(Saved: any): { [string]: { [string]: boolean } }
+	local Index = Newindex()
+	if type(Saved) ~= "table" then
+		return Index
+	end
+	for Key, Value in pairs(Saved) do
+		if type(Value) == "table" then
+			for Objectkey, Unlocked in pairs(Value) do
+				if Index[Key] then
+					Index[Key][tostring(Objectkey)] = Unlocked == true
+				end
+			end
+		elseif Value == true then
+			Index.Normal[tostring(Key)] = true
+		end
+	end
+	return Index
+end
+
 function Inventoryservice:EnsurePlayer(Player: Player): { RestoredItem }
 	local Items = ItemsByPlayer[Player]
 	if not Items then
@@ -78,7 +105,7 @@ function Inventoryservice:EnsurePlayer(Player: Player): { RestoredItem }
 	end
 
 	if not IndexByPlayer[Player] then
-		IndexByPlayer[Player] = {}
+		IndexByPlayer[Player] = Newindex()
 	end
 
 	return Items
@@ -86,16 +113,20 @@ end
 
 function Inventoryservice:GetIndexEntries(Player: Player): { IndexEntry }
 	self:EnsurePlayer(Player)
-	local Unlockedbyobject = IndexByPlayer[Player] or {}
+	local Index = IndexByPlayer[Player]
 	local Entries = {}
 
 	for ObjectKey, Definition in pairs(Objectconfig.Object) do
+		local Unlocked = {}
+		for _, Mutation in ipairs(Mutationconfig.Order) do
+			Unlocked[Mutation] = Index[Mutation][ObjectKey] == true
+		end
 		table.insert(Entries, {
 			ObjectKey = ObjectKey,
 			Name = tostring(Definition.Name or ObjectKey),
 			ImageId = tostring(Definition.IdImage or ""),
 			Rarity = tostring(Definition.Rarity or Definition.Rarety or "Common"),
-			Unlocked = Unlockedbyobject[ObjectKey] == true,
+			Unlocked = Unlocked,
 		})
 	end
 
@@ -130,8 +161,8 @@ function Inventoryservice:PushItems(Player: Player)
 	Remotemanager:FireClient(self.Name, "RestoredItemsUpdated", Player, Items)
 end
 
-function Inventoryservice:PushIndex(Player: Player, Unlockedkey: string?)
-	Remotemanager:FireClient(self.Name, "IndexUpdated", Player, self:GetIndexEntries(Player), Unlockedkey)
+function Inventoryservice:PushIndex(Player: Player, Unlockedkey: string?, Mutation: string?)
+	Remotemanager:FireClient(self.Name, "IndexUpdated", Player, self:GetIndexEntries(Player), Unlockedkey, Mutation)
 end
 
 function Inventoryservice:AddRestoredItem(Player: Player, Item: RestoredItem): RestoredItem
@@ -194,20 +225,19 @@ function Inventoryservice:ReturnRestoredItem(Player: Player, Item: RestoredItem)
 	return CloneItem(Stored)
 end
 
-function Inventoryservice:UnlockIndexEntry(Player: Player, ObjectKey: string): boolean
+function Inventoryservice:UnlockIndexEntry(Player: Player, ObjectKey: string, Mutation: string): boolean
 	self:EnsurePlayer(Player)
 
-	if ObjectKey == "" or Objectconfig.Object[ObjectKey] == nil then
+	local Page = IndexByPlayer[Player][tostring(Mutation)]
+	if ObjectKey == "" or Objectconfig.Object[ObjectKey] == nil or not Page then
+		return false
+	end
+	if Page[ObjectKey] == true then
 		return false
 	end
 
-	local Unlockedbyobject = IndexByPlayer[Player]
-	if Unlockedbyobject[ObjectKey] == true then
-		return false
-	end
-
-	Unlockedbyobject[ObjectKey] = true
-	self:PushIndex(Player, ObjectKey)
+	Page[ObjectKey] = true
+	self:PushIndex(Player, ObjectKey, Mutation)
 	return true
 end
 
@@ -273,11 +303,7 @@ function Inventoryservice:Init()
 				table.insert(Items, Stored)
 			end
 			ItemsByPlayer[Player] = Items
-			local Index = {}
-			for Objectkey, Unlocked in pairs(if type(Saved.Index) == "table" then Saved.Index else {}) do
-				Index[tostring(Objectkey)] = Unlocked == true
-			end
-			IndexByPlayer[Player] = Index
+			IndexByPlayer[Player] = Readsavedindex(Saved.Index)
 			self:PushItems(Player)
 			self:PushIndex(Player)
 		end,

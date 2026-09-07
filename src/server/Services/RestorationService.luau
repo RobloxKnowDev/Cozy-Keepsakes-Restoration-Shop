@@ -247,6 +247,7 @@ local Precleankinds = {
 }
 
 local Progresskinds = { "Dirt", "Ink", "Scratch", "Sticker" }
+local Precleansnapratio = 0.85
 
 local function Captureprogress(Object: RestorationObject): { [string]: number }
 	local Progress = {}
@@ -271,15 +272,28 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 	end
 
 	local Hideable = table.clone(Cleanedbykind)
+	local Hidden = {}
+	for _, Kind in ipairs(Progresskinds) do
+		Hidden[Kind] = 0
+	end
 	local Cleaned = 0
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		local Entry = Precleankinds[Descendant.Name]
-		if Entry and Descendant:IsA("GuiObject") and Descendant.Visible and Hideable[Entry.Kind] >= Entry.Units then
+		if
+			Entry
+			and Descendant:IsA("GuiObject")
+			and Descendant.Visible
+			and Hideable[Entry.Kind] >= Entry.Units * Precleansnapratio
+		then
 			Descendant.Visible = false
 			Descendant:SetAttribute("Cleaned", true)
-			Hideable[Entry.Kind] -= Entry.Units
+			Hideable[Entry.Kind] = math.max(Hideable[Entry.Kind] - Entry.Units, 0)
+			Hidden[Entry.Kind] += Entry.Units
 			Cleaned += Entry.Units * (if Entry.Weighted then Dirtweight else 1)
 		end
+	end
+	for _, Kind in ipairs(Progresskinds) do
+		Cleanedbykind[Kind] = math.max(Cleanedbykind[Kind], Hidden[Kind])
 	end
 
 	local Sticker = Object.RestorationSpots:FindFirstChild("Sticker")
@@ -292,20 +306,6 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 		Object:SetAttribute("Cleaned_" .. Kind, Cleanedbykind[Kind])
 	end
 	Object:SetAttribute("CleanedSpots", math.max(Cleaned, Target))
-	print(
-		string.format(
-			"[Preclean] ratio=%.2f target=%.1f total=%.1f cleaned=%.1f progress=%s dirt=%s ink=%s scratch=%s sticker=%s",
-			Ratio,
-			Target,
-			Totalspots,
-			Cleaned,
-			if Progress then "yes" else "nil",
-			tostring(Object:GetAttribute("Cleaned_Dirt")),
-			tostring(Object:GetAttribute("Cleaned_Ink")),
-			tostring(Object:GetAttribute("Cleaned_Scratch")),
-			tostring(Object:GetAttribute("Cleaned_Sticker"))
-		)
-	)
 	Revealmutation(Object)
 end
 
@@ -777,7 +777,7 @@ function Restorationservice:Init()
 		end
 		Core:GetService("TutorialService"):MarkObjectDone(Player)
 		if Completionratio >= 0.5 and Player.Parent then
-			Inventoryservice:UnlockIndexEntry(Player, Objectkey)
+			Inventoryservice:UnlockIndexEntry(Player, Objectkey, Itemdata.Mutation)
 		end
 
 		return Restoreditem

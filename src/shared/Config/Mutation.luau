@@ -17,7 +17,7 @@ return {
 
 	Normal = {
 		Name = "Normal",
-		Color = Color3.fromRGB(210, 210, 210),
+		Color = Color3.fromRGB(255, 255, 255),
 		Weight = 88,
 		ValueMultiplier = 1,
 		ReputationMultiplier = 1,
@@ -25,7 +25,7 @@ return {
 
 	Gold = {
 		Name = "Gold",
-		Color = Color3.fromRGB(255, 199, 46),
+		Color = Color3.fromRGB(255, 224, 90),
 		Weight = 8,
 		ValueMultiplier = 2,
 		ReputationMultiplier = 1.5,
@@ -33,7 +33,7 @@ return {
 
 	Diamond = {
 		Name = "Diamond",
-		Color = Color3.fromRGB(96, 226, 255),
+		Color = Color3.fromRGB(37, 196, 254),
 		Weight = 3,
 		ValueMultiplier = 5,
 		ReputationMultiplier = 2.5,

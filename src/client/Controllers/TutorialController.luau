@@ -28,9 +28,50 @@ local Behindtext = "It's on the other side!"
 local Handimage = "rbxassetid://116068912861302"
 local Mouseimage = "rbxassetid://123373213717142"
 local Handsize = 96
+local Toolsize = 84
 local Handswipe = 72
 local Handheightscale = 0.45
-local Handtweeninfo = TweenInfo.new(1.1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, -1, true)
+local Scrubreach = 46
+local Pourlift = 54
+local Pullreach = 62
+
+local Gestures = {
+	Rotate = {
+		Motion = function(Time: number): Vector2
+			return Vector2.new(math.sin(Time * 1.6) * Handswipe, 0)
+		end,
+	},
+	ToothBrush = {
+		Image = "rbxassetid://75967295875128",
+		Motion = function(Time: number): Vector2
+			return Vector2.new(math.sin(Time * 7) * Scrubreach, math.sin(Time * 14) * 6)
+		end,
+	},
+	CottonTip = {
+		Image = "rbxassetid://112791892525390",
+		Motion = function(Time: number): Vector2
+			return Vector2.new(math.sin(Time * 7) * Scrubreach, math.sin(Time * 14) * 6)
+		end,
+	},
+	Solvent = {
+		Image = "rbxassetid://110004822063041",
+		Motion = function(Time: number): Vector2
+			return Vector2.new(0, -Pourlift * (0.5 + 0.5 * math.cos(Time * 3.2)))
+		end,
+	},
+	Polish = {
+		Image = "rbxassetid://123572804715301",
+		Motion = function(Time: number): Vector2
+			return Vector2.new(0, -Pourlift * (0.5 + 0.5 * math.cos(Time * 3.2)))
+		end,
+	},
+	Tweezers = {
+		Image = "rbxassetid://105078249168346",
+		Motion = function(Time: number): Vector2
+			return Vector2.new(0, -Pullreach * (Time * 0.8 % 1))
+		end,
+	},
+}
 local Steptweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Pulsetweeninfo = TweenInfo.new(0.65, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 
@@ -351,24 +392,34 @@ function Tutorialcontroller:Placebubble(Position: Vector2?, Size: Vector2?)
 	self.bubble.Position = UDim2.fromOffset(Centerx, Bubbley)
 end
 
-function Tutorialcontroller:Sethand(Show: boolean)
-	if self.handTween then
-		self.handTween:Cancel()
-		self.handTween = nil
+function Tutorialcontroller:Sethand(Gesture: string?)
+	self.gesture = Gesture
+	self.gestureStart = os.clock()
+	self.hand.Visible = Gesture ~= nil
+	if not Gesture then
+		return
 	end
-	self.hand.Visible = Show
-	if not Show then
+	local Definition = Gestures[Gesture]
+	if Definition.Image then
+		self.hand.Image = Definition.Image
+		self.hand.Size = UDim2.fromOffset(Toolsize, Toolsize)
 		return
 	end
 	local Istouch = Userinputservice.TouchEnabled and not Userinputservice.MouseEnabled
 	self.hand.Image = if Istouch then Handimage else Mouseimage
+	self.hand.Size = UDim2.fromOffset(Handsize, Handsize)
+end
+
+function Tutorialcontroller:Placehand(Position: Vector2?, Size: Vector2?)
+	if not self.gesture then
+		return
+	end
 	local Viewport = self.gui.AbsoluteSize
-	local Centery = math.floor(Viewport.Y * Handheightscale)
-	self.hand.Position = UDim2.fromOffset(math.floor(Viewport.X * 0.5) - Handswipe, Centery)
-	self.handTween = Tweenservice:Create(self.hand, Handtweeninfo, {
-		Position = UDim2.fromOffset(math.floor(Viewport.X * 0.5) + Handswipe, Centery),
-	})
-	self.handTween:Play()
+	local Center = if Position and Size
+		then Position + Size * 0.5
+		else Vector2.new(Viewport.X * 0.5, Viewport.Y * Handheightscale)
+	local Offset = Gestures[self.gesture].Motion(os.clock() - self.gestureStart)
+	self.hand.Position = UDim2.fromOffset(math.floor(Center.X + Offset.X), math.floor(Center.Y + Offset.Y))
 end
 
 function Tutorialcontroller:Resumeindex(Saved: number): number
@@ -388,7 +439,7 @@ function Tutorialcontroller:Showstep(Index: number)
 	end
 	Remotemanager:FireServer(Servicename, "SetStep", Index)
 	self.behind = false
-	self:Sethand(Step.Gesture == true)
+	self:Sethand(Step.Gesture)
 	self.text.Text = Step.Text
 	self.bubbleScale.Scale = 0.86
 	Tweenservice:Create(self.bubbleScale, Steptweeninfo, { Scale = 1 }):Play()
@@ -402,7 +453,7 @@ end
 
 function Tutorialcontroller:Finish()
 	self.running = false
-	self:Sethand(false)
+	self:Sethand(nil)
 	self.gui.Enabled = false
 	Core:GetController("RestorationController"):GetInterface():SetContinueLocked(false)
 	Remotemanager:FireServer(Servicename, "Complete")
@@ -422,11 +473,12 @@ function Tutorialcontroller:Update()
 	if Behind ~= self.behind then
 		self.behind = Behind
 		self.text.Text = if Behind then Behindtext else Step.Text
-		self:Sethand(Behind == true or Step.Gesture == true)
+		self:Sethand(if Behind then "Rotate" else Step.Gesture)
 	end
 	if Behind then
 		self:Applyspotlight(nil, nil)
 		self:Placebubble(nil, nil)
+		self:Placehand(nil, nil)
 	else
 		if Step.Target and not Position then
 			self:Clearshades()
@@ -434,6 +486,7 @@ function Tutorialcontroller:Update()
 			self:Applyspotlight(Position, Size)
 		end
 		self:Placebubble(Position, Size)
+		self:Placehand(Position, Size)
 	end
 	if os.clock() - self.stepStart < (Step.MinimumSeconds or 0.35) then
 		return
@@ -587,7 +640,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Turn it around!",
-			Gesture = true,
+			Gesture = "Rotate",
 			MinimumSeconds = 1,
 			Done = function()
 				return Core:GetController("InspectionCameraController"):GetOrbitTravel() >= 1.2
@@ -604,6 +657,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Hold and rub off the dirt!",
+			Gesture = "ToothBrush",
 			Target = function()
 				return Categoryspot("Dirt")
 			end,
@@ -622,6 +676,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Pull the sticker off!",
+			Gesture = "Tweezers",
 			Target = function()
 				return Categoryspot("Sticker")
 			end,
@@ -640,6 +695,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Pour it on the ink!",
+			Gesture = "Solvent",
 			HoldSeconds = 2.5,
 			Target = function()
 				return Categoryspot("Ink")
@@ -659,6 +715,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Rub the ink away!",
+			Gesture = "CottonTip",
 			Target = function()
 				return Categoryspot("Ink")
 			end,
@@ -677,6 +734,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Rub it on the scratches!",
+			Gesture = "Polish",
 			HoldSeconds = 2.5,
 			Target = function()
 				return Categoryspot("Scratch")
@@ -696,6 +754,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Rub the scratches away!",
+			Gesture = "CottonTip",
 			Target = function()
 				return Categoryspot("Scratch")
 			end,

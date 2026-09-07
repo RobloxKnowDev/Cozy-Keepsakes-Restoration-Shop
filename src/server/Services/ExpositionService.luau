@@ -3,6 +3,7 @@ local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Mutationvfx = require(Replicatedstorage.Shared.Utils.MutationVfx)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
@@ -63,8 +64,11 @@ local function Getanchorpart(Object: DisplayObject): BasePart
 	return Object.PrimaryPart or Object:FindFirstChildWhichIsA("BasePart", true)
 end
 
-local function Attachmutationvfx(Object: DisplayObject, Mutation: string)
-	Mutationvfx.Attach(Object, Mutation, true)
+local function Attachmutationvfx(Object: DisplayObject, Item: any)
+	if (tonumber(Item.RestorationPercent) or 0) / 100 < Mutationconfig.RevealRatio then
+		return
+	end
+	Mutationvfx.Attach(Object, tostring(Item.Mutation or "Normal"), true)
 end
 
 local function Playplacementvfx(Object: DisplayObject)
@@ -261,7 +265,7 @@ function Expositionservice:RestoreDisplayItem(Player: Player, Slotindex: number,
 		return false
 	end
 	local Object = Template:Clone() :: DisplayObject
-	Attachmutationvfx(Object, tostring(Item.Mutation or "Normal"))
+	Attachmutationvfx(Object, Item)
 	Cleandisplayobject(Object)
 	Anchordisplayobject(Object)
 	local Slotcframe = Slotattachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
@@ -309,7 +313,7 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 		error("ExpositionService: model '" .. Item.ObjectKey .. "' must be a Model or a BasePart")
 	end
 	local Object = Template:Clone() :: DisplayObject
-	Attachmutationvfx(Object, tostring(Item.Mutation or "Normal"))
+	Attachmutationvfx(Object, Item)
 	Cleandisplayobject(Object)
 	Anchordisplayobject(Object)
 	local Slotcframe = Slotattachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
