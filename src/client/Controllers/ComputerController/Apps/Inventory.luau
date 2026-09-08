@@ -103,6 +103,20 @@ function Inventory.ApplyItems(Controller, Items)
 	Controller.inventoryItems = Sorteditems
 	Controller.inventoryRainbowCards = {}
 
+	local Highestid = 0
+	for _, Item in ipairs(Controller.inventoryItems) do
+		Highestid = math.max(Highestid, tonumber(Item.Id) or 0)
+	end
+	local Newestitem
+	if Controller.inventoryHighestItemId and Highestid > Controller.inventoryHighestItemId then
+		for _, Item in ipairs(Controller.inventoryItems) do
+			if (tonumber(Item.Id) or 0) == Highestid then
+				Newestitem = Item
+			end
+		end
+	end
+	Controller.inventoryHighestItemId = Highestid
+
 	local SelectedItem
 	for _, Child in ipairs(Controller.inventoryScrollingFrame:GetChildren()) do
 		if Child ~= Controller.inventoryTemplate and not Child:IsA("UIGridLayout") then
@@ -136,7 +150,9 @@ function Inventory.ApplyItems(Controller, Items)
 		end
 	end
 
-	if not SelectedItem and #Controller.inventoryItems > 0 then
+	if Newestitem then
+		SelectedItem = Newestitem
+	elseif not SelectedItem and #Controller.inventoryItems > 0 then
 		SelectedItem = Controller.inventoryItems[1]
 	end
 	Inventory.ShowDetails(Controller, SelectedItem)
@@ -168,6 +184,7 @@ function Inventory.Init(Controller)
 	Controller.inventoryBaseMutationColor = Controller.inventoryMutationText.TextColor3
 	Controller.inventoryItems = {}
 	Controller.selectedInventoryItemId = nil
+	Controller.inventoryHighestItemId = nil
 	Controller.inventoryTemplate.Visible = false
 	Shared.AnimateButton(Controller.inventorySellButton, function()
 		return false

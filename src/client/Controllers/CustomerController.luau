@@ -9,6 +9,8 @@ local Workspace = game:GetService("Workspace")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
+local Objectconfig = require(Replicatedstorage.Shared.Config.Object)
+local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 
 local Customercontroller = {
 	Name = "CustomerController",
@@ -270,6 +272,7 @@ function Customercontroller:ShowOffer(Offer)
 	end
 	self.activeOfferId = Offer.Id
 	self.activeOfferPrice = tonumber(Offer.Price) or 0
+	self.activeOffer = Offer
 	self.gui.Enabled = true
 	self.frame.Visible = true
 	self.frame.Position = self.hiddenPosition
@@ -377,6 +380,7 @@ function Customercontroller:Respond(Decision: string)
 
 	self.isBusy = true
 	local Offerid = self.activeOfferId
+	local Offer = self.activeOffer
 	local Hidden = Decision ~= "Accept"
 		or Core:GetController("CashController"):GetCash() >= (self.activeOfferPrice or 0)
 	if Decision == "Accept" then
@@ -415,6 +419,12 @@ function Customercontroller:Respond(Decision: string)
 	self.pendingOffer = nil
 	self:HideInstant()
 	if Decision == "Accept" then
+		local Definition = Objectconfig.Object[tostring(Offer.ObjectKey)]
+		Core:GetController("FeedbackController"):Purchase(
+			tostring(Offer.ObjectName),
+			tostring(Offer.ImageId or ""),
+			Rarityconfig[tostring(Definition.Rarity or "Common")].Color
+		)
 		Core:GetController("RestorationController"):Enter()
 	end
 end

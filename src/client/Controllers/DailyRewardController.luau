@@ -106,6 +106,7 @@ function DailyRewardController:Open()
 		return
 	end
 	Core:GetController("SettingController"):CloseForSwitch()
+	Core:GetController("DonationController"):CloseForSwitch()
 	self:DeselectOtherTopbarIcons()
 	local ComputerController = Core:GetController("ComputerController")
 	local CustomerController = Core:GetController("CustomerController")

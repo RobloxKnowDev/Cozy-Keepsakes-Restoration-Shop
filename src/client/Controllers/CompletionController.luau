@@ -538,9 +538,9 @@ function Completioncontroller:InputChanged(Input: InputObject)
 	end
 	local Width = math.max(Workspace.CurrentCamera.ViewportSize.X, 1)
 	self.rotation = math.clamp(
-		self.dragOffset - (Input.Position.X - self.dragStart) / Width * math.rad(240),
-		math.rad(-75),
-		math.rad(75)
+		self.dragOffset - (Input.Position.X - self.dragStart) / Width * math.rad(360),
+		math.rad(-180),
+		math.rad(180)
 	)
 end
 

@@ -1,5 +1,4 @@
 local Assetservice = game:GetService("AssetService")
-local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Tweenservice = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
@@ -228,7 +227,9 @@ local function Getcompletionratio(Object: RestorationObject): number
 	return math.clamp(Cleanedspots / Totalspots, 0, 1)
 end
 
-local function Revealmutation(Object: RestorationObject)
+local Mutationbuildupseconds = 1.35
+
+local function Revealmutation(Object: RestorationObject, Immediate: boolean?)
 	local Mutation = Mutationbyobject[Object]
 	if not Mutation or Object:GetAttribute("Mutation") ~= nil then
 		return
@@ -237,7 +238,15 @@ local function Revealmutation(Object: RestorationObject)
 		return
 	end
 	Object:SetAttribute("Mutation", Mutation)
-	Mutationvfx.Attach(Object, Mutation, false)
+	if Immediate then
+		Mutationvfx.Attach(Object, Mutation, false)
+		return
+	end
+	task.delay(Mutationconfig.RevealDelaySeconds + Mutationbuildupseconds, function()
+		if Object.Parent then
+			Mutationvfx.Attach(Object, Mutation, false)
+		end
+	end)
 end
 
 local Precleankinds = {
@@ -306,7 +315,7 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 		Object:SetAttribute("Cleaned_" .. Kind, Cleanedbykind[Kind])
 	end
 	Object:SetAttribute("CleanedSpots", math.max(Cleaned, Target))
-	Revealmutation(Object)
+	Revealmutation(Object, true)
 end
 
 local function Setcleanedspots(Object: RestorationObject, Value: number)
@@ -666,6 +675,28 @@ end
 
 function Restorationservice:Init()
 	Slot = Workspace:WaitForChild("Map"):WaitForChild("Slot1") :: Folder
+	Core:GetService("DataService"):Register("Restoration", {
+		Load = function() end,
+		Save = function() return nil end,
+		Clear = function(Player)
+			local Sessionobject = Sessions[Player]
+			local Spot = Peeling[Player]
+			if Spot and Spot.Parent then
+				Spot:SetAttribute("PeelingBy", nil)
+			end
+			Peeling[Player] = nil
+			Sessionitem[Player] = nil
+			Sessions[Player] = nil
+			Lastclean[Player] = nil
+			Lastscratchclean[Player] = nil
+			Lastinkclean[Player] = nil
+			local Activeowneruserid = if Activeobject then tonumber(Activeobject:GetAttribute("AwardedUserId")) else nil
+			if next(Sessions) == nil and (Activeobject == Sessionobject or Activeowneruserid == Player.UserId) then
+				Destroyobject(Activeobject)
+				Activeobject = nil
+			end
+		end,
+	})
 	Generateditems = Instance.new("Folder")
 	Generateditems.Name = "GeneratedItems"
 	Generateditems.Parent = Slot
@@ -984,25 +1015,6 @@ function Restorationservice:Init()
 		Lastinkclean[Player] = nil
 		Returnsessionitem(Player, Sessionobject)
 		if Sessionobject and Activeobject == Sessionobject then Cleanupactiveobjectifidle() end
-	end)
-
-	Players.PlayerRemoving:Connect(function(Player)
-		local Sessionobject = Sessions[Player]
-		local Spot = Peeling[Player]
-		if Spot and Spot.Parent then
-			Spot:SetAttribute("PeelingBy", nil)
-		end
-		Peeling[Player] = nil
-		Sessionitem[Player] = nil
-		Sessions[Player] = nil
-		Lastclean[Player] = nil
-		Lastscratchclean[Player] = nil
-		Lastinkclean[Player] = nil
-		local Activeowneruserid = if Activeobject then tonumber(Activeobject:GetAttribute("AwardedUserId")) else nil
-		if next(Sessions) == nil and (Activeobject == Sessionobject or Activeowneruserid == Player.UserId) then
-			Destroyobject(Activeobject)
-			Activeobject = nil
-		end
 	end)
 end
 

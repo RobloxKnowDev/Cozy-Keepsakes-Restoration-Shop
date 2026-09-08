@@ -3,6 +3,7 @@ local GuiService = game:GetService("GuiService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
@@ -15,6 +16,7 @@ local FeedbackController = {
 	tweens = {},
 }
 
+local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local FormatCurrency = require(ReplicatedStorage.Shared.Utils.CurrencyFormatter)
 local MicroTween = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ReturnTween = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
@@ -26,6 +28,19 @@ local MusicFadeTween = TweenInfo.new(2, Enum.EasingStyle.Linear)
 local MusicLoopFadeTween = TweenInfo.new(1.2, Enum.EasingStyle.Linear)
 local UiClickCooldown = 0.08
 local ConfirmCooldown = 0.15
+local DonationColor = Color3.fromRGB(126, 255, 145)
+local RayCount = 14
+local ChargeRingCount = 5
+local MutationBuildupSeconds = 1.35
+
+local function Shinesequence(Color: Color3): ColorSequence
+	return ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color),
+		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(1, Color),
+	})
+end
 
 local function GetScale(Target: GuiObject): UIScale
 	local Scale = Target:FindFirstChildOfClass("UIScale")
@@ -366,6 +381,454 @@ function FeedbackController:GlobalCompletion()
 	self:RestorationCompleteText()
 	self:Burst(self.overlay, Color3.fromRGB(255, 224, 143), 60)
 	self:FovPunch(3)
+end
+
+function FeedbackController:Shockwave(Color: Color3, Count: number)
+	if not self:IsDecorativeEnabled() then return end
+	for Index = 1, Count do
+		local Wave = Instance.new("Frame")
+		Wave.Name = "Shockwave"
+		Wave.AnchorPoint = Vector2.new(0.5, 0.5)
+		Wave.Position = UDim2.fromScale(0.5, 0.5)
+		Wave.Size = UDim2.fromOffset(60, 60)
+		Wave.BackgroundTransparency = 1
+		Wave.ZIndex = 29
+		Wave.Parent = self.overlay
+		local Corner = Instance.new("UICorner")
+		Corner.CornerRadius = UDim.new(1, 0)
+		Corner.Parent = Wave
+		local Stroke = Instance.new("UIStroke")
+		Stroke.Color = Color
+		Stroke.Thickness = 7 - Index
+		Stroke.Transparency = 0.08
+		Stroke.Parent = Wave
+		task.delay((Index - 1) * 0.11, function()
+			TweenService:Create(Wave, TweenInfo.new(0.85, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+				Size = UDim2.fromOffset(1000 + Index * 180, 1000 + Index * 180),
+			}):Play()
+			TweenService:Create(Stroke, TweenInfo.new(0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Transparency = 1,
+				Thickness = 1,
+			}):Play()
+		end)
+		Debris:AddItem(Wave, 1.3)
+	end
+end
+
+function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow: boolean?)
+	if not self:IsDecorativeEnabled() then return end
+	local Buildup = MutationBuildupSeconds
+	local Camera = Workspace.CurrentCamera
+	local Fovorigin = Camera.FieldOfView
+	local Container = Instance.new("Frame")
+	Container.Name = "MutationReveal"
+	Container.AnchorPoint = Vector2.new(0.5, 0.5)
+	Container.Position = UDim2.fromScale(0.5, 0.5)
+	Container.Size = UDim2.fromScale(1, 1)
+	Container.BackgroundTransparency = 1
+	Container.ZIndex = 30
+	Container.Parent = self.overlay
+
+	local Shine = nil
+	local Tinted = {}
+	local function Tint(Object: Instance, Property: string)
+		table.insert(Tinted, { Object, Property })
+	end
+
+	local Dim = Instance.new("Frame")
+	Dim.Name = "Dim"
+	Dim.Size = UDim2.fromScale(1, 1)
+	Dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	Dim.BackgroundTransparency = 1
+	Dim.BorderSizePixel = 0
+	Dim.ZIndex = 30
+	Dim.Parent = Container
+	TweenService:Create(Dim, TweenInfo.new(Buildup * 0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 0.42,
+	}):Play()
+
+	local Coreglow = Instance.new("Frame")
+	Coreglow.Name = "Core"
+	Coreglow.AnchorPoint = Vector2.new(0.5, 0.5)
+	Coreglow.Position = UDim2.fromScale(0.5, 0.5)
+	Coreglow.Size = UDim2.fromOffset(0, 0)
+	Coreglow.BackgroundColor3 = Color
+	Coreglow.BackgroundTransparency = 0.15
+	Coreglow.BorderSizePixel = 0
+	Coreglow.ZIndex = 31
+	Coreglow.Parent = Container
+	Tint(Coreglow, "BackgroundColor3")
+	local Corecorner = Instance.new("UICorner")
+	Corecorner.CornerRadius = UDim.new(1, 0)
+	Corecorner.Parent = Coreglow
+	local Corestroke = Instance.new("UIStroke")
+	Corestroke.Color = Color3.fromRGB(255, 255, 255)
+	Corestroke.Thickness = 2
+	Corestroke.Transparency = 0.4
+	Corestroke.Parent = Coreglow
+	TweenService:Create(Coreglow, TweenInfo.new(Buildup, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+		Size = UDim2.fromOffset(120, 120),
+	}):Play()
+
+	for Index = 1, ChargeRingCount do
+		local Ring = Instance.new("Frame")
+		Ring.Name = "ChargeRing"
+		Ring.AnchorPoint = Vector2.new(0.5, 0.5)
+		Ring.Position = UDim2.fromScale(0.5, 0.5)
+		Ring.Size = UDim2.fromOffset(1100, 1100)
+		Ring.BackgroundTransparency = 1
+		Ring.Rotation = Index * 18
+		Ring.ZIndex = 30
+		Ring.Parent = Container
+		local Corner = Instance.new("UICorner")
+		Corner.CornerRadius = UDim.new(1, 0)
+		Corner.Parent = Ring
+		local Stroke = Instance.new("UIStroke")
+		Stroke.Color = Color
+		Stroke.Thickness = 3
+		Stroke.Transparency = 1
+		Stroke.Parent = Ring
+		Tint(Stroke, "Color")
+		local Start = Buildup * (Index - 1) / ChargeRingCount
+		task.delay(Start, function()
+			if not Ring.Parent then return end
+			local Travel = math.max(Buildup - Start, 0.12)
+			TweenService:Create(Ring, TweenInfo.new(Travel, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Size = UDim2.fromOffset(90, 90),
+				Rotation = Ring.Rotation + 70,
+			}):Play()
+			TweenService:Create(Stroke, TweenInfo.new(Travel * 0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Transparency = 0.1,
+			}):Play()
+		end)
+	end
+
+	if self:IsMotionEnabled() then
+		self:Tween("Fov", Camera, TweenInfo.new(Buildup, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			FieldOfView = Fovorigin - 9,
+		})
+	end
+
+	task.spawn(function()
+		local Elapsed = 0
+		local Step = 0
+		while Elapsed < Buildup - 0.05 do
+			if not Container.Parent then return end
+			Step += 1
+			self:PlaySound("Progress", nil, math.min(0.8 + Step * 0.13, 2.4))
+			local Wait = math.max(Buildup * 0.2 - Step * 0.022, 0.04)
+			task.wait(Wait)
+			Elapsed += Wait
+		end
+	end)
+
+	task.delay(Buildup, function()
+		if self:IsMotionEnabled() then
+			self:Tween("Fov", Camera, TweenInfo.new(0.09, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+				FieldOfView = Fovorigin + 9,
+			}).Completed:Once(function()
+				self:Tween("Fov", Camera, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					FieldOfView = Fovorigin,
+				})
+			end)
+		end
+		if not Container.Parent then return end
+		TweenService:Create(Dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			BackgroundTransparency = 1,
+		}):Play()
+		TweenService:Create(Coreglow, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+			Size = UDim2.fromOffset(2600, 2600),
+			BackgroundTransparency = 1,
+		}):Play()
+		TweenService:Create(Corestroke, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = 1,
+		}):Play()
+
+		for Index = 1, RayCount do
+			local Ray = Instance.new("Frame")
+			Ray.Name = "MutationRay"
+			Ray.AnchorPoint = Vector2.new(0.5, 0.5)
+			Ray.Position = UDim2.fromScale(0.5, 0.5)
+			Ray.Size = UDim2.fromOffset(0, 12)
+			Ray.BackgroundColor3 = Color
+			Ray.BackgroundTransparency = 0.4
+			Ray.BorderSizePixel = 0
+			Ray.Rotation = Index * (180 / RayCount)
+			Ray.ZIndex = 31
+			Ray.Parent = Container
+			Tint(Ray, "BackgroundColor3")
+			TweenService:Create(Ray, TweenInfo.new(0.62, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+				Size = UDim2.fromOffset(2800, 12),
+				Rotation = Ray.Rotation + 24,
+			}):Play()
+			TweenService:Create(Ray, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0.5), {
+				BackgroundTransparency = 1,
+			}):Play()
+		end
+
+		local Titleframe = Instance.new("Frame")
+		Titleframe.Name = "Title"
+		Titleframe.AnchorPoint = Vector2.new(0.5, 0.5)
+		Titleframe.Position = UDim2.fromScale(0.5, 0.5)
+		Titleframe.Size = UDim2.fromOffset(780, 200)
+		Titleframe.BackgroundTransparency = 1
+		Titleframe.ZIndex = 32
+		Titleframe.Parent = Container
+
+		local Glow = Instance.new("TextLabel")
+		Glow.Name = "Glow"
+		Glow.AnchorPoint = Vector2.new(0.5, 0.5)
+		Glow.Position = UDim2.fromScale(0.5, 0.4)
+		Glow.Size = UDim2.fromScale(1.14, 0.78)
+		Glow.BackgroundTransparency = 1
+		Glow.Font = Enum.Font.GothamBlack
+		Glow.Text = string.upper(Name)
+		Glow.TextColor3 = Color
+		Glow.TextScaled = true
+		Glow.TextTransparency = 0.55
+		Glow.ZIndex = 32
+		Glow.Parent = Titleframe
+		Tint(Glow, "TextColor3")
+
+		local Label = Instance.new("TextLabel")
+		Label.Name = "Label"
+		Label.AnchorPoint = Vector2.new(0.5, 0.5)
+		Label.Position = UDim2.fromScale(0.5, 0.4)
+		Label.Size = UDim2.fromScale(1, 0.7)
+		Label.BackgroundTransparency = 1
+		Label.Font = Enum.Font.GothamBlack
+		Label.Text = string.upper(Name)
+		Label.TextColor3 = Color
+		Label.TextScaled = true
+		Label.TextStrokeColor3 = Color3.fromRGB(18, 14, 10)
+		Label.TextStrokeTransparency = 0.1
+		Label.ZIndex = 34
+		Label.Parent = Titleframe
+		Tint(Label, "TextColor3")
+
+		Shine = Instance.new("UIGradient")
+		Shine.Color = Shinesequence(Color)
+		Shine.Offset = Vector2.new(-1.2, 0)
+		Shine.Parent = Label
+
+		local Subtitle = Instance.new("TextLabel")
+		Subtitle.Name = "Subtitle"
+		Subtitle.AnchorPoint = Vector2.new(0.5, 0.5)
+		Subtitle.Position = UDim2.fromScale(0.5, 0.88)
+		Subtitle.Size = UDim2.fromScale(0.62, 0.24)
+		Subtitle.BackgroundTransparency = 1
+		Subtitle.Font = Enum.Font.GothamBold
+		Subtitle.Text = "MUTATION FOUND"
+		Subtitle.TextColor3 = Color
+		Subtitle.TextScaled = true
+		Subtitle.TextStrokeColor3 = Color3.fromRGB(18, 14, 10)
+		Subtitle.TextStrokeTransparency = 0.3
+		Subtitle.TextTransparency = 1
+		Subtitle.ZIndex = 34
+		Subtitle.Parent = Titleframe
+		Tint(Subtitle, "TextColor3")
+
+		local Scale = GetScale(Titleframe)
+		Scale.Scale = if self:IsMotionEnabled() then 2.6 else 1
+		TweenService:Create(Scale, TweenInfo.new(0.24, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		TweenService:Create(Scale, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 1.6), { Scale = 1.2 }):Play()
+		TweenService:Create(Subtitle, TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0.18), {
+			TextTransparency = 0,
+		}):Play()
+		TweenService:Create(Shine, TweenInfo.new(1.1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, 0, false, 0.3), {
+			Offset = Vector2.new(1.2, 0),
+		}):Play()
+		TweenService:Create(Glow, TweenInfo.new(0.34, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 3, true, 0.1), {
+			Size = UDim2.fromScale(1.3, 0.9),
+		}):Play()
+		local Fadeout = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 1.6)
+		TweenService:Create(Label, Fadeout, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+		TweenService:Create(Glow, Fadeout, { TextTransparency = 1 }):Play()
+		TweenService:Create(Subtitle, Fadeout, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+
+		self:Flash(self.overlay, Color3.fromRGB(255, 255, 255))
+		self:Shockwave(Color, 4)
+		self:Burst(self.overlay, Color, 70)
+		self:Shake(self.overlay)
+		self:PlaySound("RestorationComplete", 0.2)
+		task.delay(0.22, function()
+			self:Burst(self.overlay, Color, 50)
+		end)
+	end)
+
+	if Rainbow then
+		local Connection
+		Connection = RunService.Heartbeat:Connect(function()
+			if not Container.Parent then
+				Connection:Disconnect()
+				return
+			end
+			local Current = Core:GetController("MutationController"):GetColor("Rainbow")
+			for _, Entry in ipairs(Tinted) do
+				if Entry[1].Parent then
+					Entry[1][Entry[2]] = Current
+				end
+			end
+			if Shine then
+				Shine.Color = Shinesequence(Current)
+			end
+		end)
+	end
+
+	Debris:AddItem(Container, Buildup + 2.5)
+end
+
+function FeedbackController:DonationThanks(AmountText: string)
+	if not self:IsDecorativeEnabled() then return end
+	local Container = Instance.new("Frame")
+	Container.Name = "DonationThanks"
+	Container.AnchorPoint = Vector2.new(0.5, 0.5)
+	Container.Position = UDim2.fromScale(0.5, 0.47)
+	Container.Size = UDim2.fromOffset(740, 180)
+	Container.BackgroundTransparency = 1
+	Container.ZIndex = 30
+	Container.Parent = self.overlay
+
+	local Glow = Instance.new("TextLabel")
+	Glow.Name = "Glow"
+	Glow.AnchorPoint = Vector2.new(0.5, 0.5)
+	Glow.Position = UDim2.fromScale(0.5, 0.38)
+	Glow.Size = UDim2.fromScale(1.12, 0.74)
+	Glow.BackgroundTransparency = 1
+	Glow.Font = Enum.Font.GothamBlack
+	Glow.Text = "THANK YOU!"
+	Glow.TextColor3 = DonationColor
+	Glow.TextScaled = true
+	Glow.TextTransparency = 0.5
+	Glow.ZIndex = 30
+	Glow.Parent = Container
+
+	local Label = Instance.new("TextLabel")
+	Label.Name = "Label"
+	Label.AnchorPoint = Vector2.new(0.5, 0.5)
+	Label.Position = UDim2.fromScale(0.5, 0.38)
+	Label.Size = UDim2.fromScale(1, 0.66)
+	Label.BackgroundTransparency = 1
+	Label.Font = Enum.Font.GothamBlack
+	Label.Text = "THANK YOU!"
+	Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Label.TextScaled = true
+	Label.TextStrokeColor3 = Color3.fromRGB(16, 40, 22)
+	Label.TextStrokeTransparency = 0.12
+	Label.ZIndex = 32
+	Label.Parent = Container
+
+	local Shine = Instance.new("UIGradient")
+	Shine.Color = Shinesequence(DonationColor)
+	Shine.Offset = Vector2.new(-1.2, 0)
+	Shine.Parent = Label
+
+	local Subtitle = Instance.new("TextLabel")
+	Subtitle.Name = "Subtitle"
+	Subtitle.AnchorPoint = Vector2.new(0.5, 0.5)
+	Subtitle.Position = UDim2.fromScale(0.5, 0.86)
+	Subtitle.Size = UDim2.fromScale(0.7, 0.26)
+	Subtitle.BackgroundTransparency = 1
+	Subtitle.Font = Enum.Font.GothamBold
+	Subtitle.Text = AmountText .. " DONATED"
+	Subtitle.TextColor3 = DonationColor
+	Subtitle.TextScaled = true
+	Subtitle.TextStrokeColor3 = Color3.fromRGB(16, 40, 22)
+	Subtitle.TextStrokeTransparency = 0.32
+	Subtitle.ZIndex = 32
+	Subtitle.Parent = Container
+
+	local Scale = GetScale(Container)
+	Scale.Scale = if self:IsMotionEnabled() then 0.2 else 1
+	TweenService:Create(Scale, TweenInfo.new(0.44, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	TweenService:Create(Shine, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, 0, false, 0.25), {
+		Offset = Vector2.new(1.2, 0),
+	}):Play()
+	local Fadeout = TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 1.45)
+	TweenService:Create(Container, Fadeout, { Position = UDim2.fromScale(0.5, 0.42) }):Play()
+	TweenService:Create(Label, Fadeout, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+	TweenService:Create(Glow, Fadeout, { TextTransparency = 1 }):Play()
+	TweenService:Create(Subtitle, Fadeout, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+
+	self:Flash(self.overlay, DonationColor)
+	self:Shockwave(DonationColor, 3)
+	self:Burst(self.overlay, DonationColor, 64)
+	self:FovPunch(4)
+	self:PlaySound("CashGain", 0.2)
+	self:Confirm()
+	task.delay(0.2, function()
+		self:Burst(self.overlay, Color3.fromRGB(255, 255, 255), 40)
+	end)
+	Debris:AddItem(Container, 2)
+end
+
+function FeedbackController:Purchase(Name: string, ImageId: string, Color: Color3)
+	if not self:IsDecorativeEnabled() then return end
+	local Container = Instance.new("Frame")
+	Container.Name = "PurchaseFeedback"
+	Container.AnchorPoint = Vector2.new(0.5, 0.5)
+	Container.Position = UDim2.fromScale(0.5, 0.46)
+	Container.Size = UDim2.fromOffset(210, 240)
+	Container.BackgroundTransparency = 1
+	Container.ZIndex = 28
+	Container.Parent = self.overlay
+
+	local Halo = Instance.new("Frame")
+	Halo.Name = "Halo"
+	Halo.AnchorPoint = Vector2.new(0.5, 0.5)
+	Halo.Position = UDim2.fromScale(0.5, 0.4)
+	Halo.Size = UDim2.fromOffset(150, 150)
+	Halo.BackgroundColor3 = Color
+	Halo.BackgroundTransparency = 0.7
+	Halo.BorderSizePixel = 0
+	Halo.ZIndex = 28
+	Halo.Parent = Container
+	local Halocorner = Instance.new("UICorner")
+	Halocorner.CornerRadius = UDim.new(1, 0)
+	Halocorner.Parent = Halo
+
+	local Icon = Instance.new("ImageLabel")
+	Icon.Name = "Icon"
+	Icon.AnchorPoint = Vector2.new(0.5, 0.5)
+	Icon.Position = UDim2.fromScale(0.5, 0.4)
+	Icon.Size = UDim2.fromOffset(136, 136)
+	Icon.BackgroundTransparency = 1
+	Icon.Image = ImageId
+	Icon.ScaleType = Enum.ScaleType.Fit
+	Icon.ZIndex = 29
+	Icon.Parent = Container
+
+	local Label = Instance.new("TextLabel")
+	Label.Name = "Label"
+	Label.AnchorPoint = Vector2.new(0.5, 0.5)
+	Label.Position = UDim2.fromScale(0.5, 0.85)
+	Label.Size = UDim2.fromScale(1.6, 0.17)
+	Label.BackgroundTransparency = 1
+	Label.Font = Enum.Font.GothamBlack
+	Label.Text = string.upper(Name)
+	Label.TextColor3 = Color
+	Label.TextScaled = true
+	Label.TextStrokeColor3 = Color3.fromRGB(24, 18, 12)
+	Label.TextStrokeTransparency = 0.25
+	Label.ZIndex = 29
+	Label.Parent = Container
+
+	local Scale = GetScale(Container)
+	Scale.Scale = if self:IsMotionEnabled() then 0.4 else 1
+	TweenService:Create(Scale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	TweenService:Create(Halo, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = UDim2.fromOffset(240, 240),
+		BackgroundTransparency = 1,
+	}):Play()
+	local Fadeout = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0.75)
+	TweenService:Create(Container, Fadeout, { Position = UDim2.fromScale(0.5, 0.4) }):Play()
+	TweenService:Create(Icon, Fadeout, { ImageTransparency = 1 }):Play()
+	TweenService:Create(Label, Fadeout, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+
+	self:Burst(self.overlay, Color, 26)
+	self:FovPunch(2)
+	self:PlaySound("CashGain", 0.15)
+	Debris:AddItem(Container, 1.4)
 end
 
 function FeedbackController:Sale(Name: string, Value: number, Count: number?)

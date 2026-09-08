@@ -11,7 +11,7 @@ local Store = DataStoreService:GetDataStore("PlayerData_v1")
 local Usedatastore = true
 local Verboselogs = false
 local Autosaveinterval = 20
-local Sectionorder = { "Cash", "Stats", "Upgrades", "Inventory", "Exposition", "Monetization", "Settings" }
+local Sectionorder = { "Cash", "Stats", "Upgrades", "Inventory", "Restoration", "Exposition", "Monetization", "Settings" }
 
 type Section = { Load: (Player, any) -> (), Save: (Player) -> any, Clear: (Player) -> () }
 

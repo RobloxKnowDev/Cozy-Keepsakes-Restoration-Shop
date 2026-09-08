@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Config = require(ReplicatedStorage.Shared.Config.Monetization)
 local DailyRewardsConfig = require(ReplicatedStorage.Shared.Config.DailyRewards)
+local DonationConfig = require(ReplicatedStorage.Shared.Config.Donation)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 
 local MonetizationService = {
@@ -194,6 +195,11 @@ function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: n
 	end
 	if Config.StarterPack.PurchaseType ~= "GamePass" and ProductId > 0 and tonumber(Config.StarterPack.Id) == ProductId then
 		return self:GrantStarterPack(Player)
+	end
+	for _, Donation in ipairs(DonationConfig.Products) do
+		if ProductId > 0 and tonumber(Donation.Id) == ProductId then
+			return true
+		end
 	end
 	for Level, Definition in ipairs(Config.ServerReputationLuck.Levels) do
 		if ProductId > 0 and tonumber(Definition.Id) == ProductId then
