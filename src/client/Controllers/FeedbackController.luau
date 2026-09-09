@@ -754,8 +754,7 @@ function FeedbackController:DonationThanks(AmountText: string)
 	self:Shockwave(DonationColor, 3)
 	self:Burst(self.overlay, DonationColor, 64)
 	self:FovPunch(4)
-	self:PlaySound("CashGain", 0.2)
-	self:Confirm()
+	self:PlaySound("RobuxDonation", 0.2)
 	task.delay(0.2, function()
 		self:Burst(self.overlay, Color3.fromRGB(255, 255, 255), 40)
 	end)
@@ -839,7 +838,7 @@ function FeedbackController:Sale(Name: string, Value: number, Count: number?)
 	self:CenterText(Text, Color3.fromRGB(126, 255, 145), Count ~= nil and Count > 1)
 end
 
-function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: number?)
+function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: number?): Sound?
 	local Template = self.sfxFolder:FindFirstChild(Name)
 	if not Template or not Template:IsA("Sound") then return end
 	local Now = os.clock()
@@ -860,9 +859,10 @@ function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: nu
 	end
 	Sound.Ended:Once(function() Sound:Destroy() end)
 	Debris:AddItem(Sound, 15)
+	return Sound
 end
 
-function FeedbackController:SetLoop(Name: string, Playing: boolean)
+function FeedbackController:SetLoop(Name: string, Playing: boolean, Fadeseconds: number?, Volumescale: number?)
 	local Current = self.loopSounds[Name]
 	if Playing then
 		if Current then return end
@@ -870,14 +870,21 @@ function FeedbackController:SetLoop(Name: string, Playing: boolean)
 		if not Template or not Template:IsA("Sound") then return end
 		local Sound = Template:Clone()
 		Sound.Looped = true
-		Sound.Volume *= self.soundVolume
+		local Target = Sound.Volume * self.soundVolume * (Volumescale or 1)
+		Sound.Volume = if Fadeseconds then 0 else Target
 		Sound.Parent = SoundService
 		Sound:Play()
+		if Fadeseconds then
+			TweenService:Create(Sound, TweenInfo.new(Fadeseconds, Enum.EasingStyle.Linear), { Volume = Target }):Play()
+		end
 		self.loopSounds[Name] = Sound
 	elseif Current then
 		self.loopSounds[Name] = nil
-		TweenService:Create(Current, SoundFadeTween, { Volume = 0 }):Play()
-		Debris:AddItem(Current, 0.25)
+		local Fadeout = if Fadeseconds
+			then TweenInfo.new(Fadeseconds, Enum.EasingStyle.Linear)
+			else SoundFadeTween
+		TweenService:Create(Current, Fadeout, { Volume = 0 }):Play()
+		Debris:AddItem(Current, (Fadeseconds or 0.2) + 0.05)
 	end
 end
 
@@ -917,8 +924,22 @@ function FeedbackController:FadeMusicIn(Info: TweenInfo)
 		self.musicTween:Cancel()
 	end
 	self.music.Volume = 0
+	if self.musicMuted then
+		self.musicTween = nil
+		return
+	end
 	self.musicTween = TweenService:Create(self.music, Info, { Volume = self.musicVolume })
 	self.musicTween:Play()
+end
+
+function FeedbackController:SetMusicMuted(Muted: boolean)
+	self.musicMuted = Muted
+	if not self.music then return end
+	if self.musicTween then
+		self.musicTween:Cancel()
+		self.musicTween = nil
+	end
+	self.music.Volume = if Muted then 0 else self.musicVolume
 end
 
 function FeedbackController:SetMusicVolume(Alpha: number)
@@ -928,7 +949,7 @@ function FeedbackController:SetMusicVolume(Alpha: number)
 		self.musicTween:Cancel()
 		self.musicTween = nil
 	end
-	self.music.Volume = self.musicVolume
+	self.music.Volume = if self.musicMuted then 0 else self.musicVolume
 end
 
 function FeedbackController:SetSoundVolume(Alpha: number)

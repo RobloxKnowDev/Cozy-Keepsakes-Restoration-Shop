@@ -7,10 +7,15 @@ local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
+local Mutationlabel = require(Replicatedstorage.Shared.Utils.MutationLabel)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 
 local MutationAmbientBlend = 0.65
 local MutationLightBlend = 0.45
+local UnknownText = "???"
+local ClapFadeSeconds = 0.9
+local ClapVolumeScale = 0.6
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 
@@ -93,6 +98,8 @@ function Completioncontroller:Init()
 	self.totalProgressText = self.frame:WaitForChild("TotalProgress")
 	self.valueText = self.frame:WaitForChild("Value")
 	self.reputationText = self.frame:WaitForChild("ReputationText")
+	self.mutationText = self.frame:WaitForChild("MutationText")
+	self.baseMutationColor = self.mutationText.TextColor3
 	self.maxValueText = self.frame:WaitForChild("MaxValue")
 	self.frameShownPosition = self.frame.Position
 	self.transition = self.gui:FindFirstChild("CompletionTransition")
@@ -142,7 +149,22 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 	local Reputation = (tonumber(Object:GetAttribute("MaxReputation")) or 0) * Overallratio
 	local Rarity = Rarityconfig[tostring(Object:GetAttribute("Rarity") or "Common")]
 
-	self.objectNameText.Text = tostring(Object:GetAttribute("DisplayName") or Object.Name)
+	local Mutationname = Object:GetAttribute("Mutation")
+	Mutationlabel.Apply(self.objectNameText, {
+		Name = Object:GetAttribute("DisplayName") or Object.Name,
+		Mutation = Mutationname,
+	})
+	if Mutationname == nil then
+		self.mutationText.Text = UnknownText
+		self.mutationText.TextColor3 = self.baseMutationColor
+	else
+		local Mutation = Mutationconfig[tostring(Mutationname)]
+		self.mutationText.Text = Mutation.Name
+		self.mutationText.TextColor3 = Mutation.Color
+	end
+	self.rainbowLabels = if Mutationname == "Rainbow"
+		then { self.mutationText, self.objectNameText }
+		else nil
 	self.rarityText.Text = Rarity.Name
 	self.rarityFrame.BackgroundColor3 = Rarity.Color
 	self.totalProgressText.Text = string.format("%d%%", math.floor(Overallratio * 100 + 0.5))
@@ -164,6 +186,9 @@ end
 
 function Completioncontroller:Hide()
 	self.celebrationId += 1
+	local Feedback = Core:GetController("FeedbackController")
+	Feedback:SetLoop("CrowdClapping", false, ClapFadeSeconds)
+	Feedback:SetMusicMuted(false)
 	self.frame.Visible = false
 	self.dragging = false
 	self.closing = false
@@ -211,6 +236,16 @@ function Completioncontroller:PlayAppearanceAnimation()
 	Transitionin:Play()
 	Transitionin.Completed:Once(function()
 		self.frame.Visible = true
+		local Feedback = Core:GetController("FeedbackController")
+		local Celebrationid = self.celebrationId
+		Feedback:SetMusicMuted(true)
+		local Cheer = Feedback:PlaySound("CrowdCheering", 2.5)
+		if Cheer then
+			Cheer.Ended:Once(function()
+				if self.celebrationId ~= Celebrationid then return end
+				Feedback:SetLoop("CrowdClapping", true, ClapFadeSeconds, ClapVolumeScale)
+			end)
+		end
 		self:AnimateObjectArrival()
 		self:StartConfetti()
 		self:PlayProgressAnimation()
@@ -369,6 +404,8 @@ function Completioncontroller:PlayExitAnimation(Onfinished: () -> ())
 	end
 	self.closing = true
 	self.dragging = false
+	self.celebrationId += 1
+	Core:GetController("FeedbackController"):SetLoop("CrowdClapping", false, ClapFadeSeconds)
 
 	for _, Child in self.frame:GetChildren() do
 		if Child.Name == "Confetti" and Child:IsA("GuiObject") then
@@ -567,6 +604,12 @@ function Completioncontroller:Update(Deltatime: number)
 	end
 	if self.displayObject then
 		Pivotto(self.displayObject, self.basePivot * CFrame.Angles(0, self.rotation, 0))
+	end
+	if self.rainbowLabels then
+		local Color = Core:GetController("MutationController"):GetColor("Rainbow")
+		for _, Label in ipairs(self.rainbowLabels) do
+			Label.TextColor3 = Color
+		end
 	end
 	self:Tintpreview()
 end

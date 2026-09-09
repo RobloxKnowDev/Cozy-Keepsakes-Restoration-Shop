@@ -444,6 +444,7 @@ function Controller:PlaceDisplayItem(ItemId: number)
 		local Message = if Grantedreputation > 0
 			then "+" .. FormatReputation(Grantedreputation) .. " Reputation"
 			else "Item added to display"
+		Core:GetController("FeedbackController"):PlaySound("SlotItem", 0.15)
 		Core:GetController("MessageController"):Show(Message, ReputationMessageColor)
 		self:CloseSelectionFrame(false)
 		return
