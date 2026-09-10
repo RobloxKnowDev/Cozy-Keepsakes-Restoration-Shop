@@ -14,6 +14,9 @@ local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local MutationAmbientBlend = 0.65
 local MutationLightBlend = 0.45
 local UnknownText = "???"
+local CheerFadeInSeconds = 0.7
+local CrossfadeSeconds = 1.4
+local CrossfadeTweenInfo = TweenInfo.new(CrossfadeSeconds, Enum.EasingStyle.Linear)
 local ClapFadeSeconds = 0.9
 local ClapVolumeScale = 0.6
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
@@ -239,12 +242,19 @@ function Completioncontroller:PlayAppearanceAnimation()
 		local Feedback = Core:GetController("FeedbackController")
 		local Celebrationid = self.celebrationId
 		Feedback:SetMusicMuted(true)
-		local Cheer = Feedback:PlaySound("CrowdCheering", 2.5)
+		local Cheer = Feedback:PlaySound("CrowdCheering", 2.5, nil, CheerFadeInSeconds)
 		if Cheer then
-			Cheer.Ended:Once(function()
-				if self.celebrationId ~= Celebrationid then return end
-				Feedback:SetLoop("CrowdClapping", true, ClapFadeSeconds, ClapVolumeScale)
-			end)
+			local Handedover = false
+			local function Handover()
+				if Handedover or self.celebrationId ~= Celebrationid then return end
+				Handedover = true
+				if Cheer.Parent then
+					Tweenservice:Create(Cheer, CrossfadeTweenInfo, { Volume = 0 }):Play()
+				end
+				Feedback:SetLoop("CrowdClapping", true, CrossfadeSeconds, ClapVolumeScale)
+			end
+			task.delay(math.max(Cheer.TimeLength - CrossfadeSeconds, 0), Handover)
+			Cheer.Ended:Once(Handover)
 		end
 		self:AnimateObjectArrival()
 		self:StartConfetti()

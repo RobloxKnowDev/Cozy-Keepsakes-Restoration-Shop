@@ -838,7 +838,7 @@ function FeedbackController:Sale(Name: string, Value: number, Count: number?)
 	self:CenterText(Text, Color3.fromRGB(126, 255, 145), Count ~= nil and Count > 1)
 end
 
-function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: number?): Sound?
+function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: number?, Fadeinseconds: number?): Sound?
 	local Template = self.sfxFolder:FindFirstChild(Name)
 	if not Template or not Template:IsA("Sound") then return end
 	local Now = os.clock()
@@ -846,9 +846,13 @@ function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: nu
 	self.soundCooldowns[Name] = Now
 	local Sound = Template:Clone()
 	if Pitch then Sound.PlaybackSpeed = Pitch end
-	Sound.Volume *= self.soundVolume
+	local Target = Sound.Volume * self.soundVolume
+	Sound.Volume = if Fadeinseconds then 0 else Target
 	Sound.Parent = SoundService
 	Sound:Play()
+	if Fadeinseconds then
+		TweenService:Create(Sound, TweenInfo.new(Fadeinseconds, Enum.EasingStyle.Linear), { Volume = Target }):Play()
+	end
 	local Length = if Sound.PlaybackSpeed > 0 then Sound.TimeLength / Sound.PlaybackSpeed else 0
 	if Length > 0.3 then
 		task.delay(Length - 0.2, function()
