@@ -24,9 +24,13 @@ local Customerservice = {
 local QueueFolderName = "SpawnCustomer"
 local TurnTweenDuration = 0.35
 local SlotTurnDegrees = -90
-local FastEntryIndex = 2
+local FastEntryIndex = 1
 local WalkInStuds = 12
 local WalkInFadeDuration = 0.4
+local Verbosespawnlogs = true
+local MaxFriendProfiles = 60
+local PrefetchedFriendCount = 3
+local FallbackCustomerTemplate = "1"
 type CustomerOffer = {
 	Id: number,
 	ObjectKey: string,
@@ -53,6 +57,15 @@ local RefreshFrontCustomerAttribute: () -> ()
 local PresentFrontOffer: () -> ()
 local CurrentDay = 1
 local ArrivedCustomersToday = 0
+local FriendProfiles: { { Id: number, Name: string } } = {}
+local FriendCursor = 0
+local DescriptionsByUserId: { [number]: HumanoidDescription } = {}
+
+local function Spawnlog(Message: string)
+	if Verbosespawnlogs then
+		print("[Customer] " .. Message)
+	end
+end
 
 local function GetShopPlayer(): Player?
 	return Players:GetPlayers()[1]
@@ -193,9 +206,100 @@ local function TweenCustomerTurn(Customer: Model, Degrees: number, Duration: num
 	Tween:Play()
 end
 
+local function NormalizeCustomerParts(Customer: Model)
+	for _, Descendant in ipairs(Customer:GetDescendants()) do
+		if Descendant:IsA("BasePart") then
+			Descendant.Anchored = false
+			Descendant.CanCollide = false
+		end
+	end
+end
+
+local function GetFriendDescription(UserId: number): HumanoidDescription?
+	local Cached = DescriptionsByUserId[UserId]
+	if Cached then
+		return Cached
+	end
+	local Success, Description = pcall(function()
+		return Players:GetHumanoidDescriptionFromUserId(UserId)
+	end)
+	if not Success then
+		return nil
+	end
+	DescriptionsByUserId[UserId] = Description
+	return Description
+end
+
+local function LoadFriendProfiles(Player: Player)
+	local Success, Pages = pcall(function()
+		return Players:GetFriendsAsync(Player.UserId)
+	end)
+	if not Success then
+		return
+	end
+
+	local Profiles = {}
+	while #Profiles < MaxFriendProfiles do
+		for _, Entry in ipairs(Pages:GetCurrentPage()) do
+			table.insert(Profiles, { Id = Entry.Id, Name = tostring(Entry.DisplayName or Entry.Username) })
+		end
+		if Pages.IsFinished then
+			break
+		end
+		if not pcall(function() Pages:AdvanceToNextPageAsync() end) then
+			break
+		end
+	end
+
+	for Index = #Profiles, 2, -1 do
+		local Swap = math.random(Index)
+		Profiles[Index], Profiles[Swap] = Profiles[Swap], Profiles[Index]
+	end
+	FriendProfiles = Profiles
+	FriendCursor = 0
+
+	for Index = 1, math.min(PrefetchedFriendCount, #Profiles) do
+		GetFriendDescription(Profiles[Index].Id)
+	end
+end
+
+local function ApplyFriendAppearance(Customer: Model)
+	if #FriendProfiles == 0 then
+		return
+	end
+	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
+	if not Humanoid then
+		return
+	end
+
+	FriendCursor = FriendCursor % #FriendProfiles + 1
+	local Profile = FriendProfiles[FriendCursor]
+	Customer:SetAttribute("FriendUserId", Profile.Id)
+	Customer:SetAttribute("FriendName", Profile.Name)
+
+	local function Apply()
+		local Description = GetFriendDescription(Profile.Id)
+		if not Description or not Customer.Parent or not Humanoid.Parent then
+			Spawnlog(string.format("skin %s SKIPPED for %s", Profile.Name, Customer.Name))
+			return
+		end
+		local Success, Error = pcall(function()
+			Humanoid:ApplyDescription(Description:Clone())
+		end)
+		Spawnlog(string.format(
+			"skin %s on %s: %s",
+			Profile.Name,
+			Customer.Name,
+			if Success then "ok" else tostring(Error)
+		))
+		NormalizeCustomerParts(Customer)
+	end
+
+	task.spawn(Apply)
+end
+
 local function CreateCustomerInstance(): Model
-	local Customercount = #Customerfolder:GetChildren()
-	local Template = Customerfolder:WaitForChild(tostring(math.random(1, Customercount))) :: Model
+	local Template = Customerfolder:WaitForChild(FallbackCustomerTemplate) :: Model
 	local Customer = Template:Clone()
 
 	CustomerSerial += 1
@@ -217,12 +321,7 @@ local function CreateCustomerInstance(): Model
 		end
 	end
 
-	for _, Descendant in ipairs(Customer:GetDescendants()) do
-		if Descendant:IsA("BasePart") then
-			Descendant.Anchored = false
-			Descendant.CanCollide = false
-		end
-	end
+	NormalizeCustomerParts(Customer)
 
 	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
 	if Humanoid then
@@ -320,18 +419,37 @@ end
 
 local function SpawnCustomerAt(Index: number)
 	local Attachment = AttachmentsByIndex[Index]
-	if not Attachment or OccupiedSlots[Index] then
+	if not Attachment then
+		Spawnlog(string.format("spawn %d REFUSED: no attachment (highest=%d)", Index, HighestQueueIndex))
 		return
 	end
-	if not IsBusinessHours() or not CanSpawnMoreCustomersToday() then
+	if OccupiedSlots[Index] then
+		Spawnlog(string.format("spawn %d REFUSED: slot occupied", Index))
+		return
+	end
+	if not IsBusinessHours() then
+		Spawnlog(string.format("spawn %d REFUSED: closed (clock=%.2f)", Index, Lighting.ClockTime))
+		return
+	end
+	if not CanSpawnMoreCustomersToday() then
+		Spawnlog(string.format(
+			"spawn %d REFUSED: daily cap (arrived=%d pending=%d max=%d)",
+			Index,
+			ArrivedCustomersToday,
+			PendingCustomerCount(),
+			GetMaxCustomersPerDay()
+		))
 		return
 	end
 
+	Spawnlog(string.format("spawn %d accepted", Index))
 	local Customer = CreateCustomerInstance()
+	Spawnlog(string.format("spawn %d instance ready: %s", Index, Customer.Name))
 	OccupiedSlots[Index] = Customer
 
 	if Index == 1 then
 		Customer:PivotTo(GetTargetCFrame(Attachment) * CFrame.Angles(0, math.rad(SlotTurnDegrees), 0))
+		ApplyFriendAppearance(Customer)
 		Customer:SetAttribute("ArrivedAtSlot1", true)
 		Customer:SetAttribute("TurnedAtSlot1", true)
 		local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
@@ -346,7 +464,8 @@ local function SpawnCustomerAt(Index: number)
 		return
 	end
 
-	Customer:PivotTo(GetEntryCFrame(Index))
+	Customer:PivotTo(GetEntryCFrame(Index) * CFrame.Angles(0, math.pi, 0))
+	ApplyFriendAppearance(Customer)
 	FadeCustomerIn(Customer)
 	RefreshFrontCustomerAttribute()
 	MoveCustomerTo(Customer, Attachment)
@@ -354,12 +473,16 @@ end
 
 local function SpawnNextCustomer()
 	if not next(OccupiedSlots) then
+		Spawnlog("next: queue empty")
 		SpawnCustomerAt(math.min(FastEntryIndex, HighestQueueIndex))
 		return
 	end
 	if not OccupiedSlots[HighestQueueIndex] then
+		Spawnlog("next: filling back slot")
 		SpawnCustomerAt(HighestQueueIndex)
+		return
 	end
+	Spawnlog("next: queue already full")
 end
 
 local function DespawnCustomer(Customer: Model)
@@ -625,12 +748,18 @@ function Customerservice:Init()
 	Customerfolder = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Customer") :: Folder
 	SyncDayState()
 	Lighting:GetAttributeChangedSignal("Day"):Connect(SyncDayState)
-	Players.PlayerAdded:Connect(function()
+	for _, Player in ipairs(Players:GetPlayers()) do
+		task.spawn(LoadFriendProfiles, Player)
+	end
+	Players.PlayerAdded:Connect(function(Player)
+		task.spawn(LoadFriendProfiles, Player)
 		task.defer(function()
 			self:RefreshCustomerLimit()
 		end)
 	end)
 	Players.PlayerRemoving:Connect(function()
+		FriendProfiles = {}
+		FriendCursor = 0
 		task.defer(function()
 			self:RefreshCustomerLimit()
 		end)
