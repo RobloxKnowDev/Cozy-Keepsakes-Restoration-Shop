@@ -428,6 +428,7 @@ function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow:
 	Container.BackgroundTransparency = 1
 	Container.ZIndex = 30
 	Container.Parent = self.overlay
+	self:PlaySound("Mutation", 0.2)
 
 	local Shine = nil
 	local Tinted = {}
@@ -650,7 +651,6 @@ function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow:
 		self:Shockwave(Color, 4)
 		self:Burst(self.overlay, Color, 70)
 		self:Shake(self.overlay)
-		self:PlaySound("RestorationComplete", 0.2)
 		task.delay(0.22, function()
 			self:Burst(self.overlay, Color, 50)
 		end)
@@ -836,6 +836,7 @@ function FeedbackController:Sale(Name: string, Value: number, Count: number?)
 		then string.format("%d ITEMS SOLD  +%s", Count, Amount)
 		else string.format("%s SOLD  +%s", string.upper(Name), Amount)
 	self:CenterText(Text, Color3.fromRGB(126, 255, 145), Count ~= nil and Count > 1)
+	self:PlaySound("SellItem", ConfirmCooldown)
 end
 
 function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: number?, Fadeinseconds: number?): Sound?
@@ -921,6 +922,10 @@ end
 
 function FeedbackController:Confirm()
 	self:PlaySound("Confirm", ConfirmCooldown)
+end
+
+function FeedbackController:Fail()
+	self:PlaySound("Fail", ConfirmCooldown)
 end
 
 function FeedbackController:FadeMusicIn(Info: TweenInfo)

@@ -198,6 +198,7 @@ function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: n
 	end
 	for _, Donation in ipairs(DonationConfig.Products) do
 		if ProductId > 0 and tonumber(Donation.Id) == ProductId then
+			Core:GetService("StatsService"):AddRobuxDonated(Player, Donation.Amount)
 			return true
 		end
 	end

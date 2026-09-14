@@ -11,6 +11,7 @@ local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Home = require(script.Apps.Home)
 local Index = require(script.Apps.Index)
 local Inventory = require(script.Apps.Inventory)
+local Leaderboard = require(script.Apps.Leaderboard)
 local Shop = require(script.Apps.Shop)
 local Shared = require(script.Apps.Shared)
 local Upgrades = require(script.Apps.Upgrades)
@@ -20,7 +21,7 @@ local ComputerController = {
 	Priority = 3,
 }
 
-local Applications = { Home, Index, Inventory, Upgrades, Shop }
+local Applications = { Home, Leaderboard, Index, Inventory, Upgrades, Shop }
 local HighlightFillColor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
 local ButtonTweenInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)

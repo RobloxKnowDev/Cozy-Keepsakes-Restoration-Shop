@@ -104,6 +104,7 @@ function ProgressController:CompleteCategory(Kind: string)
 end
 
 function ProgressController:CompleteGlobal()
+	self.feedback:PlaySound("CompleteItem", 0.1)
 	self.feedback:Success(self.percentFrame, true)
 	self.feedback:GlobalCompletion()
 	for _, Kind in ipairs(Kinds) do
@@ -128,7 +129,7 @@ function ProgressController:Update(Object: Model | BasePart, InteractionPosition
 			if Threshold then
 				self.feedback:CenterText(string.format("%d%% RESTORED", Threshold * 100), Colors.Scratch)
 				self.feedback:Burst(self.percentFrame, Colors.Scratch, 12)
-				self.feedback:PlaySound("ProgressMilestone", 0.1, 0.96 + Threshold * 0.18)
+				self.feedback:PlaySound("Pourcentage", 0.1, 0.96 + Threshold * 0.18)
 			else
 				self.feedback:PlaySound("Progress", 0.1, 0.96 + GlobalRatio * 0.08)
 			end

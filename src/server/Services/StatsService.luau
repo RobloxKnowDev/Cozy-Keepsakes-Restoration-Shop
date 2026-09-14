@@ -17,6 +17,7 @@ local Statsservice = {
 type PlayerStats = {
 	ItemsSold: number,
 	Reputation: number,
+	RobuxDonated: number,
 	DailyProfit: number,
 	LastDay: number,
 }
@@ -37,6 +38,7 @@ function Statsservice:EnsurePlayer(Player: Player): PlayerStats
 		Stats = {
 			ItemsSold = 0,
 			Reputation = 0,
+			RobuxDonated = 0,
 			DailyProfit = 0,
 			LastDay = GetCurrentDay(),
 		}
@@ -73,8 +75,14 @@ function Statsservice:GetStats(Player: Player)
 	return {
 		ItemsSold = Stats.ItemsSold,
 		Reputation = Stats.Reputation,
+		RobuxDonated = Stats.RobuxDonated,
 		DailyProfit = Stats.DailyProfit,
 	}
+end
+
+function Statsservice:AddRobuxDonated(Player: Player, Amount: number)
+	local Stats = self:EnsurePlayer(Player)
+	Stats.RobuxDonated += Amount
 end
 
 function Statsservice:AddItemsSold(Player: Player, Amount: number)
@@ -108,6 +116,7 @@ function Statsservice:Init()
 			local Stats = self:EnsurePlayer(Player)
 			Stats.ItemsSold = math.max(tonumber(Saved.ItemsSold) or 0, 0)
 			Stats.Reputation = math.max(tonumber(Saved.Reputation) or 0, 0)
+			Stats.RobuxDonated = math.max(tonumber(Saved.RobuxDonated) or 0, 0)
 			Stats.DailyProfit = 0
 			Stats.LastDay = GetCurrentDay()
 			self:PushStats(Player)
@@ -117,6 +126,7 @@ function Statsservice:Init()
 			return {
 				ItemsSold = Stats.ItemsSold,
 				Reputation = Stats.Reputation,
+				RobuxDonated = Stats.RobuxDonated,
 			}
 		end,
 		Clear = function(Player)

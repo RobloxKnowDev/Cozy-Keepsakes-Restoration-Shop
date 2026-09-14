@@ -390,6 +390,8 @@ function Customercontroller:Respond(Decision: string)
 		else
 			Feedback:UiClick()
 		end
+	else
+		Core:GetController("FeedbackController"):Fail()
 	end
 	if Hidden then
 		self:HideAnimated(true)
@@ -436,6 +438,7 @@ function Customercontroller:Init()
 	self.acceptButton = self.frame:WaitForChild("AcceptButton") :: GuiButton
 	self.acceptButton:SetAttribute("SilentClick", true)
 	self.declineButton = self.frame:WaitForChild("DeclineButton") :: GuiButton
+	self.declineButton:SetAttribute("SilentClick", true)
 	self.closeButton = GetOrCreateCloseButton(self.frame)
 	self.frameScale = EnsureScale(self.frame)
 	self.shownPosition = self.frame.Position

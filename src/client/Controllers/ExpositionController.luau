@@ -479,6 +479,7 @@ function Controller:RemoveDisplayItem(Slotindex: number)
 	if Success and type(Response) == "table" and Response.Success == true then
 		if type(Response.DisplayItems) == "table" then self:ApplyDisplayItems(Response.DisplayItems) end
 		self:SetBlocker("DisplayAction", nil)
+		Core:GetController("FeedbackController"):Fail()
 		local Removedreputation = tonumber(Response.RemovedReputation) or 0
 		local Message = if Removedreputation > 0
 			then "-" .. FormatReputation(Removedreputation) .. " Reputation"

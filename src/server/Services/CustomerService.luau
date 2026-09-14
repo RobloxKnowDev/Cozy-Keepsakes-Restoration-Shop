@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
@@ -24,12 +25,11 @@ local Customerservice = {
 local QueueFolderName = "SpawnCustomer"
 local TurnTweenDuration = 0.35
 local SlotTurnDegrees = -90
-local FastEntryIndex = 1
+local FastEntryIndex = 2
 local WalkInStuds = 12
 local WalkInFadeDuration = 0.4
-local Verbosespawnlogs = true
+local Verbosespawnlogs = false
 local MaxFriendProfiles = 60
-local PrefetchedFriendCount = 3
 local FallbackCustomerTemplate = "1"
 type CustomerOffer = {
 	Id: number,
@@ -60,6 +60,11 @@ local ArrivedCustomersToday = 0
 local FriendProfiles: { { Id: number, Name: string } } = {}
 local FriendCursor = 0
 local DescriptionsByUserId: { [number]: HumanoidDescription } = {}
+local ShopOpened = false
+local ReadyCustomers: { Model } = {}
+local PoolBuilding = false
+local Poolfolder: Folder
+local TemplateStandHeight = 0
 
 local function Spawnlog(Message: string)
 	if Verbosespawnlogs then
@@ -167,7 +172,25 @@ local function CollectOfferObjects()
 end
 
 local function GetTargetCFrame(Attachment: Attachment): CFrame
+	if (tonumber(Attachment.Name) :: number) >= 2 then
+		return Attachment.WorldCFrame * CFrame.Angles(0, math.pi, 0)
+	end
 	return Attachment.WorldCFrame
+end
+
+local function GetStandHeight(Customer: Model): number
+	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid") :: Humanoid
+	local Root = Customer:FindFirstChild("HumanoidRootPart") :: BasePart
+	return Humanoid.HipHeight + Root.Size.Y / 2
+end
+
+local function StandAt(Customer: Model, Base: CFrame)
+	Customer:PivotTo(Base + Vector3.new(0, Customer:GetAttribute("StandOffset"), 0))
+end
+
+local function ArriveAt(Customer: Model, Target: CFrame)
+	local Height = Customer:GetPivot().Position.Y
+	Customer:PivotTo(Target.Rotation + Vector3.new(Target.Position.X, Height, Target.Position.Z))
 end
 
 local function FacePosition(Customer: Model, Position: Vector3)
@@ -257,50 +280,59 @@ local function LoadFriendProfiles(Player: Player)
 	end
 	FriendProfiles = Profiles
 	FriendCursor = 0
-
-	for Index = 1, math.min(PrefetchedFriendCount, #Profiles) do
-		GetFriendDescription(Profiles[Index].Id)
-	end
 end
 
-local function ApplyFriendAppearance(Customer: Model)
-	if #FriendProfiles == 0 then
-		return
-	end
-	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
-	if not Humanoid then
-		return
-	end
-
+local function BuildDressedCustomer(): Model
 	FriendCursor = FriendCursor % #FriendProfiles + 1
 	local Profile = FriendProfiles[FriendCursor]
+	local Customer = (Customerfolder:WaitForChild(FallbackCustomerTemplate) :: Model):Clone()
 	Customer:SetAttribute("FriendUserId", Profile.Id)
 	Customer:SetAttribute("FriendName", Profile.Name)
-
-	local function Apply()
-		local Description = GetFriendDescription(Profile.Id)
-		if not Description or not Customer.Parent or not Humanoid.Parent then
-			Spawnlog(string.format("skin %s SKIPPED for %s", Profile.Name, Customer.Name))
-			return
+	for _, Child in ipairs(Customer:GetChildren()) do
+		if Child:IsA("Clothing") or Child:IsA("ShirtGraphic") or Child:IsA("Accessory") then
+			Child:Destroy()
 		end
+	end
+	Customer.Parent = Poolfolder
+
+	local Description = GetFriendDescription(Profile.Id)
+	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
+	if Description and Humanoid then
 		local Success, Error = pcall(function()
 			Humanoid:ApplyDescription(Description:Clone())
 		end)
-		Spawnlog(string.format(
-			"skin %s on %s: %s",
-			Profile.Name,
-			Customer.Name,
-			if Success then "ok" else tostring(Error)
-		))
-		NormalizeCustomerParts(Customer)
+		Spawnlog(string.format("dressed %s: %s", Profile.Name, if Success then "ok" else tostring(Error)))
+	else
+		Spawnlog(string.format("dressed %s: no description, template kept", Profile.Name))
 	end
+	return Customer
+end
 
-	task.spawn(Apply)
+local function RefillPool()
+	if PoolBuilding then
+		return
+	end
+	PoolBuilding = true
+	while #FriendProfiles > 0 and #ReadyCustomers < math.max(HighestQueueIndex, 1) do
+		table.insert(ReadyCustomers, BuildDressedCustomer())
+	end
+	PoolBuilding = false
+end
+
+local function ClearPool()
+	for _, Customer in ipairs(ReadyCustomers) do
+		Customer:Destroy()
+	end
+	table.clear(ReadyCustomers)
 end
 
 local function CreateCustomerInstance(): Model
-	local Template = Customerfolder:WaitForChild(FallbackCustomerTemplate) :: Model
-	local Customer = Template:Clone()
+	local Customer = table.remove(ReadyCustomers, 1)
+	if not Customer then
+		Spawnlog("pool empty, using template")
+		Customer = (Customerfolder:WaitForChild(FallbackCustomerTemplate) :: Model):Clone()
+	end
+	task.spawn(RefillPool)
 
 	CustomerSerial += 1
 	Customer.Name = string.format("Customer_%d", CustomerSerial)
@@ -329,6 +361,8 @@ local function CreateCustomerInstance(): Model
 		Humanoid.BreakJointsOnDeath = false
 	end
 
+	Customer:SetAttribute("StandOffset", GetStandHeight(Customer) - TemplateStandHeight)
+
 	return Customer
 end
 
@@ -337,7 +371,7 @@ local function MoveCustomerTo(Customer: Model, Attachment: Attachment, OnComplet
 	local ShouldTurnAtArrival = Attachment.Name == "1"
 	Customer:SetAttribute("ArrivedAtSlot1", false)
 	local function FinishArrival()
-		Customer:PivotTo(GetTargetCFrame(Attachment))
+		ArriveAt(Customer, GetTargetCFrame(Attachment))
 		if Humanoid then
 			Humanoid:Move(Vector3.zero)
 			Humanoid.AutoRotate = not ShouldTurnAtArrival
@@ -417,7 +451,7 @@ local function FadeCustomerIn(Customer: Model)
 	end
 end
 
-local function SpawnCustomerAt(Index: number)
+local function SpawnCustomerAt(Index: number, Direct: boolean?)
 	local Attachment = AttachmentsByIndex[Index]
 	if not Attachment then
 		Spawnlog(string.format("spawn %d REFUSED: no attachment (highest=%d)", Index, HighestQueueIndex))
@@ -448,8 +482,7 @@ local function SpawnCustomerAt(Index: number)
 	OccupiedSlots[Index] = Customer
 
 	if Index == 1 then
-		Customer:PivotTo(GetTargetCFrame(Attachment) * CFrame.Angles(0, math.rad(SlotTurnDegrees), 0))
-		ApplyFriendAppearance(Customer)
+		StandAt(Customer, GetTargetCFrame(Attachment) * CFrame.Angles(0, math.rad(SlotTurnDegrees), 0))
 		Customer:SetAttribute("ArrivedAtSlot1", true)
 		Customer:SetAttribute("TurnedAtSlot1", true)
 		local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
@@ -464,14 +497,23 @@ local function SpawnCustomerAt(Index: number)
 		return
 	end
 
-	Customer:PivotTo(GetEntryCFrame(Index) * CFrame.Angles(0, math.pi, 0))
-	ApplyFriendAppearance(Customer)
+	if Direct then
+		StandAt(Customer, GetTargetCFrame(Attachment))
+		RefreshFrontCustomerAttribute()
+		return
+	end
+
+	StandAt(Customer, GetEntryCFrame(Index))
 	FadeCustomerIn(Customer)
 	RefreshFrontCustomerAttribute()
 	MoveCustomerTo(Customer, Attachment)
 end
 
 local function SpawnNextCustomer()
+	if not ShopOpened then
+		Spawnlog("next: shop not opened yet")
+		return
+	end
 	if not next(OccupiedSlots) then
 		Spawnlog("next: queue empty")
 		SpawnCustomerAt(math.min(FastEntryIndex, HighestQueueIndex))
@@ -483,6 +525,24 @@ local function SpawnNextCustomer()
 		return
 	end
 	Spawnlog("next: queue already full")
+end
+
+local function OpenShop(Player: Player)
+	Core:GetService("DataService"):WaitForLoad(Player)
+	LoadFriendProfiles(Player)
+	RefillPool()
+	if not Player.Parent then
+		return
+	end
+	ShopOpened = true
+	Spawnlog(string.format("shop opened (friends=%d, dressed=%d)", #FriendProfiles, #ReadyCustomers))
+	if next(OccupiedSlots) then
+		return
+	end
+	SpawnCustomerAt(1)
+	for Index = 2, HighestQueueIndex do
+		SpawnCustomerAt(Index, true)
+	end
 end
 
 local function DespawnCustomer(Customer: Model)
@@ -746,20 +806,26 @@ function Customerservice:Init()
 	CollectQueueAttachments()
 	CollectOfferObjects()
 	Customerfolder = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Customer") :: Folder
+	Poolfolder = Instance.new("Folder")
+	Poolfolder.Name = "DressedCustomerPool"
+	Poolfolder.Parent = ServerStorage
+	TemplateStandHeight = GetStandHeight(Customerfolder:WaitForChild(FallbackCustomerTemplate) :: Model)
 	SyncDayState()
 	Lighting:GetAttributeChangedSignal("Day"):Connect(SyncDayState)
 	for _, Player in ipairs(Players:GetPlayers()) do
-		task.spawn(LoadFriendProfiles, Player)
+		task.spawn(OpenShop, Player)
 	end
 	Players.PlayerAdded:Connect(function(Player)
-		task.spawn(LoadFriendProfiles, Player)
+		task.spawn(OpenShop, Player)
 		task.defer(function()
 			self:RefreshCustomerLimit()
 		end)
 	end)
 	Players.PlayerRemoving:Connect(function()
+		ShopOpened = false
 		FriendProfiles = {}
 		FriendCursor = 0
+		ClearPool()
 		task.defer(function()
 			self:RefreshCustomerLimit()
 		end)
@@ -877,8 +943,6 @@ function Customerservice:Start()
 	if HighestQueueIndex <= 0 or not AttachmentsByIndex[0] then
 		return
 	end
-
-	SpawnCustomerAt(1)
 
 	task.spawn(function()
 		while true do
