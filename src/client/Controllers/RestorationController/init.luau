@@ -150,9 +150,12 @@ function Controller:Enter()
 		local Mutation = tostring(Object:GetAttribute("Mutation"))
 		local Definition = Mutationconfig[Mutation]
 		if not Definition or Definition == Mutationconfig.Normal then return end
-		task.delay(Mutationconfig.RevealDelaySeconds, function()
-			Core:GetController("FeedbackController"):MutationReveal(Definition.Name, Definition.Color, Mutation == "Rainbow")
-		end)
+		Core:GetController("FeedbackController"):ScheduleMutationReveal(
+			Definition.Name,
+			Definition.Color,
+			Mutation == "Rainbow",
+			Mutationconfig.RevealDelaySeconds
+		)
 	end)
 	Core:GetController("CleaningController"):PreloadOverlays(Object)
 	Runtime:SetObject(Object)

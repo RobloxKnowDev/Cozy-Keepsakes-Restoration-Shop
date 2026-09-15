@@ -159,6 +159,27 @@ local function Refreshall()
 	Schedulepush()
 end
 
+function Leaderboardservice:Wipe(Player: Player)
+	local Userid = Player.UserId
+	Lastwritten[Player] = nil
+	while Pendingwrites > 0 do
+		task.wait()
+	end
+	for _, Board in ipairs(Boardorder) do
+		local Success, Error = pcall(function()
+			Stores[Board]:RemoveAsync(tostring(Userid))
+		end)
+		if not Success then
+			warn("LeaderboardService: could not erase " .. Board .. " for " .. Player.Name .. ": " .. tostring(Error))
+		end
+		Mergescore(Board, Userid, 0)
+		pcall(function()
+			MessagingService:PublishAsync(Topic, { B = Board, U = Userid, V = 0 })
+		end)
+	end
+	Schedulepush()
+end
+
 function Leaderboardservice:Init()
 	Core:GetService("DataService"):Register("Leaderboard", {
 		Load = function() end,

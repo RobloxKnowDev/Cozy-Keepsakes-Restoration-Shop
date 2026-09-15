@@ -109,6 +109,7 @@ local Commands = {
 			Core:GetService("DataService"):Wipe(Target)
 			Core:GetService("TutorialService"):Wipe(Target)
 			Core:GetService("DailyRewardService"):Wipe(Target)
+			Core:GetService("LeaderboardService"):Wipe(Target)
 			local Name = Target.Name
 			task.defer(function()
 				if Target.Parent then

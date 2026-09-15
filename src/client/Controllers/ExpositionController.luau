@@ -298,6 +298,7 @@ function Controller:ApplySelectionItems(Items)
 		if Child ~= self.selectTemplate and Child ~= self.selectGridLayout then Child:Destroy() end
 	end
 	table.clear(self.selectCards)
+	self.selectRainbowCards = {}
 
 	local Selecteditem
 	for Order, Item in ipairs(Sorteditems) do
@@ -308,7 +309,11 @@ function Controller:ApplySelectionItems(Items)
 		Card.Parent = self.selectScrollingFrame
 		local Button = Card:WaitForChild("Button") :: GuiButton
 		local Selectbutton = Button:WaitForChild("SelectButton") :: GuiButton
-		Button:WaitForChild("NameText").Text = tostring(Item.Name or "")
+		local Nametext = Button:WaitForChild("NameText")
+		Mutationlabel.Apply(Nametext, Item)
+		if Item.Mutation == "Rainbow" then
+			table.insert(self.selectRainbowCards, Nametext)
+		end
 		Button:WaitForChild("ReputationText").Text = "+" .. FormatReputation(self:GetBaseReputation(Item)) .. " Reputation"
 		Button:WaitForChild("Icon").Image = tostring(Item.ImageId or "")
 		local Carddata = { Button = Button, SelectButton = Selectbutton }
@@ -744,15 +749,17 @@ function Controller:Start()
 	self.settingController = Core:GetController("SettingController")
 	self.completionController = Core:GetController("CompletionController")
 	Runservice.Heartbeat:Connect(function()
-		if not self.selectRainbowLabels then
-			return
-		end
 		local Color = Core:GetController("MutationController"):GetColor("Rainbow")
 		if not Color then
 			return
 		end
-		for _, Label in ipairs(self.selectRainbowLabels) do
+		for _, Label in ipairs(self.selectRainbowLabels or {}) do
 			Label.TextColor3 = Color
+		end
+		for _, Label in ipairs(self.selectRainbowCards or {}) do
+			if Label.Parent then
+				Label.TextColor3 = Color
+			end
 		end
 	end)
 	for _, Button in ipairs(self.animatedButtons) do self:BindButtonAnimation(Button) end

@@ -31,8 +31,11 @@ local Completioncontroller = {
 	basePivot = CFrame.identity,
 	dragging = false,
 	dragStart = 0,
+	dragStartY = 0,
 	dragOffset = 0,
+	pitchOffset = 0,
 	rotation = 0,
+	pitch = 0,
 	celebrationId = 0,
 	closing = false,
 }
@@ -283,6 +286,7 @@ function Completioncontroller:PlayAppearanceAnimation()
 	Buttonscale.Scale = 0
 	self.nextButton.Visible = false
 	self.rotation = math.rad(-18)
+	self.pitch = 0
 end
 
 function Completioncontroller:StartConfetti()
@@ -528,6 +532,7 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 		self.displayObject = Clone
 		self.basePivot = Pivotof(Clone)
 		self.rotation = 0
+		self.pitch = 0
 	else
 		self.displayObject = nil
 	end
@@ -570,7 +575,9 @@ function Completioncontroller:InputBegan(Input: InputObject): boolean
 	self.dragging = true
 	self.dragInput = if Istouch then Input else nil
 	self.dragStart = Input.Position.X
+	self.dragStartY = Input.Position.Y
 	self.dragOffset = self.rotation
+	self.pitchOffset = self.pitch
 	return true
 end
 
@@ -583,9 +590,16 @@ function Completioncontroller:InputChanged(Input: InputObject)
 	if not Ismousemove and not Isactivetouch then
 		return
 	end
-	local Width = math.max(Workspace.CurrentCamera.ViewportSize.X, 1)
+	local Viewport = Workspace.CurrentCamera.ViewportSize
+	local Width = math.max(Viewport.X, 1)
+	local Height = math.max(Viewport.Y, 1)
 	self.rotation = math.clamp(
 		self.dragOffset - (Input.Position.X - self.dragStart) / Width * math.rad(360),
+		math.rad(-180),
+		math.rad(180)
+	)
+	self.pitch = math.clamp(
+		self.pitchOffset - (Input.Position.Y - self.dragStartY) / Height * math.rad(360),
 		math.rad(-180),
 		math.rad(180)
 	)
@@ -607,13 +621,20 @@ function Completioncontroller:Update(Deltatime: number)
 		return
 	end
 	if not self.dragging then
-		self.rotation *= math.exp(-9 * Deltatime)
+		local Decay = math.exp(-9 * Deltatime)
+		self.rotation *= Decay
+		self.pitch *= Decay
 		if math.abs(self.rotation) < 0.002 then
 			self.rotation = 0
 		end
+		if math.abs(self.pitch) < 0.002 then
+			self.pitch = 0
+		end
 	end
 	if self.displayObject then
-		Pivotto(self.displayObject, self.basePivot * CFrame.Angles(0, self.rotation, 0))
+		local Center = self.objectCenter
+		local Spin = CFrame.fromAxisAngle(Vector3.xAxis, self.pitch) * CFrame.fromAxisAngle(Vector3.yAxis, self.rotation)
+		Pivotto(self.displayObject, CFrame.new(Center) * Spin * CFrame.new(-Center) * self.basePivot)
 	end
 	if self.rainbowLabels then
 		local Color = Core:GetController("MutationController"):GetColor("Rainbow")

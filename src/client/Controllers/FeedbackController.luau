@@ -1,3 +1,4 @@
+local ContentProvider = game:GetService("ContentProvider")
 local Debris = game:GetService("Debris")
 local GuiService = game:GetService("GuiService")
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -32,6 +33,7 @@ local DonationColor = Color3.fromRGB(126, 255, 145)
 local RayCount = 14
 local ChargeRingCount = 5
 local MutationBuildupSeconds = 1.35
+local MutationSoundLead = 0.3
 
 local function Shinesequence(Color: Color3): ColorSequence
 	return ColorSequence.new({
@@ -415,6 +417,15 @@ function FeedbackController:Shockwave(Color: Color3, Count: number)
 	end
 end
 
+function FeedbackController:ScheduleMutationReveal(Name: string, Color: Color3, Rainbow: boolean?, Delay: number)
+	task.delay(math.max(Delay - MutationSoundLead, 0), function()
+		self:PlaySound("Mutation", 0.2)
+	end)
+	task.delay(Delay, function()
+		self:MutationReveal(Name, Color, Rainbow)
+	end)
+end
+
 function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow: boolean?)
 	if not self:IsDecorativeEnabled() then return end
 	local Buildup = MutationBuildupSeconds
@@ -428,7 +439,6 @@ function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow:
 	Container.BackgroundTransparency = 1
 	Container.ZIndex = 30
 	Container.Parent = self.overlay
-	self:PlaySound("Mutation", 0.2)
 
 	local Shine = nil
 	local Tinted = {}
@@ -1008,6 +1018,9 @@ end
 function FeedbackController:Init()
 	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.sfxFolder = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Sfx")
+	task.spawn(function()
+		ContentProvider:PreloadAsync(self.sfxFolder:GetChildren())
+	end)
 	self.soundCooldowns = {}
 	self.loopSounds = {}
 	self.soundVolume = 1
