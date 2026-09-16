@@ -1,0 +1,3 @@
+return {
+	DirtPasses = 5,
+}

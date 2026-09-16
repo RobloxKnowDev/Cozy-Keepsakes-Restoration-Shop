@@ -1,4 +1,3 @@
-local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Userinputservice = game:GetService("UserInputService")
@@ -79,7 +78,7 @@ function Displayedtool:Update(Deltatime: number, Object: Model | BasePart, Isusi
 	if not Toolinstance or not Definition then return end
 	if Lockedpivot then Pivotto(Toolinstance, Lockedpivot) return end
 
-	local Mouse = Userinputservice:GetMouseLocation() - Guiservice:GetGuiInset()
+	local Mouse = Userinputservice:GetMouseLocation()
 	local Ray = self.Camera:ViewportPointToRay(Mouse.X, Mouse.Y)
 	local Params = RaycastParams.new()
 	Params.FilterType = Enum.RaycastFilterType.Include

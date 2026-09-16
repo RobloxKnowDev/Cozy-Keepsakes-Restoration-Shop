@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Uvtorch = require(script.Parent.RestorationController.UvTorch)
 
 local Tutorialcontroller = {
 	Name = "TutorialController",
@@ -23,6 +24,9 @@ local Framenamebykind = { Dirt = "DirtFrame", Ink = "Ink", Scratch = "ScratchesF
 local Holepadding = 14
 local Textwidth = 320
 local Textheight = 96
+local Largetextscale = 1.6
+local Textsizemax = 30
+local Largetextsizemax = 42
 local Textgap = 18
 local Behindtext = "It's on the other side!"
 local Handimage = "rbxassetid://116068912861302"
@@ -39,6 +43,11 @@ local Gestures = {
 	Rotate = {
 		Motion = function(Time: number): Vector2
 			return Vector2.new(math.sin(Time * 1.6) * Handswipe, 0)
+		end,
+	},
+	HeatGun = {
+		Motion = function(Time: number): Vector2
+			return Vector2.new(math.sin(Time * 2.2) * Scrubreach, math.sin(Time * 4.4) * 8)
 		end,
 	},
 	ToothBrush = {
@@ -159,9 +168,9 @@ function Tutorialcontroller:Buildgui()
 	Textpadding.PaddingTop = UDim.new(0, 10)
 	Textpadding.PaddingBottom = UDim.new(0, 10)
 	Textpadding.Parent = self.text
-	local Textsize = Instance.new("UITextSizeConstraint")
-	Textsize.MaxTextSize = 30
-	Textsize.Parent = self.text
+	self.textSizeConstraint = Instance.new("UITextSizeConstraint")
+	self.textSizeConstraint.MaxTextSize = Textsizemax
+	self.textSizeConstraint.Parent = self.text
 end
 
 function Tutorialcontroller:Getguirect(Target: GuiObject): (Vector2, Vector2)
@@ -370,8 +379,9 @@ end
 
 function Tutorialcontroller:Placebubble(Position: Vector2?, Size: Vector2?)
 	local Viewport = self.gui.AbsoluteSize
-	local Width = math.min(Textwidth, Viewport.X - 24)
-	local Height = math.min(Textheight, Viewport.Y - 24)
+	local Scale = if self.bubbleLarge then Largetextscale else 1
+	local Width = math.min(Textwidth * Scale, Viewport.X - 24)
+	local Height = math.min(Textheight * Scale, Viewport.Y - 24)
 	self.bubble.Size = UDim2.fromOffset(Width, Height)
 
 	local Centerx, Bubbley
@@ -439,6 +449,8 @@ function Tutorialcontroller:Showstep(Index: number)
 	end
 	Remotemanager:FireServer(Servicename, "SetStep", Index)
 	self.behind = false
+	self.bubbleLarge = Step.Large == true
+	self.textSizeConstraint.MaxTextSize = if Step.Large then Largetextsizemax else Textsizemax
 	self:Sethand(Step.Gesture)
 	self.text.Text = Step.Text
 	self.bubbleScale.Scale = 0.86
@@ -455,6 +467,7 @@ function Tutorialcontroller:Finish()
 	self.running = false
 	self:Sethand(nil)
 	self.gui.Enabled = false
+	Core:GetController("ComputerController"):SetSellLocked(false)
 	Core:GetController("RestorationController"):GetInterface():SetContinueLocked(false)
 	Remotemanager:FireServer(Servicename, "Complete")
 	Core:GetController("DailyRewardController"):OpenFromTutorial()
@@ -578,6 +591,26 @@ local function Hasliquid(Kind: string, Attribute: string): boolean
 	return Texture ~= nil and Texture:GetAttribute(Attribute) == true
 end
 
+local function Liquidfolder(Name: string): Instance?
+	local Object = Restoration():GetActiveObject()
+	if not Object then
+		return nil
+	end
+	local Spots = Object:FindFirstChild("RestorationSpots")
+	return if Spots then Spots:FindFirstChild(Name) else nil
+end
+
+local function Liquidspot(Name: string): Instance?
+	local Folder = Liquidfolder(Name)
+	local Drop = if Folder then Folder:FindFirstChildWhichIsA("BasePart") else nil
+	return Drop or Restoration():GetActiveObject()
+end
+
+local function Liquidcount(Name: string): number
+	local Folder = Liquidfolder(Name)
+	return if Folder then #Folder:GetChildren() else 0
+end
+
 function Tutorialcontroller:Buildsteps()
 	self.steps = {
 		{
@@ -666,6 +699,25 @@ function Tutorialcontroller:Buildsteps()
 			end,
 		},
 		{
+			Text = "Take the UV torch.",
+			Target = function()
+				return Toolbutton("UvTorch")
+			end,
+			Done = function()
+				return Toolbutton("UvTorch"):GetAttribute("Selected") == true
+			end,
+		},
+		{
+			Text = "Turn it on to spot leftover dirt!",
+			HoldSeconds = 1.5,
+			Target = function()
+				return Restoration():GetActiveObject()
+			end,
+			Done = function()
+				return Uvtorch.IsLit()
+			end,
+		},
+		{
 			Text = "Take the tweezers.",
 			Target = function()
 				return Toolbutton("Tweezers")
@@ -721,6 +773,26 @@ function Tutorialcontroller:Buildsteps()
 			end,
 			Done = function()
 				return Categorydone("Ink")
+			end,
+		},
+		{
+			Text = "Take the heat gun.",
+			Target = function()
+				return Toolbutton("HeatGun")
+			end,
+			Done = function()
+				return Toolbutton("HeatGun"):GetAttribute("Selected") == true
+			end,
+		},
+		{
+			Text = "Dry the leftover solvent!",
+			Gesture = "HeatGun",
+			HoldSeconds = 2,
+			Target = function()
+				return Liquidspot("SolventLiquid")
+			end,
+			Done = function()
+				return Liquidcount("SolventLiquid") == 0
 			end,
 		},
 		{
@@ -812,7 +884,8 @@ function Tutorialcontroller:Buildsteps()
 			end,
 		},
 		{
-			Text = "Items on the shelf give you reputation. More reputation, better items!\nTap to continue.",
+			Text = "Items on the shelf give you reputation.\nMore reputation, better items!\nTap to continue.",
+			Large = true,
 			MinimumSeconds = 1.5,
 			WaitForTap = true,
 			Done = function()
@@ -885,6 +958,7 @@ function Tutorialcontroller:Start()
 		end
 		local Index = self:Resumeindex(tonumber(State and State.Step) or 1)
 		self.running = true
+		Core:GetController("ComputerController"):SetSellLocked(true)
 		self.gui.Enabled = true
 		self:Showstep(Index)
 	end)

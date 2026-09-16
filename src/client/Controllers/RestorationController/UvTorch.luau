@@ -12,6 +12,11 @@ local Uvcolor = Color3.fromRGB(100, 11, 255)
 local Normalcolor = Color3.fromRGB(255, 255, 255)
 local Sizescale = 2.5
 local Glowingimages: { [ImageLabel]: boolean } = {}
+local Lit = false
+
+function Uvtorch.IsLit(): boolean
+	return Lit
+end
 
 local function Stopglowing(Image: ImageLabel)
 	if Image.Parent then Image.ImageColor3 = Normalcolor end
@@ -37,6 +42,7 @@ local function Getlight(Context): Light?
 end
 
 function Uvtorch.OnSelected(Context)
+	Lit = false
 	local Light = Getlight(Context)
 	if Light then Light.Enabled = false end
 end
@@ -45,6 +51,7 @@ function Uvtorch.OnInputBegan(Context)
 	local Light = Getlight(Context)
 	if not Light then return end
 	Light.Enabled = not Light.Enabled
+	Lit = Light.Enabled
 	Core:GetController("FeedbackController"):PlaySound("UvTorch")
 end
 
@@ -82,6 +89,7 @@ function Uvtorch.OnUpdate(Context)
 end
 
 function Uvtorch.OnDeselected()
+	Lit = false
 	Clearglow()
 end
 

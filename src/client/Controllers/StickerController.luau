@@ -67,7 +67,7 @@ function Stickercontroller:Begin(Object: Model | BasePart, Tooltip: Attachment?,
 	end
 	self.toolTip = Tooltip
 	self.displayedTool = Displayedtool
-	local Mouseposition = Userinputservice:GetMouseLocation() - Guiservice:GetGuiInset()
+	local Mouseposition = Userinputservice:GetMouseLocation()
 	local Ray = self.camera:ViewportPointToRay(Mouseposition.X, Mouseposition.Y)
 	local Contact = Tooltip and Tooltip.WorldCFrame or Instancepivot(Displayedtool)
 	if not Contact then
@@ -188,13 +188,14 @@ function Stickercontroller:Update()
 	if self.tensionLine and self.toolTip then
 		local Screen, Visible = self.camera:WorldToViewportPoint(self.toolTip.WorldPosition)
 		local Mouse = Userinputservice:GetMouseLocation()
-		if not self.gui.IgnoreGuiInset then
-			Mouse -= Guiservice:GetGuiInset()
-		end
 		local Tip = Vector2.new(Screen.X, Screen.Y)
 		local Delta = Mouse - Tip
+		local Center = (Mouse + Tip) * 0.5
+		if not self.gui.IgnoreGuiInset then
+			Center -= Guiservice:GetGuiInset()
+		end
 		self.tensionLine.Visible = Visible and Dragdistance > 10
-		self.tensionLine.Position = UDim2.fromOffset((Mouse.X + Tip.X) * 0.5, (Mouse.Y + Tip.Y) * 0.5)
+		self.tensionLine.Position = UDim2.fromOffset(Center.X, Center.Y)
 		self.tensionLine.Size = UDim2.fromOffset(Delta.Magnitude, 3)
 		self.tensionLine.Rotation = math.deg(math.atan2(Delta.Y, Delta.X))
 	end

@@ -20,6 +20,18 @@ local function Setcleanenabled(Controller, Enabled: boolean)
 		else DisabledColor
 end
 
+local function Setsellenabled(Controller, Enabled: boolean)
+	Controller.inventorySellButton.Active = Enabled
+	Controller.inventorySellButton.Interactable = Enabled
+	Controller.inventorySellButton.BackgroundColor3 = if Enabled
+		then Controller.inventoryBaseSellColor
+		else DisabledColor
+end
+
+function Inventory.SetSellLocked(Controller, Locked: boolean)
+	Setsellenabled(Controller, not Locked)
+end
+
 local function Formatreputation(Value: number): string
 	local Rounded = math.round(Value * 100) / 100
 	if math.abs(Rounded - math.round(Rounded)) < 0.005 then
@@ -180,6 +192,7 @@ function Inventory.Init(Controller)
 	Controller.inventoryCleanButton = Controller.inventoryDetailsFrame:WaitForChild("CleanButton")
 	Controller.inventoryBaseNameColor = Controller.inventoryNameText.TextColor3
 	Controller.inventoryBaseCleanColor = Controller.inventoryCleanButton.BackgroundColor3
+	Controller.inventoryBaseSellColor = Controller.inventorySellButton.BackgroundColor3
 	Controller.inventoryBaseRarityColor = Controller.inventoryRarityText.TextColor3
 	Controller.inventoryBaseMutationColor = Controller.inventoryMutationText.TextColor3
 	Controller.inventoryItems = {}

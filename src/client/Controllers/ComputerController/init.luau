@@ -166,6 +166,10 @@ function ComputerController:SetHudVisible(IsVisible: boolean)
 	end
 end
 
+function ComputerController:SetSellLocked(Locked: boolean)
+	Inventory.SetSellLocked(self, Locked)
+end
+
 function ComputerController:SyncHeader()
 	if self.cashText and self.hudCashText then
 		self.cashText.Text = self.hudCashText.Text

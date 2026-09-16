@@ -4,6 +4,7 @@ local Tweenservice = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Config = require(Replicatedstorage.Shared.Config.Object)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Mutationvfx = require(Replicatedstorage.Shared.Utils.MutationVfx)
@@ -50,7 +51,7 @@ local Dirttools = { CottonTip = true, ToothBrush = true }
 local Spothealth = { Sticker = 3 }
 local Toolpower = { CottonTip = 1, HeatGun = 1, Polish = 1, Solvent = 1, ToothBrush = 1, Tweezers = 1 }
 local Toolsforspot = { Sticker = "Tweezers" }
-type CoverageEntry = { Cells: { boolean }, Covered: number, Premarked: number }
+type CoverageEntry = { Cells: { number }, Hits: number, Premarked: number, Passes: number }
 local Coverage: { [Instance]: CoverageEntry } = {}
 
 type CoverageMask = { Blank: { boolean }, Premarked: number }
@@ -135,14 +136,20 @@ local function Warmmasks(Object: RestorationObject)
 	end
 end
 
-local function Buildcoverageentry(Texture: ImageLabel): CoverageEntry
+local function Buildcoverageentry(Texture: ImageLabel, Passes: number): CoverageEntry
 	local Success, Mask = pcall(Buildmask, Texture.Image, Roundedtexture.GetShape(Texture))
 	if not Success then
 		warn("RestorationService: could not read " .. Texture.Image .. ": " .. tostring(Mask))
-		return { Cells = table.create(Coveragecellcount, false), Covered = 0, Premarked = 0 }
+		return { Cells = table.create(Coveragecellcount, 0), Hits = 0, Premarked = 0, Passes = Passes }
 	end
 	assert(Mask.Premarked < Coveragecellcount, "RestorationService: " .. Texture:GetFullName() .. " is fully transparent")
-	return { Cells = table.clone(Mask.Blank), Covered = Mask.Premarked, Premarked = Mask.Premarked }
+	local Cells = table.create(Coveragecellcount, 0)
+	for Index, Blank in ipairs(Mask.Blank) do
+		if Blank then
+			Cells[Index] = Passes
+		end
+	end
+	return { Cells = Cells, Hits = Mask.Premarked * Passes, Premarked = Mask.Premarked, Passes = Passes }
 end
 
 type RestorationObject = Model | BasePart
@@ -470,7 +477,7 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean): n
 		end
 		local Texture = Dirtframe:WaitForChild("Texture")
 		assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " must be an ImageLabel")
-		Coverage[Dirtframe] = Buildcoverageentry(Texture)
+		Coverage[Dirtframe] = Buildcoverageentry(Texture, Cleaningconfig.DirtPasses)
 		Dirtframe:SetAttribute("Cleaned", false)
 		Totaldirt += 16
 	end
@@ -499,7 +506,7 @@ local function Initializescratches(Object: RestorationObject): number
 			Texture:SetAttribute("Remaining", 1)
 			Texture:SetAttribute("HasPolish", false)
 			Descendant:SetAttribute("Cleaned", false)
-			Coverage[Descendant] = Buildcoverageentry(Texture)
+			Coverage[Descendant] = Buildcoverageentry(Texture, 1)
 			Totalscratches += 1
 		end
 	end
@@ -525,7 +532,7 @@ local function Initializeink(Object: RestorationObject): number
 			Texture:SetAttribute("Remaining", 1)
 			Texture:SetAttribute("HasSolvent", false)
 			Descendant:SetAttribute("Cleaned", false)
-			Coverage[Descendant] = Buildcoverageentry(Texture)
+			Coverage[Descendant] = Buildcoverageentry(Texture, 1)
 			Totalink += 1
 		end
 	end
@@ -565,7 +572,8 @@ local function Validpoints(Points: any): boolean
 end
 
 local function Stampcells(Entry: CoverageEntry, Points: { Vector2 }, Radius: number): number
-	local Newlycovered = 0
+	local Newhits = 0
+	local Touched = {}
 	for _, Point in ipairs(Points) do
 		local X = math.clamp(Point.X, 0, 1)
 		local Y = math.clamp(Point.Y, 0, 1)
@@ -577,18 +585,23 @@ local function Stampcells(Entry: CoverageEntry, Points: { Vector2 }, Radius: num
 			local Centery = (Row + 0.5) / Coveragegridwidth
 			for Column = Mincolumn, Maxcolumn do
 				local Index = Row * Coveragegridwidth + Column + 1
-				if not Entry.Cells[Index] then
+				if Entry.Cells[Index] < Entry.Passes and not Touched[Index] then
 					local Centerx = (Column + 0.5) / Coveragegridwidth
 					if (X - Centerx) ^ 2 + (Y - Centery) ^ 2 <= Radius * Radius then
-						Entry.Cells[Index] = true
-						Newlycovered += 1
+						Touched[Index] = true
+						Entry.Cells[Index] += 1
+						Newhits += 1
 					end
 				end
 			end
 		end
 	end
-	Entry.Covered += Newlycovered
-	return Newlycovered
+	Entry.Hits += Newhits
+	return Newhits
+end
+
+local function Iscovered(Entry: CoverageEntry): boolean
+	return Entry.Hits >= Coveragecellcount * Entry.Passes
 end
 
 local function Createspots(Object: RestorationObject, Singleface: boolean)
@@ -868,9 +881,9 @@ function Restorationservice:Init()
 		local Newlycovered = Stampcells(Entry, Points, Brushradii.ToothBrush)
 		if Newlycovered <= 0 then return end
 		local Opaquecells = Coveragecellcount - Entry.Premarked
-		local Removedink = Newlycovered / Opaquecells
-		Target:SetAttribute("Remaining", 1 - (Entry.Covered - Entry.Premarked) / Opaquecells)
-		if Entry.Covered >= Coveragecellcount then Target.Parent:SetAttribute("Cleaned", true) end
+		local Removedink = Newlycovered / (Opaquecells * Entry.Passes)
+		Target:SetAttribute("Remaining", 1 - (Entry.Hits - Entry.Premarked * Entry.Passes) / (Opaquecells * Entry.Passes))
+		if Iscovered(Entry) then Target.Parent:SetAttribute("Cleaned", true) end
 
 		local Totalink = tonumber(Sessionobject:GetAttribute("Total_Ink")) or 0
 		local Previouscleanedink = tonumber(Sessionobject:GetAttribute("Cleaned_Ink")) or 0
@@ -898,9 +911,9 @@ function Restorationservice:Init()
 		local Newlycovered = Stampcells(Entry, Points, Brushradii.ToothBrush)
 		if Newlycovered <= 0 then return end
 		local Opaquecells = Coveragecellcount - Entry.Premarked
-		local Removedscratch = Newlycovered / Opaquecells
-		Target:SetAttribute("Remaining", 1 - (Entry.Covered - Entry.Premarked) / Opaquecells)
-		if Entry.Covered >= Coveragecellcount then Target.Parent:SetAttribute("Cleaned", true) end
+		local Removedscratch = Newlycovered / (Opaquecells * Entry.Passes)
+		Target:SetAttribute("Remaining", 1 - (Entry.Hits - Entry.Premarked * Entry.Passes) / (Opaquecells * Entry.Passes))
+		if Iscovered(Entry) then Target.Parent:SetAttribute("Cleaned", true) end
 
 		local Totalscratches = tonumber(Sessionobject:GetAttribute("Total_Scratch")) or 0
 		local Previouscleanedscratches = tonumber(Sessionobject:GetAttribute("Cleaned_Scratch")) or 0
@@ -933,9 +946,9 @@ function Restorationservice:Init()
 		Lastclean[Player] = Now
 
 		local Newlycovered = Stampcells(Entry, Points, Brushradii[Toolname])
-		if Entry.Covered >= Coveragecellcount then Dirtframe:SetAttribute("Cleaned", true) end
+		if Iscovered(Entry) then Dirtframe:SetAttribute("Cleaned", true) end
 		if Newlycovered <= 0 then return end
-		local Removeddirt = Newlycovered * 16 / (Coveragecellcount - Entry.Premarked)
+		local Removeddirt = Newlycovered * 16 / ((Coveragecellcount - Entry.Premarked) * Entry.Passes)
 		local Totaldirt = tonumber(Sessionobject:GetAttribute("Total_Dirt")) or 0
 		local Cleaneddirt = math.min((tonumber(Sessionobject:GetAttribute("Cleaned_Dirt")) or 0) + Removeddirt, Totaldirt)
 		if Totaldirt - Cleaneddirt < 0.000001 then Cleaneddirt = Totaldirt end

@@ -1,9 +1,9 @@
 local Assetservice = game:GetService("AssetService")
-local Guiservice = game:GetService("GuiService")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
@@ -129,6 +129,8 @@ local Overlaypending: { [ImageLabel]: boolean } = {}
 local Overlayradiusratio = 1 / 16
 local Cottonscale = 4 / 3
 local Brushscale = 1.5
+local Dirtfadestep = math.ceil(255 / Cleaningconfig.DirtPasses)
+local Tickmarks: { [ImageLabel]: buffer } = {}
 
 local function Roundcorners(Editable: EditableImage, Shape)
 	if not Roundedtexture.IsCut(Shape) then
@@ -176,6 +178,7 @@ local function Getoverlayimage(Test: ImageLabel): EditableImage?
 		Test.Destroying:Connect(function()
 			Overlayimages[Test] = nil
 			Overlaypending[Test] = nil
+			Tickmarks[Test] = nil
 			Created:Destroy()
 		end)
 	end)
@@ -209,12 +212,65 @@ local function Erasetexture(Texture: ImageLabel, Surface: SurfaceGui, Facepoint:
 	Editable:DrawCircle(Center, Radius, Color3.new(0, 0, 0), 1, Enum.ImageCombineType.Overwrite)
 end
 
+local function Fadetexture(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: Vector2, Radiusscale: number)
+	local Canvaspoint = Surface.AbsolutePosition
+		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
+	local Localpoint = (Canvaspoint - Texture.AbsolutePosition) / Texture.AbsoluteSize
+	if Localpoint.X < 0 or Localpoint.Y < 0 or Localpoint.X > 1 or Localpoint.Y > 1 then return end
+	local Points = Pendingpoints[Texture]
+	if not Points then
+		Points = {}
+		Pendingpoints[Texture] = Points
+	end
+	if #Points < 16 then table.insert(Points, Localpoint) end
+	local Editable = Getoverlayimage(Texture)
+	if not Editable then return end
+	local Size = Editable.Size
+	local Width, Height = Size.X, Size.Y
+	local Centerx = math.round(Localpoint.X * Width)
+	local Centery = math.round(Localpoint.Y * Height)
+	local Radius = math.max(math.round(math.min(Width, Height) * Overlayradiusratio * Radiusscale), 2)
+	local Minx = math.max(Centerx - Radius, 0)
+	local Miny = math.max(Centery - Radius, 0)
+	local Maxx = math.min(Centerx + Radius, Width - 1)
+	local Maxy = math.min(Centery + Radius, Height - 1)
+	if Minx > Maxx or Miny > Maxy then return end
+	local Regionwidth = Maxx - Minx + 1
+	local Regionheight = Maxy - Miny + 1
+	local Pixels = Editable:ReadPixelsBuffer(Vector2.new(Minx, Miny), Vector2.new(Regionwidth, Regionheight))
+	local Marks = Tickmarks[Texture]
+	if not Marks then
+		Marks = buffer.create(Width * Height * 2)
+		Tickmarks[Texture] = Marks
+	end
+	local Tick = math.floor(os.clock() / Cleaninterval) % 65535 + 1
+	local Radiussquared = Radius * Radius
+	for Y = Miny, Maxy do
+		local Dy = Y - Centery
+		for X = Minx, Maxx do
+			local Dx = X - Centerx
+			if Dx * Dx + Dy * Dy <= Radiussquared then
+				local Markoffset = (Y * Width + X) * 2
+				if buffer.readu16(Marks, Markoffset) ~= Tick then
+					buffer.writeu16(Marks, Markoffset, Tick)
+					local Alphaoffset = ((Y - Miny) * Regionwidth + (X - Minx)) * 4 + 3
+					local Alpha = buffer.readu8(Pixels, Alphaoffset)
+					if Alpha > 0 then
+						buffer.writeu8(Pixels, Alphaoffset, math.max(Alpha - Dirtfadestep, 0))
+					end
+				end
+			end
+		end
+	end
+	Editable:WritePixelsBuffer(Vector2.new(Minx, Miny), Vector2.new(Regionwidth, Regionheight), Pixels)
+end
+
 local function Erasedirtoverlay(Surface: SurfaceGui, Facepoint: Vector2, Radiusscale: number)
 	local Dirtframe = Surface:FindFirstChild("DirtFrame")
 	if not Dirtframe or not Dirtframe:IsA("GuiObject") or not Dirtframe.Visible then return end
 	local Texture = Dirtframe:FindFirstChild("Texture")
 	if not Texture or not Texture:IsA("ImageLabel") then return end
-	Erasetexture(Texture, Surface, Facepoint, Radiusscale)
+	Fadetexture(Texture, Surface, Facepoint, Radiusscale)
 end
 
 local Overlayframenames = { DirtFrame = true, Ink = true, ScratchesFrame = true }
@@ -382,7 +438,7 @@ end
 
 function Cleaningcontroller:TryCleanDirt(Object: Model | BasePart, Toolname: string)
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
-	local Mouse = Userinputservice:GetMouseLocation() - Guiservice:GetGuiInset()
+	local Mouse = Userinputservice:GetMouseLocation()
 	local Ray = self.camera:ViewportPointToRay(Mouse.X, Mouse.Y)
 	local Params = RaycastParams.new()
 	Params.FilterType = Enum.RaycastFilterType.Include
@@ -403,7 +459,7 @@ end
 
 function Cleaningcontroller:TryCleanCotton(Object: Model | BasePart)
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
-	local Mouse = Userinputservice:GetMouseLocation() - Guiservice:GetGuiInset()
+	local Mouse = Userinputservice:GetMouseLocation()
 	local Ray = self.camera:ViewportPointToRay(Mouse.X, Mouse.Y)
 	local Params = RaycastParams.new()
 	Params.FilterType = Enum.RaycastFilterType.Include
@@ -441,7 +497,7 @@ end
 function Cleaningcontroller:TryClean(Object: Model | BasePart, Toolname: string)
 	if os.clock() - self.lastRequest < 0.05 then return end
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
-	local Mouse = Userinputservice:GetMouseLocation() - Guiservice:GetGuiInset()
+	local Mouse = Userinputservice:GetMouseLocation()
 	local Ray = self.camera:ViewportPointToRay(Mouse.X, Mouse.Y)
 	local Params = RaycastParams.new()
 	Params.FilterType = Enum.RaycastFilterType.Include

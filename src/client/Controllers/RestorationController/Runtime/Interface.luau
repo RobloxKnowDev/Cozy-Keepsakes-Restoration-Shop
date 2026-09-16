@@ -1,4 +1,3 @@
-local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Tweenservice = game:GetService("TweenService")
@@ -148,15 +147,13 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 		end)
 	end
 	local function Findbutton(Position: Vector2): GuiButton?
-		for _, Point in ipairs({ Position, Position - Guiservice:GetGuiInset() }) do
-			for _, Object in ipairs(Playergui:GetGuiObjectsAtPosition(Point.X, Point.Y)) do
-				local Current: Instance? = Object
-				while Current and Current ~= Playergui do
-					if self.Actions[Current] then
-						return Current :: GuiButton
-					end
-					Current = Current.Parent
+		for _, Object in ipairs(Playergui:GetGuiObjectsAtPosition(Position.X, Position.Y)) do
+			local Current: Instance? = Object
+			while Current and Current ~= Playergui do
+				if self.Actions[Current] then
+					return Current :: GuiButton
 				end
+				Current = Current.Parent
 			end
 		end
 		return nil

@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local Runservice = game:GetService("RunService")
-local Guiservice = game:GetService("GuiService")
 local Tweenservice = game:GetService("TweenService")
 local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
@@ -65,11 +64,6 @@ local function Pointerposition(Input: InputObject): Vector2
 	return Vector2.new(Input.Position.X, Input.Position.Y)
 end
 
-local function Viewportposition(Screenposition: Vector2): Vector2
-	local Inset = Guiservice:GetGuiInset()
-	return Screenposition - Inset
-end
-
 local function Ispointerontarget(Screenposition: Vector2): boolean
 	if not Target then
 		return false
@@ -78,13 +72,8 @@ local function Ispointerontarget(Screenposition: Vector2): boolean
 	local Params = RaycastParams.new()
 	Params.FilterType = Enum.RaycastFilterType.Include
 	Params.FilterDescendantsInstances = { Target }
-	for _, Point in ipairs({ Viewportposition(Screenposition), Screenposition }) do
-		local Ray = Camera:ViewportPointToRay(Point.X, Point.Y)
-		if Workspace:Raycast(Ray.Origin, Ray.Direction * 500, Params) then
-			return true
-		end
-	end
-	return false
+	local Ray = Camera:ScreenPointToRay(Screenposition.X, Screenposition.Y)
+	return Workspace:Raycast(Ray.Origin, Ray.Direction * 500, Params) ~= nil
 end
 
 local function Begindrag(Input: InputObject, Mode: string)
@@ -415,7 +404,7 @@ function Controller:Start()
 		end
 
 		if Input.UserInputType == Enum.UserInputType.MouseWheel then
-			local Mouse = Viewportposition(Userinputservice:GetMouseLocation())
+			local Mouse = Userinputservice:GetMouseLocation()
 			local Focus = Objectpivot(Target).Position + Focusoffset
 			local Ray = Camera:ViewportPointToRay(Mouse.X, Mouse.Y)
 			local Denominator = Ray.Direction:Dot(Camera.CFrame.LookVector)

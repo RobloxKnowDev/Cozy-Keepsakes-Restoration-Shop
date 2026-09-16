@@ -242,6 +242,9 @@ function Inventoryservice:UnlockIndexEntry(Player: Player, ObjectKey: string, Mu
 end
 
 function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
+	if Core:GetService("TutorialService"):IsActive(Player) then
+		return nil
+	end
 	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
 	local Items = self:EnsurePlayer(Player)
 	local Index = nil
