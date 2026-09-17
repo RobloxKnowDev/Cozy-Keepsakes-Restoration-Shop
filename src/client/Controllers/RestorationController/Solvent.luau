@@ -5,6 +5,7 @@ local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Solvent = {
 	Name = "Solvent",
 	AssetName = "Solvent",
+	Hint = "Put",
 }
 
 local Sizescale = 2.5

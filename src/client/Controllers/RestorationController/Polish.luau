@@ -5,6 +5,7 @@ local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Polish = {
 	Name = "Polish",
 	AssetName = "Polish",
+	Hint = "Put",
 }
 
 local Sizescale = 2.5

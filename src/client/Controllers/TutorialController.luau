@@ -31,6 +31,7 @@ local Textgap = 18
 local Behindtext = "It's on the other side!"
 local Handimage = "rbxassetid://116068912861302"
 local Mouseimage = "rbxassetid://123373213717142"
+local Gamepadimage = "rbxassetid://85783129781585"
 local Handsize = 96
 local Toolsize = 84
 local Handswipe = 72
@@ -131,6 +132,7 @@ function Tutorialcontroller:Buildgui()
 	self.hand.Name = "Hand"
 	self.hand.AnchorPoint = Vector2.new(0.5, 0.5)
 	self.hand.BackgroundTransparency = 1
+	self.hand.ScaleType = Enum.ScaleType.Fit
 	self.hand.Image = Handimage
 	self.hand.Size = UDim2.fromOffset(Handsize, Handsize)
 	self.hand.Visible = false
@@ -416,7 +418,8 @@ function Tutorialcontroller:Sethand(Gesture: string?)
 		return
 	end
 	local Istouch = Userinputservice.TouchEnabled and not Userinputservice.MouseEnabled
-	self.hand.Image = if Istouch then Handimage else Mouseimage
+	local Isgamepad = Core:GetController("GamepadController"):IsActive()
+	self.hand.Image = if Isgamepad then Gamepadimage elseif Istouch then Handimage else Mouseimage
 	self.hand.Size = UDim2.fromOffset(Handsize, Handsize)
 end
 
@@ -689,7 +692,7 @@ function Tutorialcontroller:Buildsteps()
 			end,
 		},
 		{
-			Text = "Hold and rub off the dirt!",
+			Text = "Rub off the dirt!",
 			Gesture = "ToothBrush",
 			Target = function()
 				return Categoryspot("Dirt")
@@ -944,6 +947,8 @@ function Tutorialcontroller:Start()
 		if
 			Input.UserInputType == Enum.UserInputType.MouseButton1
 			or Input.UserInputType == Enum.UserInputType.Touch
+			or Input.KeyCode == Enum.KeyCode.ButtonA
+			or Input.KeyCode == Enum.KeyCode.ButtonR2
 		then
 			self.tapped = true
 		end

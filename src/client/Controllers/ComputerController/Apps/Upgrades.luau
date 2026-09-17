@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local Customerconfig = require(ReplicatedStorage.Shared.Config.Customer)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
@@ -15,6 +16,10 @@ local function FormatValue(UpgradeName: string, Value: number?): string
 	if UpgradeName == "PurchaseDiscount" then return string.format("%d%%", Value) end
 	if UpgradeName == "PriceEstimation" then return string.format("%d estimated / day", Value) end
 	if UpgradeName == "DailyCustomers" then return string.format("%d / day", Value) end
+	if UpgradeName == "CooldownReduction" then
+		local Seconds = Customerconfig.GetInterval(Value)
+		return string.format("%d:%02d", math.floor(Seconds / 60), Seconds % 60)
+	end
 	if UpgradeName == "DisplaySpace" then return string.format("%d slots", Value) end
 	return tostring(Value)
 end
@@ -90,7 +95,7 @@ local function BindCard(Controller, UpgradeName: string)
 	Shared.AnimateButton(CashButton, function() return not CashButton.Active end)
 	Shared.AnimateButton(RobuxButton, function() return not RobuxButton.Active end)
 	CashButton:SetAttribute("SilentClick", true)
-	CashButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(CashButton, function()
 		if not CashButton.Active then return end
 		local Feedback = Core:GetController("FeedbackController")
 		local State = Controller.upgradeState and Controller.upgradeState[UpgradeName]
@@ -108,7 +113,7 @@ local function BindCard(Controller, UpgradeName: string)
 		local Message = if Reason == "NotEnoughCash" then "Not enough money" elseif Reason == "MaxLevel" then "Maximum level reached" else "Upgrade purchase failed"
 		Core:GetController("MessageController"):Show(Message, ErrorColor)
 	end)
-	RobuxButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(RobuxButton, function()
 		if RobuxButton.Active and CardData.ProductId > 0 then
 			MarketplaceService:PromptProductPurchase(Players.LocalPlayer, CardData.ProductId)
 		end
@@ -120,7 +125,9 @@ function Upgrades.Init(Controller)
 	Controller.upgradesGridLayout = Controller.upgradesScrollingFrame:WaitForChild("UIGridLayout")
 	Controller.upgradeCards = {}
 	Controller.upgradeState = {}
-	for _, Name in ipairs({ "PriceEstimation", "DailyCustomers", "PurchaseDiscount", "DisplaySpace" }) do BindCard(Controller, Name) end
+	for _, Name in ipairs({ "PriceEstimation", "DailyCustomers", "PurchaseDiscount", "DisplaySpace", "CooldownReduction" }) do
+		BindCard(Controller, Name)
+	end
 	Upgrades.Apply(Controller, RemoteManager:InvokeServer("UpgradeService", "GetUpgrades"))
 end
 

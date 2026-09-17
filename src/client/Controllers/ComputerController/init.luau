@@ -1,4 +1,3 @@
-local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -50,8 +49,11 @@ local TouchRayOffsets = {
 }
 
 local function IsGamepad(InputType: Enum.UserInputType): boolean
-	return InputType == Enum.UserInputType.Gamepad1
+	return Core:GetController("GamepadController"):IsGamepad(InputType)
 end
+
+local PageOrder = { "Home", "Index", "Inventory", "Upgrades", "Shop" }
+
 
 function ComputerController:IsOpen(): boolean
 	return self.isOpen == true
@@ -102,57 +104,8 @@ function ComputerController:UpdateHoveredComputer()
 		self:SetHoveredComputer(nil)
 		return
 	end
-	if IsGamepad(LastInputType) then
-		self:RefreshGamepadTarget()
-		return
-	end
 	self:SetHoveredComputer(if self:IsComputerAtPosition(nil) then self.computer else nil)
 end
-
-function ComputerController:RefreshGamepadTarget()
-	local CustomerController = Core:GetController("CustomerController")
-	local Customer = CustomerController:GetInteractionCustomer()
-	local CustomerAvailable = Customer ~= nil and CustomerController:CanInteract()
-	local ComputerAvailable = self:CanOpen()
-	if self.gamepadTarget == "Customer" and not CustomerAvailable then self.gamepadTarget = nil end
-	if self.gamepadTarget == "Computer" and not ComputerAvailable then self.gamepadTarget = nil end
-	if not self.gamepadTarget then
-		self.gamepadTarget = if CustomerAvailable then "Customer" elseif ComputerAvailable then "Computer" else nil
-	end
-	CustomerController:SetHoveredCustomer(if self.gamepadTarget == "Customer" then Customer else nil)
-	self:SetHoveredComputer(if self.gamepadTarget == "Computer" then self.computer else nil)
-end
-
-function ComputerController:CycleGamepadTarget()
-	local CustomerController = Core:GetController("CustomerController")
-	local CustomerAvailable = CustomerController:GetInteractionCustomer() ~= nil and CustomerController:CanInteract()
-	local ComputerAvailable = self:CanOpen()
-	if CustomerAvailable and ComputerAvailable then
-		self.gamepadTarget = if self.gamepadTarget == "Customer" then "Computer" else "Customer"
-	elseif CustomerAvailable then
-		self.gamepadTarget = "Customer"
-	elseif ComputerAvailable then
-		self.gamepadTarget = "Computer"
-	else
-		self.gamepadTarget = nil
-	end
-	self:RefreshGamepadTarget()
-end
-
-function ComputerController:ActivateGamepadTarget()
-	self:RefreshGamepadTarget()
-	if self.gamepadTarget == "Customer" then
-		Core:GetController("CustomerController"):ShowPendingOffer()
-	elseif self.gamepadTarget == "Computer" then
-		self:Open()
-	end
-end
-
-function ComputerController:FocusGamepadCustomer()
-	self.gamepadTarget = "Customer"
-	self:RefreshGamepadTarget()
-end
-
 function ComputerController:FocusCamera()
 	Core:GetController("InspectionCameraController"):ShowComputerCamera()
 end
@@ -167,6 +120,17 @@ function ComputerController:SetHudVisible(IsVisible: boolean)
 end
 
 function ComputerController:SetSellLocked(Locked: boolean)
+	local Copies = 0
+	for _, Child in ipairs(script.Apps:GetChildren()) do
+		if Child.Name == "Inventory" then Copies += 1 end
+	end
+	assert(
+		Inventory.SetSellLocked,
+		string.format(
+			"ComputerController: outdated Inventory module (%d copies in ComputerController.Apps, reconnect Rojo and delete the duplicates in Studio)",
+			Copies
+		)
+	)
 	Inventory.SetSellLocked(self, Locked)
 end
 
@@ -279,6 +243,12 @@ function ComputerController:SetPage(PageName: string)
 	self:ApplyNavButtonStyle(self.shopButton, PageName == "Shop")
 end
 
+function ComputerController:CyclePage(Direction: number)
+	local Index = table.find(PageOrder, self.activePage) or 1
+	self:SetPage(PageOrder[(Index - 1 + Direction) % #PageOrder + 1])
+	Core:GetController("FeedbackController"):UiClick()
+end
+
 function ComputerController:Open()
 	if not self:CanOpen() then
 		return
@@ -295,9 +265,9 @@ function ComputerController:Open()
 	self.computerModel.CanQuery = true
 	self.surfaceGui.Enabled = true
 	self.surfaceGui.Active = true
+	self.inputBlocker.Visible = false
 	self.frame.Visible = true
 	self:SetPage(self.activePage or "Home")
-	if IsGamepad(UserInputService:GetLastInputType()) then GuiService.SelectedObject = self.homeButton end
 	self:FocusCamera()
 end
 
@@ -309,8 +279,7 @@ function ComputerController:Close()
 	self.computerModel.CanQuery = false
 	self.surfaceGui.Active = false
 	self.frame.Visible = true
-	local SelectedObject = GuiService.SelectedObject
-	if SelectedObject and SelectedObject:IsDescendantOf(self.frame) then GuiService.SelectedObject = nil end
+	self.inputBlocker.Visible = true
 	self:SetHudVisible(true)
 	Core:GetController("InspectionCameraController"):ShowIntroCamera()
 	Core:GetController("ExpositionController"):SetBlocker("Computer", nil)
@@ -356,8 +325,20 @@ function ComputerController:Init()
 	self.screenModel = self.computer:WaitForChild("Ecran"):WaitForChild("Model") :: BasePart
 	self.screenModel.CanQuery = true
 	self.surfaceGui = self.computerModel:WaitForChild("SurfaceGui") :: SurfaceGui
+	self.surfaceGui.Adornee = self.computerModel
+	self.surfaceGui.Parent = PlayerGui
 	Core:GetController("FeedbackController"):BindClicksIn(self.surfaceGui)
 	self.surfaceGui.Active = false
+	self.inputBlocker = Instance.new("TextButton")
+	self.inputBlocker.Name = "InputBlocker"
+	self.inputBlocker.Text = ""
+	self.inputBlocker.BackgroundTransparency = 1
+	self.inputBlocker.AutoButtonColor = false
+	self.inputBlocker.Size = UDim2.fromScale(1, 1)
+	self.inputBlocker.ZIndex = 1000
+	self.inputBlocker.Active = true
+	self.inputBlocker:SetAttribute("SilentClick", true)
+	self.inputBlocker.Parent = self.surfaceGui
 	self.frame = self.surfaceGui:WaitForChild("Frame") :: Frame
 	self.header = self.frame:WaitForChild("Header") :: Frame
 	self.pageFrame = self.frame:WaitForChild("PageFrame")
@@ -384,7 +365,7 @@ function ComputerController:Init()
 	self.hudTimeText = self.hudDayFrame:WaitForChild("TimeText")
 	self.activePage = "Home"
 	self.isOpen = false
-	self.gamepadTarget = nil
+
 	self.navButtonDefaults = {}
 	self.computerCashAnimationId = 0
 	self.hoverHighlight = Instance.new("Highlight")
@@ -443,6 +424,15 @@ function ComputerController:Init()
 end
 
 function ComputerController:Start()
+	Core:GetController("GamepadController"):RegisterMenu({
+		Priority = 10,
+		IsOpen = function()
+			return self:IsOpen()
+		end,
+		Close = function()
+			self:Close()
+		end,
+	})
 	for _, Application in ipairs(Applications) do
 		Application.Start(self)
 	end
@@ -462,7 +452,10 @@ function ComputerController:Start()
 		self:Open()
 		return true
 	end
+	local LastWorldInteraction = 0
 	local function TryWorldInteraction(ScreenPosition: Vector2, ExpandTouch: boolean?)
+		if os.clock() - LastWorldInteraction < 0.15 then return end
+		LastWorldInteraction = os.clock()
 		local CustomerController = Core:GetController("CustomerController")
 		if ExpandTouch then
 			if CustomerController:TryInteractAtPosition(ScreenPosition, true) then return end
@@ -472,38 +465,45 @@ function ComputerController:Start()
 		if CustomerController:TryInteractAtPosition(ScreenPosition, false) then return end
 		TryOpen(ScreenPosition, false)
 	end
+	local Gamepad = Core:GetController("GamepadController")
+	Gamepad:OnActivated(self.inputBlocker, function()
+		TryWorldInteraction(UserInputService:GetMouseLocation())
+	end)
+	Gamepad:BindWorldPress(function()
+		TryWorldInteraction(UserInputService:GetMouseLocation())
+	end)
 	UserInputService.InputBegan:Connect(function(Input, Processed)
 		if Processed then return end
 		if Input.UserInputType == Enum.UserInputType.MouseButton1 then
 			TryWorldInteraction(UserInputService:GetMouseLocation())
-		elseif IsGamepad(Input.UserInputType) and Input.KeyCode == Enum.KeyCode.ButtonA then
-			self:ActivateGamepadTarget()
-		elseif IsGamepad(Input.UserInputType)
-			and (Input.KeyCode == Enum.KeyCode.DPadLeft or Input.KeyCode == Enum.KeyCode.DPadRight)
+		elseif
+			IsGamepad(Input.UserInputType)
+			and self:IsOpen()
+			and (Input.KeyCode == Enum.KeyCode.ButtonL1 or Input.KeyCode == Enum.KeyCode.ButtonR1)
 		then
-			self:CycleGamepadTarget()
+			self:CyclePage(if Input.KeyCode == Enum.KeyCode.ButtonL1 then -1 else 1)
 		end
 	end)
 	UserInputService.TouchTapInWorld:Connect(function(Position, Processed)
 		if Processed then return end
 		TryWorldInteraction(Position, true)
 	end)
-	self.exitButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.exitButton, function()
 		self:Close()
 	end)
-	self.homeButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.homeButton, function()
 		self:SetPage("Home")
 	end)
-	self.indexButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.indexButton, function()
 		self:SetPage("Index")
 	end)
-	self.inventoryNavButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.inventoryNavButton, function()
 		self:SetPage("Inventory")
 	end)
-	self.upgradesButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.upgradesButton, function()
 		self:SetPage("Upgrades")
 	end)
-	self.shopButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.shopButton, function()
 		self:SetPage("Shop")
 	end)
 end

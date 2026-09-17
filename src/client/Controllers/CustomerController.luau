@@ -43,9 +43,6 @@ local TouchRayOffsets = {
 	Vector2.new(0, 52),
 }
 
-local function Isgamepad(Inputtype: Enum.UserInputType): boolean
-	return Inputtype == Enum.UserInputType.Gamepad1
-end
 
 local function GetOrCreateCloseButton(CustomerFrame: Frame): GuiButton
 	local Existing = CustomerFrame:FindFirstChild("CloseButton")
@@ -156,6 +153,7 @@ function Customercontroller:HideInstant()
 	self.estimatedOfferId = nil
 	self.estimatedMaxPrice = nil
 	self.isBusy = false
+	self.offerOpen = false
 	self.gui.Enabled = false
 	self.frame.Visible = false
 	self.frame.Position = self.hiddenPosition
@@ -249,7 +247,6 @@ function Customercontroller:UpdateHoveredCustomer()
 		self:SetHoveredCustomer(nil)
 		return
 	end
-	if Isgamepad(Lastinputtype) then return end
 	self:SetHoveredCustomer(self:GetCustomerAtPosition(nil))
 end
 
@@ -273,6 +270,7 @@ function Customercontroller:ShowOffer(Offer)
 	self.activeOfferId = Offer.Id
 	self.activeOfferPrice = tonumber(Offer.Price) or 0
 	self.activeOffer = Offer
+	self.offerOpen = true
 	self.gui.Enabled = true
 	self.frame.Visible = true
 	self.frame.Position = self.hiddenPosition
@@ -305,7 +303,6 @@ function Customercontroller:ShowOffer(Offer)
 	Tweenservice:Create(self.frameScale, Frametweeninfo, {
 		Scale = 1,
 	}):Play()
-	if Isgamepad(Userinputservice:GetLastInputType()) then Guiservice.SelectedObject = self.acceptButton end
 end
 
 function Customercontroller:ApplyUpgradeState(State)
@@ -345,6 +342,7 @@ function Customercontroller:HideAnimated(Fast: boolean?)
 	self.hideId += 1
 	local Hideid = self.hideId
 	self.activeOfferId = nil
+	self.offerOpen = false
 	local Tweeninfo = if Fast then Fastframetweeninfo else Frametweeninfo
 	local Selectedobject = Guiservice.SelectedObject
 	if Selectedobject and Selectedobject:IsDescendantOf(self.frame) then Guiservice.SelectedObject = nil end
@@ -486,17 +484,17 @@ function Customercontroller:Init()
 	AnimateButton(self.estimateButton)
 	AnimateButton(self.closeButton)
 
-	self.acceptButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.acceptButton, function()
 		self:Respond("Accept")
 	end)
 
-	self.declineButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.declineButton, function()
 		self:Respond("Decline")
 	end)
-	self.estimateButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.estimateButton, function()
 		self:RequestPriceEstimate()
 	end)
-	self.closeButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.closeButton, function()
 		self:CloseOfferUi()
 	end)
 
@@ -505,6 +503,15 @@ function Customercontroller:Init()
 end
 
 function Customercontroller:Start()
+	Core:GetController("GamepadController"):RegisterMenu({
+		Priority = 20,
+		IsOpen = function()
+			return self.offerOpen == true
+		end,
+		Close = function()
+			self:CloseOfferUi()
+		end,
+	})
 	Remotemanager:OnClientEvent("UpgradeService", "UpgradesUpdated", function(State)
 		self:ApplyUpgradeState(State)
 	end)
@@ -514,16 +521,14 @@ function Customercontroller:Start()
 		Offertoken += 1
 		local Token = Offertoken
 		if Offer then
-			local Isnewoffer = not self.pendingOffer or self.pendingOffer.Id ~= Offer.Id
+
 			local Customer = Workspace:WaitForChild(Offer.CustomerName) :: Model
 			if Token ~= Offertoken then
 				return
 			end
 			Offer.Customer = Customer
 			self.pendingOffer = Offer
-			if Isnewoffer and Isgamepad(Userinputservice:GetLastInputType()) then
-				Core:GetController("ComputerController"):FocusGamepadCustomer()
-			end
+
 			if self:IsVisible() then
 				self:ShowOffer(Offer)
 			end

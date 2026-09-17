@@ -27,6 +27,10 @@ function Shared.EnsureScale(Target: Instance): UIScale
 	return Scale
 end
 
+function Shared.ApplyActiveScale(Button: GuiButton, IsActive: boolean)
+	TweenService:Create(Shared.EnsureScale(Button), ButtonTween, { Scale = if IsActive then ActiveButtonScale else 1 }):Play()
+end
+
 function Shared.AnimateButton(Button: GuiButton, IsActive: () -> boolean)
 	local Scale = Shared.EnsureScale(Button)
 	local IsHovering = false
@@ -40,6 +44,7 @@ function Shared.AnimateButton(Button: GuiButton, IsActive: () -> boolean)
 		IsHovering = false
 		TweenService:Create(Scale, ButtonTween, { Scale = 1 }):Play()
 	end)
+
 	Button.MouseButton1Down:Connect(function()
 		if IsActive() then return end
 		TweenService:Create(Scale, ButtonTween, { Scale = 0.96 }):Play()

@@ -36,7 +36,7 @@ local function BindGamePass(Button: GuiButton, Id: number, PassName: string)
 	SetEnabled(Button, true)
 	Shared.AnimateButton(Button, function() return Button:GetAttribute("CanPurchase") ~= true end)
 	LoadPrice(Button, Id, Enum.InfoType.GamePass)
-	Button.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(Button, function()
 		if RunService:IsStudio() then
 			RemoteManager:InvokeServer("MonetizationService", "TestGamePass", PassName)
 			return
@@ -50,7 +50,7 @@ local function BindProduct(Button: GuiButton, Id: number)
 	SetEnabled(Button, true)
 	Shared.AnimateButton(Button, function() return false end)
 	LoadPrice(Button, Id, Enum.InfoType.Product)
-	Button.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(Button, function()
 		if not Button:GetAttribute("CanPurchase") then return end
 		MarketplaceService:PromptProductPurchase(Player, Id)
 	end)
@@ -171,7 +171,7 @@ function Shop.Init(Controller)
 	Shared.AnimateButton(Controller.serverLuckButton, function()
 		return Controller.serverLuckButton:GetAttribute("CanPurchase") ~= true
 	end)
-	Controller.serverLuckButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(Controller.serverLuckButton, function()
 		if not Controller.serverLuckButton:GetAttribute("CanPurchase") then return end
 		MarketplaceService:PromptProductPurchase(Player, Controller.serverLuckProductId)
 	end)

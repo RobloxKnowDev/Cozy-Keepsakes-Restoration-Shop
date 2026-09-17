@@ -38,6 +38,7 @@ local Completioncontroller = {
 	pitch = 0,
 	celebrationId = 0,
 	closing = false,
+	stick = Vector2.zero,
 }
 
 local Completionkinds = { "Dirt", "Sticker", "Ink", "Scratch" }
@@ -197,6 +198,7 @@ function Completioncontroller:Hide()
 	Feedback:SetMusicMuted(false)
 	self.frame.Visible = false
 	self.dragging = false
+	self.stick = Vector2.zero
 	self.closing = false
 	self.onContinue = nil
 	self.frame.Position = self.frameShownPosition
@@ -582,6 +584,10 @@ function Completioncontroller:InputBegan(Input: InputObject): boolean
 end
 
 function Completioncontroller:InputChanged(Input: InputObject)
+	if Input.KeyCode == Enum.KeyCode.Thumbstick2 then
+		self.stick = Vector2.new(Input.Position.X, Input.Position.Y)
+		return
+	end
 	if not self.dragging then
 		return
 	end
@@ -620,7 +626,12 @@ function Completioncontroller:Update(Deltatime: number)
 	if not self:IsVisible() then
 		return
 	end
-	if not self.dragging then
+	local Stick = self.stick
+	if not self.closing and Stick.Magnitude > 0.18 then
+		local Turn = math.rad(200) * Deltatime
+		self.rotation = math.clamp(self.rotation - Stick.X * Turn, math.rad(-180), math.rad(180))
+		self.pitch = math.clamp(self.pitch + Stick.Y * Turn, math.rad(-180), math.rad(180))
+	elseif not self.dragging then
 		local Decay = math.exp(-9 * Deltatime)
 		self.rotation *= Decay
 		self.pitch *= Decay
@@ -664,7 +675,17 @@ function Completioncontroller:Tintpreview()
 end
 
 function Completioncontroller:Start()
-	self.nextButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):RegisterMenu({
+		Priority = 40,
+		IsOpen = function()
+			return self.frame.Visible and self.nextButton.Visible and not self.closing
+		end,
+		Close = function()
+			local Oncontinue = self.onContinue
+			if Oncontinue then self:PlayExitAnimation(Oncontinue) end
+		end,
+	})
+	Core:GetController("GamepadController"):OnActivated(self.nextButton, function()
 		local Oncontinue = self.onContinue
 		if Oncontinue and not self.closing then
 			self:PlayExitAnimation(Oncontinue)

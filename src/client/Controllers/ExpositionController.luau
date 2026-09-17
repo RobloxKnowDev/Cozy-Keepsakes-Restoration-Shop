@@ -92,7 +92,6 @@ function Controller:ShowSlotButtons()
 	end
 	self:UpdateButtonAvailability()
 end
-
 function Controller:RefreshSlotButtons()
 	if self.isOpen and self.slotsRevealReached and self.blockerMode ~= "Hidden" then
 		self:ShowSlotButtons()
@@ -320,12 +319,13 @@ function Controller:ApplySelectionItems(Items)
 		table.insert(self.selectCards, Carddata)
 		Shared.AnimateButton(Button, function() return not Button.Active end)
 		Shared.AnimateButton(Selectbutton, function() return not Selectbutton.Active end)
-		Button.Activated:Connect(function() self:ShowSelectionDetails(Item, true) end)
-		Selectbutton.Activated:Connect(function() self:PlaceDisplayItem(Item.Id) end)
+		Core:GetController("GamepadController"):OnActivated(Button, function() self:ShowSelectionDetails(Item, true) end)
+		Core:GetController("GamepadController"):OnActivated(Selectbutton, function() self:PlaceDisplayItem(Item.Id) end)
 		if self.selectedDisplayItemId == Item.Id then Selecteditem = Item end
 	end
 	self:ShowSelectionDetails(Selecteditem, false)
 	self:SetSelectionControlsEnabled(self.selectFrameOpen and not self.selectPlacementPending)
+
 	task.defer(function()
 		self.selectScrollingFrame.CanvasSize = UDim2.fromOffset(0, self.selectGridLayout.AbsoluteContentSize.Y)
 	end)
@@ -346,6 +346,10 @@ function Controller:ApplyDisplayItems(State, Keepselectionopen: boolean?)
 		Slot.Occupied = Displayitem ~= nil
 		Slot.Owned = Displayitem ~= nil and Displayitem.OwnerUserId == Players.LocalPlayer.UserId
 		Slot.Text.Text = if Slot.Occupied then "x" else "+"
+		Slot.Reputation.Visible = Slot.Occupied
+		if Displayitem then
+			Slot.Reputation.Text = "+" .. FormatReputation(math.max(tonumber(Displayitem.Reputation) or 0, 0))
+		end
 		local Canremove = Slot.Occupied and Slot.Owned
 		Slot.Icon.Visible = not Slot.Unlocked and not Canremove
 		Slot.Text.Visible = Slot.Unlocked or Canremove
@@ -375,6 +379,7 @@ function Controller:OpenSelectionFrame(SlotIndex: number)
 	self.selectFrameAnimationId += 1
 	if self.selectFrameTween then self.selectFrameTween:Cancel() end
 	self.selectedSlotIndex = SlotIndex
+
 	self.selectedDisplayItemId = nil
 	self.selectPlacementPending = false
 	self.selectFrameOpen = true
@@ -401,6 +406,7 @@ function Controller:CloseSelectionFrame(Instant: boolean?, Fast: boolean?)
 	self:SetSelectionControlsEnabled(false)
 	self:ShowSelectionDetails(nil, false)
 	self:UpdateButtonAvailability()
+
 	if Instant then
 		self.selectFrame.Visible = false
 		self.selectFrameScale.Scale = 1
@@ -517,6 +523,7 @@ function Controller:BindButtonAnimation(Button: GuiButton)
 		if self.isTransitioning or not Button.Active then return end
 		self:TweenButton(Button, Buttontweeninfo, 1)
 	end)
+
 	Button.MouseButton1Down:Connect(function()
 		self:CloseTopbarFrames()
 		if not Button.Active then return end
@@ -589,6 +596,7 @@ function Controller:Close()
 	self.isOpen = false
 	self:HideSlotButtons()
 	self:SwapButtons(self.reputationButtonL, self.reputationButtonR)
+
 end
 
 function Controller:PrepareForRestoration()
@@ -706,6 +714,7 @@ function Controller:Init()
 			Button = Button,
 			Icon = Button:WaitForChild("Icon") :: GuiObject,
 			Text = Button:WaitForChild("Text") :: TextLabel,
+			Reputation = Button:WaitForChild("ReputationText") :: TextLabel,
 			Unlocked = false,
 			Occupied = false,
 			Owned = false,
@@ -713,6 +722,7 @@ function Controller:Init()
 		Slot.Icon.Visible = true
 		Slot.Text.Text = "+"
 		Slot.Text.Visible = false
+		Slot.Reputation.Visible = false
 		Button.Visible = false
 		Button.Active = false
 		Button.Interactable = false
@@ -742,6 +752,28 @@ function Controller:Init()
 end
 
 function Controller:Start()
+	local Gamepad = Core:GetController("GamepadController")
+	Gamepad:RegisterMenu({
+		Priority = 30,
+		IsOpen = function()
+			return self.selectFrameOpen == true
+		end,
+		Close = function()
+			self:CloseSelectionFrame(false)
+		end,
+	})
+	Gamepad:RegisterMenu({
+		Priority = 15,
+		IsOpen = function()
+			return self:IsOpen()
+		end,
+		Close = function()
+			self:Close()
+		end,
+	})
+	Gamepad:BindShortcut(Enum.KeyCode.ButtonX, function()
+		self:Open()
+	end)
 	self.cameraController = Core:GetController("InspectionCameraController")
 	self.computerController = Core:GetController("ComputerController")
 	self.customerController = Core:GetController("CustomerController")
@@ -765,14 +797,14 @@ function Controller:Start()
 	for _, Button in ipairs(self.animatedButtons) do self:BindButtonAnimation(Button) end
 	Shared.AnimateButton(self.selectCloseButton, function() return not self.selectCloseButton.Active end)
 	Shared.AnimateButton(self.selectDetailsSelectButton, function() return not self.selectDetailsSelectButton.Active end)
-	self.reputationButtonR.Activated:Connect(function() self:Open() end)
-	self.reputationButtonL.Activated:Connect(function() self:Close() end)
-	self.selectCloseButton.Activated:Connect(function() self:CloseSelectionFrame(false) end)
-	self.selectDetailsSelectButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.reputationButtonR, function() self:Open() end)
+	Core:GetController("GamepadController"):OnActivated(self.reputationButtonL, function() self:Close() end)
+	Core:GetController("GamepadController"):OnActivated(self.selectCloseButton, function() self:CloseSelectionFrame(false) end)
+	Core:GetController("GamepadController"):OnActivated(self.selectDetailsSelectButton, function()
 		if self.selectedDisplayItemId then self:PlaceDisplayItem(self.selectedDisplayItemId) end
 	end)
 	for _, Slot in ipairs(self.slotButtons) do
-		Slot.Button.Activated:Connect(function()
+		Core:GetController("GamepadController"):OnActivated(Slot.Button, function()
 			self:SyncFrameBlockers()
 			if not Slot.Button.Active then return end
 			local Wasopen = self.selectFrameOpen

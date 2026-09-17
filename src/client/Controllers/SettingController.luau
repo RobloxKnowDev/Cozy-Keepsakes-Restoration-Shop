@@ -1,6 +1,8 @@
+local GuiService = game:GetService("GuiService")
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -21,6 +23,8 @@ local CloseTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDir
 local FastCloseTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 local ControlTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local DefaultVolume = 0.5
+local SliderStickSpeed = 0.6
+local SliderStickDeadzone = 0.2
 local HeavyEffects = {
 	BlurEffect = true,
 	BloomEffect = true,
@@ -205,6 +209,12 @@ function SettingController:BindToggle(Setting: Frame, Name: string)
 	FrameBar.Active = true
 	FrameBar.InputBegan:Connect(Ontogglepress)
 	Bar.InputBegan:Connect(Ontogglepress)
+	local Hovered = false
+	FrameBar.MouseEnter:Connect(function() Hovered = true end)
+	FrameBar.MouseLeave:Connect(function() Hovered = false end)
+	UserInputService.InputBegan:Connect(function(Input)
+		if Hovered and self:IsOpen() and Input.KeyCode == Enum.KeyCode.ButtonA then Toggle() end
+	end)
 	self.applysetting[Name] = function(Value)
 		Apply(Value == true, false)
 	end
@@ -246,6 +256,51 @@ function SettingController:BindSlider(Setting: Frame, Name: string)
 			Dragging = false
 		end
 	end)
+	local Hovered = false
+	local Stickx = 0
+	local Stickdirty = false
+	local function Savestick()
+		if not Stickdirty then return end
+		Stickdirty = false
+		RemoteManager:FireServer("SettingsService", "SetSetting", Name, Current)
+	end
+	FrameBar.MouseEnter:Connect(function() Hovered = true end)
+	FrameBar.MouseLeave:Connect(function()
+		Hovered = false
+		Savestick()
+	end)
+	local Heldgamepad = false
+	local function Updatefromcursor()
+		local Cursor = UserInputService:GetMouseLocation() - GuiService:GetGuiInset()
+		Update(Vector3.new(Cursor.X, Cursor.Y, 0))
+	end
+	UserInputService.InputChanged:Connect(function(Input)
+		if Input.KeyCode == Enum.KeyCode.Thumbstick2 then Stickx = Input.Position.X end
+	end)
+	UserInputService.InputBegan:Connect(function(Input)
+		if Hovered and self:IsOpen() and Input.KeyCode == Enum.KeyCode.ButtonA then
+			Heldgamepad = true
+			Updatefromcursor()
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(Input)
+		if Input.KeyCode ~= Enum.KeyCode.ButtonA or not Heldgamepad then return end
+		Heldgamepad = false
+		RemoteManager:FireServer("SettingsService", "SetSetting", Name, Current)
+	end)
+	RunService.RenderStepped:Connect(function(Deltatime)
+		if Heldgamepad then
+			Updatefromcursor()
+			return
+		end
+		if not Hovered or not self:IsOpen() or math.abs(Stickx) < SliderStickDeadzone then
+			Savestick()
+			return
+		end
+		Apply(math.clamp(Current + Stickx * SliderStickSpeed * Deltatime, 0, 1))
+		self:Applyeffect(Name, Current)
+		Stickdirty = true
+	end)
 	self.applysetting[Name] = Apply
 end
 
@@ -281,7 +336,20 @@ function SettingController:Init()
 	self.topbarIcon.selected:Connect(function() self:Open() end)
 	self.topbarIcon.deselected:Connect(function() self:Close() end)
 	Shared.AnimateButton(self.exitButton, function() return false end)
-	self.exitButton.Activated:Connect(function() self.topbarIcon:deselect() end)
+	Core:GetController("GamepadController"):OnActivated(self.exitButton, function() self.topbarIcon:deselect() end)
+	local Gamepad = Core:GetController("GamepadController")
+	Gamepad:RegisterMenu({
+		Priority = 25,
+		IsOpen = function()
+			return self:IsOpen()
+		end,
+		Close = function()
+			self.topbarIcon:deselect()
+		end,
+	})
+	Gamepad:BindShortcut(Enum.KeyCode.ButtonY, function()
+		self.topbarIcon:select()
+	end)
 end
 
 function SettingController:Start()

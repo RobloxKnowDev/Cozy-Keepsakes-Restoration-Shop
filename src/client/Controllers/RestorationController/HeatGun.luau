@@ -5,6 +5,7 @@ local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Heatgun = {
 	Name = "HeatGun",
 	AssetName = "HeatGun",
+	Hint = "Use",
 }
 
 local Sizescale = 2.5

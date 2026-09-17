@@ -146,7 +146,7 @@ function Inventory.ApplyItems(Controller, Items)
 		Shared.AnimateButton(RootButton, function()
 			return false
 		end)
-		RootButton.Activated:Connect(function()
+		Core:GetController("GamepadController"):OnActivated(RootButton, function()
 			Inventory.ShowDetails(Controller, Item)
 		end)
 		local Nametext = RootButton:WaitForChild("NameText")
@@ -232,7 +232,7 @@ function Inventory.Start(Controller)
 		Inventory.ApplyItems(Controller, Items)
 	end)
 
-	Controller.inventorySellButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(Controller.inventorySellButton, function()
 		local ItemId = Controller.selectedInventoryItemId
 		if not ItemId then
 			return
@@ -245,7 +245,7 @@ function Inventory.Start(Controller)
 		Controller.selectedInventoryItemId = nil
 	end)
 
-	Controller.inventoryCleanButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(Controller.inventoryCleanButton, function()
 		local ItemId = Controller.selectedInventoryItemId
 		if not ItemId then
 			return

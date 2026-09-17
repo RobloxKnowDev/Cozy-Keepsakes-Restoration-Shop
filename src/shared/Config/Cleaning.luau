@@ -1,3 +1,3 @@
 return {
-	DirtPasses = 5,
+	DirtPasses = 6,
 }

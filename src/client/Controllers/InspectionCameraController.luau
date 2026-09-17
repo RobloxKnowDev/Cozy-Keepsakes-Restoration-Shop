@@ -29,6 +29,11 @@ local Draginput: InputObject? = nil
 local Lastpointer = Vector2.zero
 local Dragaccumulator = Vector2.zero
 local Lockedrotationaxis: string? = nil
+local Stick = Vector2.zero
+local Stickdragging = false
+local Stickdeadzone = 0.18
+local Stickorbitspeed = 2.4
+local Stickrotatespeed = 2.6
 local Focusoffset = Vector3.zero
 local Panlimit = 3
 local Objectstartposition = Vector3.zero
@@ -169,7 +174,7 @@ function Controller:FlipObject()
 end
 
 function Controller:IsDragging(): boolean
-	return Dragging
+	return Dragging or Stickdragging
 end
 
 function Controller:IsIntroCameraReady(): boolean
@@ -191,6 +196,11 @@ end
 
 function Controller:GetOrbitTravel(): number
 	return Orbittravel
+end
+
+function Controller:NudgeZoom(Direction: number)
+	if not Target or Completionview or Cameratransitionactive then return end
+	Targetdistance = math.clamp(Targetdistance * (1 - Direction * 0.18), Mindistance, Maxdistance)
 end
 
 function Controller:SetTransformMode(Mode: string)
@@ -347,6 +357,26 @@ function Controller:End()
 	end
 end
 
+local function Applystick(Deltatime: number)
+	if Stick.Magnitude < Stickdeadzone or Completionview or Cameratransitionactive then
+		Stickdragging = false
+		return
+	end
+	Stickdragging = true
+	local Direction = Stick.Unit * ((Stick.Magnitude - Stickdeadzone) / (1 - Stickdeadzone))
+	if Enabled and Objectselected and Transformmode == "Rotate" then
+		Objectrotationgoal = nil
+		local Angle = Stickrotatespeed * Deltatime
+		Pivotobject(Target, Objectpivot(Target) * CFrame.Angles(Direction.Y * Angle, -Direction.X * Angle, 0))
+		return
+	end
+	local Yawdelta = Direction.X * Stickorbitspeed * Deltatime
+	local Pitchdelta = Direction.Y * Stickorbitspeed * Deltatime
+	Yaw -= Yawdelta
+	Pitch = math.clamp(Pitch + Pitchdelta, math.rad(-82), math.rad(82))
+	Orbittravel += math.abs(Yawdelta) + math.abs(Pitchdelta)
+end
+
 function Controller:Start()
 	Userinputservice.InputBegan:Connect(function(Input, Processed)
 		if Processed or not Target or Completionview or Cameratransitionactive then
@@ -399,6 +429,10 @@ function Controller:Start()
 	end)
 
 	Userinputservice.InputChanged:Connect(function(Input)
+		if Input.KeyCode == Enum.KeyCode.Thumbstick2 then
+			Stick = Vector2.new(Input.Position.X, Input.Position.Y)
+			return
+		end
 		if not Target or Completionview or Cameratransitionactive then
 			return
 		end
@@ -474,6 +508,7 @@ function Controller:Start()
 		if not Target or not Target.Parent then
 			return
 		end
+		Applystick(Deltatime)
 
 		local Alpha = 1 - math.exp(-18 * Deltatime)
 		Distance += (Targetdistance - Distance) * Alpha

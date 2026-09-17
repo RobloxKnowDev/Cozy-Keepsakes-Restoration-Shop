@@ -5,6 +5,7 @@ local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Tweezers = {
 	Name = "Tweezers",
 	AssetName = "Tweezers",
+	Hint = "Pull",
 	UsesPullMotion = true,
 	DisplayRotation = CFrame.Angles(math.rad(180), 0, math.rad(-12)),
 }

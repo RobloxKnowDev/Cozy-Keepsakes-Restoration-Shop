@@ -10,6 +10,15 @@ return {
 		PriceGrowth = 1.7,
 	},
 
+	CooldownReduction = {
+		DisplayName = "Cooldown Reduction",
+		DefaultLevel = 0,
+		MaxLevel = 10,
+		DeveloperProductId = Monetization.UpgradeDeveloperProducts.CooldownReduction,
+		CashPriceLevel1 = 250,
+		PriceGrowth = 1.5,
+	},
+
 	DailyCustomers = {
 		DisplayName = "Daily Customers",
 		DefaultLevel = 5,

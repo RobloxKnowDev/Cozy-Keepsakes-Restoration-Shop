@@ -17,7 +17,7 @@ return {
 		Id =  1949649693, 
 		PurchaseType = "GamePass",
 		Cash = 3_000,
-		ObjectKey = "OldSuitcase",
+		ObjectKey = "AlarmClock",
 		ReputationMultiplier = 2,
 		ReputationDurationSeconds = 30 * 60,
 	},
@@ -32,6 +32,7 @@ return {
 	},
 
 	UpgradeDeveloperProducts = {
+		CooldownReduction = 3713290805,
 		PriceEstimation = 3708293655,
 		DailyCustomers = 3708293711,
 		PurchaseDiscount = 3708293785,

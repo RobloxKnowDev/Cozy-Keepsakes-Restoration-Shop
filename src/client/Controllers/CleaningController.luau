@@ -130,8 +130,19 @@ local Overlayradiusratio = 1 / 16
 local Cottonscale = 4 / 3
 local Brushscale = 1.5
 local Dirtfadestep = math.ceil(255 / Cleaningconfig.DirtPasses)
+local Stainsamplestep = 2
+local Stainspotratio = 0.2
 local Tickmarks: { [ImageLabel]: buffer } = {}
 
+export type StainCluster = {
+	Surface: SurfaceGui,
+	Center: Vector2,
+	Spread: number,
+	Radius: number,
+	Scale: Vector2,
+	Amount: number,
+	Spot: number,
+}
 local function Roundcorners(Editable: EditableImage, Shape)
 	if not Roundedtexture.IsCut(Shape) then
 		return
@@ -358,6 +369,90 @@ function Cleaningcontroller:GetDirtImage(
 	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return nil end
 	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " must use the face " .. Facename)
 	return Getdirtimage(Surface, Getfacepoint(Part, Worldposition, Facename))
+end
+
+local function Scanstain(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: Vector2, Radiusscale: number): StainCluster?
+	local Editable = Overlayimages[Texture]
+	if not Editable then return nil end
+	local Canvaspoint = Surface.AbsolutePosition
+		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
+	local Localpoint = (Canvaspoint - Texture.AbsolutePosition) / Texture.AbsoluteSize
+	if Localpoint.X < 0 or Localpoint.Y < 0 or Localpoint.X > 1 or Localpoint.Y > 1 then return nil end
+	local Size = Editable.Size
+	local Width, Height = Size.X, Size.Y
+	local Centerx = math.round(Localpoint.X * Width)
+	local Centery = math.round(Localpoint.Y * Height)
+	local Radius = math.max(math.round(math.min(Width, Height) * Overlayradiusratio * Radiusscale), 2)
+	local Minx = math.max(Centerx - Radius, 0)
+	local Miny = math.max(Centery - Radius, 0)
+	local Maxx = math.min(Centerx + Radius, Width - 1)
+	local Maxy = math.min(Centery + Radius, Height - 1)
+	if Minx > Maxx or Miny > Maxy then return nil end
+	local Regionwidth = Maxx - Minx + 1
+	local Regionheight = Maxy - Miny + 1
+	local Pixels = Editable:ReadPixelsBuffer(Vector2.new(Minx, Miny), Vector2.new(Regionwidth, Regionheight))
+	local Radiussquared = Radius * Radius
+	local Spotradiussquared = (Radius * Stainspotratio) ^ 2
+	local Samples, Weight, Spotweight, Sumx, Sumy, Sumxx, Sumyy = 0, 0, 0, 0, 0, 0, 0
+	for Y = Miny, Maxy, Stainsamplestep do
+		local Dy = Y - Centery
+		for X = Minx, Maxx, Stainsamplestep do
+			local Dx = X - Centerx
+			local Distancesquared = Dx * Dx + Dy * Dy
+			if Distancesquared <= Radiussquared then
+				Samples += 1
+				local Alpha = buffer.readu8(Pixels, ((Y - Miny) * Regionwidth + (X - Minx)) * 4 + 3)
+				if Alpha > 0 then
+					Weight += Alpha
+					Sumx += X * Alpha
+					Sumy += Y * Alpha
+					Sumxx += X * X * Alpha
+					Sumyy += Y * Y * Alpha
+					if Distancesquared <= Spotradiussquared then Spotweight += Alpha end
+				end
+			end
+		end
+	end
+	if Spotweight == 0 then return nil end
+	local Meanx, Meany = Sumx / Weight, Sumy / Weight
+	local Variance = math.max(Sumxx / Weight - Meanx * Meanx + Sumyy / Weight - Meany * Meany, 0)
+	local Pixelscale = Texture.AbsoluteSize / Vector2.new(Width, Height)
+	local Canvascenter = Texture.AbsolutePosition - Surface.AbsolutePosition + Vector2.new(Meanx, Meany) * Pixelscale
+	return {
+		Surface = Surface,
+		Center = Canvascenter / Surface.AbsoluteSize,
+		Spread = math.sqrt(Variance),
+		Radius = Radius,
+		Scale = Pixelscale / Surface.AbsoluteSize,
+		Amount = Weight / (Samples * 255),
+		Spot = Spotweight,
+	}
+end
+
+function Cleaningcontroller:FindStainAround(
+	Part: BasePart,
+	Worldposition: Vector3,
+	Worldnormal: Vector3,
+	Radiusscale: number
+): StainCluster?
+	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
+	local Facename = Getfacename(Localnormal)
+	local Surface = Part:FindFirstChild("Ui" .. Facename)
+	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return nil end
+	local Facepoint = Getfacepoint(Part, Worldposition, Facename)
+	local Candidates = {}
+	local Ink = Getinkimage(Surface, Facepoint)
+	if Ink then table.insert(Candidates, Ink) end
+	local Scratch = Getscratchimage(Surface, Facepoint)
+	if Scratch then table.insert(Candidates, Scratch) end
+	local Dirt = Getdirtimage(Surface, Facepoint)
+	if Dirt then table.insert(Candidates, Dirt) end
+	local Best: StainCluster? = nil
+	for _, Texture in ipairs(Candidates) do
+		local Cluster = Scanstain(Texture, Surface, Facepoint, Radiusscale)
+		if Cluster and (not Best or Cluster.Spot > Best.Spot) then Best = Cluster end
+	end
+	return Best
 end
 
 function Cleaningcontroller:GetScratchImage(

@@ -29,6 +29,7 @@ local Controller = {
 local Interface = Interfacemodule.new(Tools)
 local Runtime = Toolruntime.new(Tools, Interface)
 local Activeobject: (Model | BasePart)? = nil
+local Editingmenu = nil
 local Player = Players.LocalPlayer
 
 local function Lockcharacter(Character: Model)
@@ -173,6 +174,31 @@ function Controller:ResumePendingEnter()
 	if self.pendingEnter then self:Enter() end
 end
 
+local function Cycletool(Direction: number)
+	local Order = Interface:GetToolOrder()
+	local Index = table.find(Order, Runtime.SelectedName) or 1
+	Runtime:Select(Order[(Index - 1 + Direction) % #Order + 1])
+	Core:GetController("FeedbackController"):UiClick()
+end
+
+local function Handlegamepadbutton(Keycode: Enum.KeyCode)
+	if Keycode == Enum.KeyCode.ButtonR2 then
+		Runtime:InputBegan()
+	elseif Keycode == Enum.KeyCode.ButtonL1 then
+		Cycletool(-1)
+	elseif Keycode == Enum.KeyCode.ButtonR1 then
+		Cycletool(1)
+	elseif Keycode == Enum.KeyCode.ButtonX then
+		if Runtime.SelectedName == "Transform" then Interface:Trigger(Interface.LockButton) end
+	elseif Keycode == Enum.KeyCode.ButtonY then
+		Interface:Trigger(Interface.ReturnButton)
+	elseif Keycode == Enum.KeyCode.DPadUp then
+		Core:GetController("InspectionCameraController"):NudgeZoom(1)
+	elseif Keycode == Enum.KeyCode.DPadDown then
+		Core:GetController("InspectionCameraController"):NudgeZoom(-1)
+	end
+end
+
 function Controller:Start()
 	local Cameracontroller = Core:GetController("InspectionCameraController")
 	Disableplayercontrols()
@@ -187,10 +213,26 @@ function Controller:Start()
 	Interface:ShowIntro()
 	Core:GetController("CompletionController"):Hide()
 	Userinputservice.MouseIconEnabled = true
-	Gamepadservice:DisableGamepadCursor()
 
+	local Gamepad = Core:GetController("GamepadController")
+	Editingmenu = {
+		Priority = 5,
+		IsOpen = function()
+			return Activeobject ~= nil and not Core:GetController("CompletionController"):IsVisible()
+		end,
+		Close = function()
+			Interface:Trigger(Interface.ContinueButton)
+		end,
+	}
+	Gamepad:RegisterMenu(Editingmenu)
 	Userinputservice.InputBegan:Connect(function(Input, Processed)
-		if Processed or not Activeobject or Core:GetController("CompletionController"):IsVisible() then return end
+		if not Activeobject or Core:GetController("CompletionController"):IsVisible() then return end
+		if Gamepad:IsGamepad(Input.UserInputType) then
+			if Guiservice.MenuIsOpen or Gamepad:GetOpenMenu() ~= Editingmenu then return end
+			Handlegamepadbutton(Input.KeyCode)
+			return
+		end
+		if Processed then return end
 		if Input.UserInputType == Enum.UserInputType.MouseButton1 then
 			Runtime:InputBegan()
 		elseif Input.UserInputType == Enum.UserInputType.Touch then
@@ -203,6 +245,7 @@ function Controller:Start()
 		if
 			Input.UserInputType == Enum.UserInputType.MouseButton1
 			or Input.UserInputType == Enum.UserInputType.Touch
+			or Input.KeyCode == Enum.KeyCode.ButtonR2
 		then
 			Runtime:InputEnded()
 		end
@@ -214,13 +257,10 @@ function Controller:Start()
 		if not Interface.Hud.IgnoreGuiInset then Mouse -= Guiservice:GetGuiInset() end
 		Interface.Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y)
 		local Isediting = Activeobject ~= nil and not Core:GetController("CompletionController"):IsVisible()
-		local Showgamepadcursor = Isediting and Userinputservice:GetLastInputType() == Enum.UserInputType.Gamepad1
-		if Showgamepadcursor and not Gamepadservice.GamepadCursorEnabled then
-			Gamepadservice:EnableGamepadCursor(nil)
-		elseif not Showgamepadcursor and Gamepadservice.GamepadCursorEnabled then
-			Gamepadservice:DisableGamepadCursor()
-		end
-		Interface.Cursor.Visible = Isediting and Userinputservice:GetLastInputType() ~= Enum.UserInputType.Touch
+
+		Interface.Cursor.Visible = Isediting
+			and Userinputservice:GetLastInputType() ~= Enum.UserInputType.Touch
+			and not Gamepadservice.GamepadCursorEnabled
 		if not Isediting then return end
 		Runtime:Update(Deltatime)
 		Updateprogress(ScreenMouse)

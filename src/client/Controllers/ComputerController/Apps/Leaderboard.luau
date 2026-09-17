@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Core = require(ReplicatedStorage.Shared.Packages.Core)
 
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Separatenumber = require(ReplicatedStorage.Shared.Utils.NumberAbbreviator)
@@ -85,7 +86,7 @@ function Leaderboard.Init(Controller)
 		Shared.AnimateButton(Button, function()
 			return Controller.leaderboardBoard == Board
 		end)
-		Button.Activated:Connect(function()
+		Core:GetController("GamepadController"):OnActivated(Button, function()
 			Leaderboard.SetBoard(Controller, Board)
 		end)
 	end

@@ -104,7 +104,7 @@ function Index.SetMutation(Controller, Mutation: string)
 	end
 	Controller.indexMutation = Mutation
 	for Name, Button in pairs(Controller.indexMutationButtons) do
-		Button:FindFirstChildOfClass("UIStroke").Enabled = Name == Mutation
+		Shared.ApplyActiveScale(Button, Name == Mutation)
 	end
 	Index.ApplyEntries(Controller)
 end
@@ -126,10 +126,11 @@ function Index.Init(Controller)
 	for _, Mutation in ipairs(Mutationconfig.Order) do
 		local Button = Controller.indexMutationFrame:WaitForChild(Mutation .. "Button")
 		Controller.indexMutationButtons[Mutation] = Button
+		Shared.ApplyActiveScale(Button, Mutation == Controller.indexMutation)
 		Shared.AnimateButton(Button, function()
 			return Controller.indexMutation == Mutation
 		end)
-		Button.Activated:Connect(function()
+		Core:GetController("GamepadController"):OnActivated(Button, function()
 			Index.SetMutation(Controller, Mutation)
 		end)
 	end

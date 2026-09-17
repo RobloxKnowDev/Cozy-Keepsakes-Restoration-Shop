@@ -9,8 +9,8 @@ return {
 		},
 		{
 			Type = "Object",
-			ObjectKey = "OldSuitcase",
-			ValueText = "Old Suitcase",
+			ObjectKey = "AlarmClock",
+			ValueText = "Alarm Clock",
 		},
 		{
 			Type = "Cash",
@@ -25,8 +25,8 @@ return {
 		},
 		{
 			Type = "Object",
-			ObjectKey = "OldSuitcase",
-			ValueText = "Old Suitcase",
+			ObjectKey = "AlarmClock",
+			ValueText = "Alarm Clock",
 		},
 		{
 			Type = "Cash",

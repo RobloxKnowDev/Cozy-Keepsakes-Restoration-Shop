@@ -8,8 +8,14 @@ local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Interface = {}
 Interface.__index = Interface
 
+local Gamepadhintimage = "rbxassetid://126117246223823"
 local Paneltween = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local Buttontween = TweenInfo.new(0.13, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local function Hinticon(Frame: GuiObject): ImageLabel
+	if Frame:IsA("ImageLabel") then return Frame end
+	return Frame:FindFirstChildWhichIsA("ImageLabel", true) :: ImageLabel
+end
 
 local function Animate(Button: GuiButton)
 	local Scale = Button:FindFirstChildOfClass("UIScale") or Instance.new("UIScale", Button)
@@ -37,6 +43,14 @@ function Interface.new(Tools)
 	Self.TransformFrame = Gui:WaitForChild("TransformFrame")
 	Self.ProgressFrame = Gui:WaitForChild("ProgressFrame")
 	Self.PercentFrame = Gui:WaitForChild("PercentFrame")
+	Self.Utilities = Gui:WaitForChild("Utilities")
+	Self.Hintframes = {}
+	for _, Hintname in ipairs({ "Put", "Use", "Pull" }) do
+		local Frame = Self.Utilities:WaitForChild("Mouse" .. Hintname) :: GuiObject
+		local Icon = Hinticon(Frame)
+		Self.Hintframes[Hintname] = { Frame = Frame, Icon = Icon, MouseImage = Icon.Image }
+	end
+	Self.CurrentHint = nil
 	Self.Cursor = Hud:WaitForChild("CurseurFrame")
 	Self.Cursor.Visible = false
 	Self.Cursor.Active = false
@@ -87,6 +101,39 @@ function Interface:Select(Name: string, Definition)
 	end
 	self:SetPanel(self.TransformFrame, Definition.EnablesInspection == true, Vector2.new(0, 20))
 	self:SetPanel(self.ProgressFrame, Definition.ShowsProgress == true, Vector2.new(28, 0))
+	self.CurrentHint = Definition.Hint
+	self:RefreshHints()
+end
+
+function Interface:RefreshHints()
+	local Gamepad = Core:GetController("GamepadController"):IsActive()
+	for Hintname, Hint in pairs(self.Hintframes) do
+		Hint.Frame.Visible = self.CurrentHint == Hintname
+		Hint.Icon.Image = if Gamepad then Gamepadhintimage else Hint.MouseImage
+	end
+end
+
+function Interface:Trigger(Button: GuiButton)
+	self.Activate(Button)
+end
+
+function Interface:GetToolOrder(): { string }
+	local Names = {}
+	for Name in pairs(self.Buttons) do
+		table.insert(Names, Name)
+	end
+	table.sort(Names, function(Left, Right)
+		local Leftbutton, Rightbutton = self.Buttons[Left], self.Buttons[Right]
+		if Leftbutton.LayoutOrder ~= Rightbutton.LayoutOrder then return Leftbutton.LayoutOrder < Rightbutton.LayoutOrder end
+		if Leftbutton.AbsolutePosition.Y ~= Rightbutton.AbsolutePosition.Y then
+			return Leftbutton.AbsolutePosition.Y < Rightbutton.AbsolutePosition.Y
+		end
+		if Leftbutton.AbsolutePosition.X ~= Rightbutton.AbsolutePosition.X then
+			return Leftbutton.AbsolutePosition.X < Rightbutton.AbsolutePosition.X
+		end
+		return Left < Right
+	end)
+	return Names
 end
 
 function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
@@ -109,6 +156,12 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 		Core:GetController("FeedbackController"):UiClick()
 		Callback()
 	end
+	self.Activate = Activate
+	Userinputservice.LastInputTypeChanged:Connect(function()
+		task.defer(function()
+			self:RefreshHints()
+		end)
+	end)
 	for Name, Button in pairs(self.Buttons) do
 		Button.BackgroundTransparency = 0.7
 		self.Actions[Button] = function()
@@ -142,7 +195,7 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 	self.Actions[self.ReturnButton] = Flipobject
 	self.Actions[self.ContinueButton] = Continue
 	for Button in pairs(self.Actions) do
-		Button.Activated:Connect(function()
+		Core:GetController("GamepadController"):OnActivated(Button, function()
 			Activate(Button)
 		end)
 	end
@@ -194,6 +247,7 @@ function Interface:ShowForRestoration()
 	self.Resetlock()
 	for _, Item in ipairs({
 		self.FrameTool,
+		self.Utilities,
 		self.PercentFrame,
 		self.Cursor,
 		self.ReturnButton,
@@ -239,6 +293,7 @@ end
 function Interface:HideForCompletion()
 	for _, Item in ipairs({
 		self.FrameTool,
+		self.Utilities,
 		self.TransformFrame,
 		self.ProgressFrame,
 		self.PercentFrame,

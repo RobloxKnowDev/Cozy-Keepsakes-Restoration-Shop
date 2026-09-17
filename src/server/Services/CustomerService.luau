@@ -6,6 +6,7 @@ local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local Customerconfig = require(ReplicatedStorage.Shared.Config.Customer)
 local Daynightconfig = require(ReplicatedStorage.Shared.Config.DayNight)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
@@ -25,7 +26,6 @@ local Customerservice = {
 local QueueFolderName = "SpawnCustomer"
 local TurnTweenDuration = 0.35
 local SlotTurnDegrees = -90
-local FastEntryIndex = 2
 local WalkInStuds = 12
 local WalkInFadeDuration = 0.4
 local Verbosespawnlogs = false
@@ -57,6 +57,8 @@ local RefreshFrontCustomerAttribute: () -> ()
 local PresentFrontOffer: () -> ()
 local CurrentDay = 1
 local ArrivedCustomersToday = 0
+local NextCustomerAt = 0
+local NeedsInstantCustomer = true
 local FriendProfiles: { { Id: number, Name: string } } = {}
 local FriendCursor = 0
 local DescriptionsByUserId: { [number]: HumanoidDescription } = {}
@@ -94,6 +96,7 @@ local function SyncDayState()
 	if Day ~= CurrentDay then
 		CurrentDay = Day
 		ArrivedCustomersToday = 0
+		NeedsInstantCustomer = true
 	end
 	ReplicateCustomerCount()
 end
@@ -422,11 +425,8 @@ local function MoveCustomerTo(Customer: Model, Attachment: Attachment, OnComplet
 	StartMove()
 end
 
-local function GetEntryCFrame(Index: number): CFrame
+local function GetEntryCFrame(): CFrame
 	local Back = AttachmentsByIndex[HighestQueueIndex]
-	if Index < HighestQueueIndex then
-		return Back.WorldCFrame
-	end
 	local Ahead = AttachmentsByIndex[HighestQueueIndex - 1]
 	if not Ahead then
 		return Back.WorldCFrame
@@ -481,7 +481,7 @@ local function SpawnCustomerAt(Index: number, Direct: boolean?)
 	Spawnlog(string.format("spawn %d instance ready: %s", Index, Customer.Name))
 	OccupiedSlots[Index] = Customer
 
-	if Index == 1 then
+	if Index == 1 and Direct then
 		StandAt(Customer, GetTargetCFrame(Attachment) * CFrame.Angles(0, math.rad(SlotTurnDegrees), 0))
 		Customer:SetAttribute("ArrivedAtSlot1", true)
 		Customer:SetAttribute("TurnedAtSlot1", true)
@@ -503,28 +503,68 @@ local function SpawnCustomerAt(Index: number, Direct: boolean?)
 		return
 	end
 
-	StandAt(Customer, GetEntryCFrame(Index))
+	StandAt(Customer, GetEntryCFrame())
 	FadeCustomerIn(Customer)
 	RefreshFrontCustomerAttribute()
-	MoveCustomerTo(Customer, Attachment)
+	MoveCustomerTo(Customer, Attachment, function()
+		if Index == 1 then
+			PresentFrontOffer()
+		end
+	end)
 end
 
-local function SpawnNextCustomer()
-	if not ShopOpened then
-		Spawnlog("next: shop not opened yet")
+local function GetSpawnInterval(): number
+	local Player = GetShopPlayer()
+	if not Player then
+		return Customerconfig.SpawnIntervalSeconds
+	end
+	return Customerconfig.GetInterval(Core:GetService("UpgradeService"):GetValue(Player, "CooldownReduction"))
+end
+
+local function SetNextCustomerAt(Timestamp: number)
+	NextCustomerAt = Timestamp
+	Lighting:SetAttribute("NextCustomerAt", Timestamp)
+end
+
+local function ArmCustomerTimer()
+	local Interval = GetSpawnInterval()
+	Lighting:SetAttribute("CustomerInterval", Interval)
+	SetNextCustomerAt(Workspace:GetServerTimeNow() + Interval)
+end
+
+local function UpdateCustomerTimer()
+	if not ShopOpened or not IsBusinessHours() or not CanSpawnMoreCustomersToday() then
+		SetNextCustomerAt(0)
 		return
 	end
-	if not next(OccupiedSlots) then
-		Spawnlog("next: queue empty")
-		SpawnCustomerAt(math.min(FastEntryIndex, HighestQueueIndex))
+	if NeedsInstantCustomer then
+		NeedsInstantCustomer = false
+		if not next(OccupiedSlots) then
+			SpawnCustomerAt(1, true)
+			SetNextCustomerAt(0)
+			return
+		end
+	end
+	if next(OccupiedSlots) then
+		SetNextCustomerAt(0)
 		return
 	end
-	if not OccupiedSlots[HighestQueueIndex] then
-		Spawnlog("next: filling back slot")
-		SpawnCustomerAt(HighestQueueIndex)
+	if NextCustomerAt <= 0 then
+		ArmCustomerTimer()
 		return
 	end
-	Spawnlog("next: queue already full")
+	local Interval = GetSpawnInterval()
+	Lighting:SetAttribute("CustomerInterval", Interval)
+	local Now = Workspace:GetServerTimeNow()
+	if NextCustomerAt > Now + Interval then
+		SetNextCustomerAt(Now + Interval)
+	end
+	if Now < NextCustomerAt then
+		return
+	end
+	Spawnlog("timer: spawning front customer")
+	SpawnCustomerAt(1)
+	SetNextCustomerAt(0)
 end
 
 local function OpenShop(Player: Player)
@@ -539,10 +579,8 @@ local function OpenShop(Player: Player)
 	if next(OccupiedSlots) then
 		return
 	end
-	SpawnCustomerAt(1)
-	for Index = 2, HighestQueueIndex do
-		SpawnCustomerAt(Index, true)
-	end
+	NeedsInstantCustomer = true
+	UpdateCustomerTimer()
 end
 
 local function DespawnCustomer(Customer: Model)
@@ -766,8 +804,6 @@ local function AdvanceQueue()
 
 	OccupiedSlots = NewOccupiedSlots
 	RefreshFrontCustomerAttribute()
-
-	StartQueueMove(SpawnNextCustomer)
 end
 
 local function ClearPendingOffer()
@@ -933,16 +969,19 @@ end
 
 function Customerservice:RefreshCustomerLimit()
 	ReplicateCustomerCount()
-	if HighestQueueIndex <= 0 or not AttachmentsByIndex[0] then
-		return
-	end
-	SpawnNextCustomer()
 end
 
 function Customerservice:Start()
 	if HighestQueueIndex <= 0 or not AttachmentsByIndex[0] then
 		return
 	end
+
+	task.spawn(function()
+		while true do
+			task.wait(1)
+			UpdateCustomerTimer()
+		end
+	end)
 
 	task.spawn(function()
 		while true do

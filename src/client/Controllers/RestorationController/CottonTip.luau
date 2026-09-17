@@ -1,4 +1,5 @@
 local Replicatedstorage = game:GetService("ReplicatedStorage")
+local Userinputservice = game:GetService("UserInputService")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 
 local Cottontip = {
@@ -7,26 +8,46 @@ local Cottontip = {
 	DisplayRotation = CFrame.Angles(math.rad(305), math.rad(180), math.rad(25)),
 }
 
-function Cottontip.OnInputBegan(Context)
-	if Context.Display.Instance and not Context.Display.OnObject then return end
-	local Cleaningcontroller = Core:GetController("CleaningController")
-	Context.SetUsing(true)
-	Core:GetController("FeedbackController"):SetLoop("Scrub", true)
-	if Context.Object then Cleaningcontroller:TryCleanCotton(Context.Object) end
+local Movegrace = 0.25
+local Pressing = false
+local Scrubbing = false
+local Lastposition: Vector3? = nil
+local Lastmove = 0
+
+local function Setscrubbing(Active: boolean)
+	if Scrubbing == Active then return end
+	Scrubbing = Active
+	Core:GetController("FeedbackController"):SetLoop("Scrub", Active)
+end
+
+function Cottontip.OnInputBegan()
+	Pressing = true
 end
 
 function Cottontip.OnUpdate(Context)
-	if Context.IsUsing and Context.Object then Core:GetController("CleaningController"):TryCleanCotton(Context.Object) end
+	local Display = Context.Display
+	local Touching = Userinputservice:GetLastInputType() == Enum.UserInputType.Touch
+	local Active = Context.Object ~= nil and Display.OnObject and (Pressing or not Touching)
+	if not Active then
+		Setscrubbing(false)
+		Lastposition = nil
+		return
+	end
+	local Position = Display.SurfacePosition
+	if not Lastposition or (Position - Lastposition).Magnitude > 0.002 then Lastmove = os.clock() end
+	Lastposition = Position
+	Setscrubbing(os.clock() - Lastmove < Movegrace)
+	Core:GetController("CleaningController"):TryCleanCotton(Context.Object)
 end
 
-function Cottontip.OnInputEnded(Context)
-	Context.SetUsing(false)
-	Core:GetController("FeedbackController"):SetLoop("Scrub", false)
+function Cottontip.OnInputEnded()
+	Pressing = false
 end
 
-function Cottontip.OnDeselected(Context)
-	Context.SetUsing(false)
-	Core:GetController("FeedbackController"):SetLoop("Scrub", false)
+function Cottontip.OnDeselected()
+	Pressing = false
+	Lastposition = nil
+	Setscrubbing(false)
 end
 
 return Cottontip

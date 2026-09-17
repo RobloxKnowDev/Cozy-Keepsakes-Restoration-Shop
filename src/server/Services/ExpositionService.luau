@@ -30,6 +30,7 @@ type DisplayPlacement = {
 type DisplayEntry = {
 	SlotIndex: number,
 	OwnerUserId: number,
+	Reputation: number,
 }
 
 type DisplaySnapshot = {
@@ -199,6 +200,7 @@ local function Builddisplayitems(): { DisplayEntry }
 			table.insert(Items, {
 				SlotIndex = Slotindex,
 				OwnerUserId = Placement.Player.UserId,
+				Reputation = math.max(tonumber(Placement.Item.Reputation) or 0, 0),
 			})
 		end
 	end

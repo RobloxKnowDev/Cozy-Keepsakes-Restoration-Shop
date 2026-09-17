@@ -2,6 +2,7 @@ local Lighting = game:GetService("Lighting")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
+local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Runservice = game:GetService("RunService")
 
 local Daynightconfig = require(Replicatedstorage.Shared.Config.DayNight)
@@ -58,7 +59,7 @@ function Daynightcontroller:Init()
 	self.SkipButton = Dayframe:WaitForChild("SkipButton") :: GuiButton
 	self.RobuxText = self.SkipButton:WaitForChild("RobuxText") :: TextLabel
 	Loadskipdayprice(self.RobuxText)
-	self.SkipButton.Activated:Connect(function()
+	Core:GetController("GamepadController"):OnActivated(self.SkipButton, function()
 		MarketplaceService:PromptProductPurchase(Player, Monetizationconfig.SkipDayProductId)
 	end)
 end

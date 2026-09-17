@@ -109,7 +109,7 @@ function DonationController:Init()
 		local Button = Card:WaitForChild("Button")
 		Button:WaitForChild("Text").Text = RobuxIcon .. Separatenumber(Product.Amount)
 		Shared.AnimateButton(Button, function() return false end)
-		Button.Activated:Connect(function()
+		Core:GetController("GamepadController"):OnActivated(Button, function()
 			MarketplaceService:PromptProductPurchase(Player, Product.Id)
 		end)
 	end
@@ -122,7 +122,20 @@ function DonationController:Init()
 	self.topbarIcon.selected:Connect(function() self:Open() end)
 	self.topbarIcon.deselected:Connect(function() self:Close() end)
 	Shared.AnimateButton(self.exitButton, function() return false end)
-	self.exitButton.Activated:Connect(function() self.topbarIcon:deselect() end)
+	Core:GetController("GamepadController"):OnActivated(self.exitButton, function() self.topbarIcon:deselect() end)
+	local Gamepad = Core:GetController("GamepadController")
+	Gamepad:RegisterMenu({
+		Priority = 25,
+		IsOpen = function()
+			return self:IsOpen()
+		end,
+		Close = function()
+			self.topbarIcon:deselect()
+		end,
+	})
+	Gamepad:BindShortcut(Enum.KeyCode.ButtonR1, function()
+		self.topbarIcon:select()
+	end)
 end
 
 function DonationController:Start()
