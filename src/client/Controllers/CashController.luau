@@ -92,7 +92,7 @@ function Cashcontroller:Init()
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	local Hud = Playergui:WaitForChild("HUD")
 	self.cashFrame = Hud:WaitForChild("CashFrame")
-	self.cashText = self.cashFrame:WaitForChild("CashText")
+	self.cashText = self.cashFrame:WaitForChild("Text")
 	self.cashScale = EnsureScale(self.cashText)
 	self.baseTextColor = self.cashText.TextColor3
 	self.displayedCash = 0

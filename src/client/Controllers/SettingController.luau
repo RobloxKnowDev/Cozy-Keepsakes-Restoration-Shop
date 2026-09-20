@@ -21,10 +21,13 @@ local Player = Players.LocalPlayer
 local OpenTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local CloseTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 local FastCloseTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
-local ControlTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local DefaultVolume = 0.5
+local DefaultVolume = 0.75
 local SliderStickSpeed = 0.6
 local SliderStickDeadzone = 0.2
+local OnGradientColor = Color3.fromRGB(21, 255, 0)
+local OffGradientColor = Color3.fromRGB(255, 0, 4)
+local ErrorColor = Color3.fromRGB(255, 92, 92)
+local SuccessColor = Color3.fromRGB(126, 255, 145)
 local HeavyEffects = {
 	BlurEffect = true,
 	BloomEffect = true,
@@ -70,6 +73,15 @@ local function SetGraphics(High: boolean)
 	end
 end
 
+local function BuildColorSequence(Keypoints: { ColorSequenceKeypoint }, Color: Color3): ColorSequence
+	local Updated = table.create(#Keypoints)
+	for Index, Keypoint in ipairs(Keypoints) do
+		local Value = if Index == #Keypoints then Color else Keypoint.Value
+		table.insert(Updated, ColorSequenceKeypoint.new(Keypoint.Time, Value))
+	end
+	return ColorSequence.new(Updated)
+end
+
 function SettingController:IsOpen(): boolean
 	return self.isOpen == true
 end
@@ -113,6 +125,7 @@ end
 function SettingController:Close(Fast: boolean?)
 	if not self:IsOpen() then return end
 	self.isOpen = false
+	self.codesBox:ReleaseFocus()
 	if self.positionTween then self.positionTween:Cancel() end
 	if self.scaleTween then self.scaleTween:Cancel() end
 	local TweenInfoValue = if Fast then FastCloseTweenInfo else CloseTweenInfo
@@ -152,99 +165,85 @@ function SettingController:Applyeffect(Name: string, Value: any)
 	end
 end
 
-function SettingController:BindToggle(Setting: Frame, Name: string)
-	local FrameBar = Setting:WaitForChild("FrameBar")
-	local Bar = FrameBar:WaitForChild("Bar")
-	local Text1 = FrameBar:WaitForChild("Text1")
-	local Text2 = FrameBar:WaitForChild("Text2")
+function SettingController:BindToggle(Button: GuiButton, Name: string, OnText: string, OffText: string)
+	local Text = Button:WaitForChild("Text") :: TextLabel
+	local Gradient = Button:WaitForChild("UIGradient") :: UIGradient
+	local Keypoints = Gradient.Color.Keypoints
 	local Enabled = true
-	local EnabledPosition = Bar.Position
-	local EnabledColor = Bar.BackgroundColor3
-	local EnabledRotation = Bar.Rotation
-	local Padding = Bar.AbsolutePosition.X - FrameBar.AbsolutePosition.X
-	Text1.Visible = true
-	Text2.Visible = false
-	Shared.AnimateButton(Bar, function() return false end)
-	local Lasttoggle = 0
-	local function Apply(Value: boolean, Animate: boolean)
+
+	local function Apply(Value: boolean)
 		Enabled = Value
-		local DisabledPosition = UDim2.new(
-			1,
-			-Padding - Bar.AbsoluteSize.X * (1 - Bar.AnchorPoint.X),
-			EnabledPosition.Y.Scale,
-			EnabledPosition.Y.Offset
-		)
-		Text1.Visible = Enabled
-		Text2.Visible = not Enabled
-		local Goal = {
-			Position = if Enabled then EnabledPosition else DisabledPosition,
-			BackgroundColor3 = if Enabled then EnabledColor else self.disabledColor,
-			Rotation = if Enabled then EnabledRotation else EnabledRotation + 180,
-		}
-		if Animate then
-			TweenService:Create(Bar, ControlTweenInfo, Goal):Play()
-			return
-		end
-		Bar.Position = Goal.Position
-		Bar.BackgroundColor3 = Goal.BackgroundColor3
-		Bar.Rotation = Goal.Rotation
+		Text.Text = if Enabled then OnText else OffText
+		Gradient.Color = BuildColorSequence(Keypoints, if Enabled then OnGradientColor else OffGradientColor)
 	end
-	local function Toggle()
-		local Now = os.clock()
-		if Now - Lasttoggle < 0.1 then return end
-		Lasttoggle = Now
-		Apply(not Enabled, true)
-		Core:GetController("FeedbackController"):UiClick()
+
+	Apply(true)
+	Shared.AnimateButton(Button, function() return false end)
+	Core:GetController("GamepadController"):OnActivated(Button, function()
+		Apply(not Enabled)
 		self:Applyeffect(Name, Enabled)
 		RemoteManager:FireServer("SettingsService", "SetSetting", Name, Enabled)
-	end
-	local function Ontogglepress(Input: InputObject)
-		if
-			Input.UserInputType == Enum.UserInputType.MouseButton1
-			or Input.UserInputType == Enum.UserInputType.Touch
-		then
-			Toggle()
-		end
-	end
-	FrameBar.Active = true
-	FrameBar.InputBegan:Connect(Ontogglepress)
-	Bar.InputBegan:Connect(Ontogglepress)
-	local Hovered = false
-	FrameBar.MouseEnter:Connect(function() Hovered = true end)
-	FrameBar.MouseLeave:Connect(function() Hovered = false end)
-	UserInputService.InputBegan:Connect(function(Input)
-		if Hovered and self:IsOpen() and Input.KeyCode == Enum.KeyCode.ButtonA then Toggle() end
 	end)
+
 	self.applysetting[Name] = function(Value)
-		Apply(Value == true, false)
+		Apply(Value == true)
 	end
 end
 
-function SettingController:BindSlider(Setting: Frame, Name: string)
-	local FrameBar = Setting:WaitForChild("FrameBar")
-	local Bar = FrameBar:WaitForChild("Bar")
-	local PourcentageText = Setting:WaitForChild("PourcentageText")
-	local Dragging = false
+function SettingController:BindSlider(Bar: GuiObject, PourcentageText: TextLabel, Name: string)
+	local BarSize = Bar.Size
+	local Arrow = Bar:WaitForChild("Frame") :: GuiObject
+	local ArrowPosition = Arrow.Position
 	local Current = DefaultVolume
-	FrameBar.Active = true
+	local Dragging = false
+
+	local Track = Instance.new("Frame")
+	Track.Name = Bar.Name .. "Track"
+	Track.BackgroundTransparency = 1
+	Track.AnchorPoint = Bar.AnchorPoint
+	Track.Position = Bar.Position
+	Track.Size = BarSize
+	Track.ZIndex = Bar.ZIndex + 1
+	Track.Active = true
+	Track.Parent = Bar.Parent
+
+	Arrow.ZIndex = Bar.ZIndex + 2
+	Arrow.Parent = Track
+
 	local function Apply(Alpha: number)
 		Current = Alpha
-		Bar.Size = UDim2.new(Alpha, 0, Bar.Size.Y.Scale, Bar.Size.Y.Offset)
+		Bar.Size = UDim2.new(BarSize.X.Scale * Alpha, BarSize.X.Offset * Alpha, BarSize.Y.Scale, BarSize.Y.Offset)
+		Arrow.Position = UDim2.new(
+			ArrowPosition.X.Scale * Alpha,
+			ArrowPosition.X.Offset,
+			ArrowPosition.Y.Scale,
+			ArrowPosition.Y.Offset
+		)
 		PourcentageText.Text = string.format("%d%%", math.round(Alpha * 100))
 	end
+
 	local function Update(Position: Vector3)
-		Apply(math.clamp((Position.X - FrameBar.AbsolutePosition.X) / FrameBar.AbsoluteSize.X, 0, 1))
+		Apply(math.clamp((Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1))
 		self:Applyeffect(Name, Current)
 	end
+
 	Apply(DefaultVolume)
-	FrameBar.InputBegan:Connect(function(Input)
-		if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then return end
+	Track.InputBegan:Connect(function(Input)
+		if
+			Input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and Input.UserInputType ~= Enum.UserInputType.Touch
+		then
+			return
+		end
 		Dragging = true
 		Update(Input.Position)
 	end)
 	UserInputService.InputChanged:Connect(function(Input)
 		if not Dragging then return end
-		if Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch then
+		if
+			Input.UserInputType == Enum.UserInputType.MouseMovement
+			or Input.UserInputType == Enum.UserInputType.Touch
+		then
 			Update(Input.Position)
 		end
 	end)
@@ -256,6 +255,7 @@ function SettingController:BindSlider(Setting: Frame, Name: string)
 			Dragging = false
 		end
 	end)
+
 	local Hovered = false
 	local Stickx = 0
 	local Stickdirty = false
@@ -264,8 +264,8 @@ function SettingController:BindSlider(Setting: Frame, Name: string)
 		Stickdirty = false
 		RemoteManager:FireServer("SettingsService", "SetSetting", Name, Current)
 	end
-	FrameBar.MouseEnter:Connect(function() Hovered = true end)
-	FrameBar.MouseLeave:Connect(function()
+	Track.MouseEnter:Connect(function() Hovered = true end)
+	Track.MouseLeave:Connect(function()
 		Hovered = false
 		Savestick()
 	end)
@@ -304,14 +304,49 @@ function SettingController:BindSlider(Setting: Frame, Name: string)
 	self.applysetting[Name] = Apply
 end
 
+function SettingController:RedeemCode()
+	if self.redeeming then return end
+	local Code = self.codesBox.Text
+	if string.gsub(Code, "%s", "") == "" then return end
+
+	self.redeeming = true
+	local Result = RemoteManager:InvokeServer("CodeService", "RedeemCode", Code)
+	self.redeeming = false
+
+	local Message = Core:GetController("MessageController")
+	if Result.Success then
+		self.codesBox.Text = ""
+		Message:Show("Code redeemed: " .. tostring(Result.ValueText), SuccessColor)
+	elseif Result.Reason == "AlreadyClaimed" then
+		Message:Show("You already claimed this code", ErrorColor)
+	elseif Result.Reason == "RewardFailed" then
+		Message:Show("This code reward could not be granted", ErrorColor)
+	else
+		Message:Show("This code does not exist", ErrorColor)
+	end
+end
+
+function SettingController:BindCodes()
+	Shared.AnimateButton(self.claimButton, function() return false end)
+	Core:GetController("GamepadController"):OnActivated(self.claimButton, function()
+		self:RedeemCode()
+	end)
+	self.codesBox.FocusLost:Connect(function(EnterPressed)
+		if EnterPressed then
+			self:RedeemCode()
+		end
+	end)
+end
+
 function SettingController:Init()
 	local PlayerGui = Player:WaitForChild("PlayerGui")
 	self.ui = PlayerGui:WaitForChild("SettingUi")
 	self.frame = self.ui:WaitForChild("Frame")
-	local Settings = self.frame:WaitForChild("Frame")
-	self.exitButton = self.frame:WaitForChild("ExitButton")
-	self.disabledColor = self.exitButton.BackgroundColor3
+	self.closeButton = self.frame:WaitForChild("CloseButton") :: GuiButton
+	self.claimButton = self.frame:WaitForChild("ClaimButton") :: GuiButton
+	self.codesBox = self.frame:WaitForChild("TextBoxCodes") :: TextBox
 	self.isOpen = false
+	self.redeeming = false
 	self.framePosition = self.frame.Position
 	self.frameScale = Shared.EnsureScale(self.frame)
 	self.frame.Visible = false
@@ -323,10 +358,19 @@ function SettingController:Init()
 		end
 	end)
 
-	self:BindToggle(Settings:WaitForChild("Graphism"), "Graphism")
-	self:BindToggle(Settings:WaitForChild("Effect"), "Effect")
-	self:BindSlider(Settings:WaitForChild("MusicVolume"), "MusicVolume")
-	self:BindSlider(Settings:WaitForChild("SoundEffect"), "SoundEffect")
+	self:BindToggle(self.frame:WaitForChild("GraphismButton") :: GuiButton, "Graphism", "High", "Low")
+	self:BindToggle(self.frame:WaitForChild("EffectButton") :: GuiButton, "Effect", "On", "Off")
+	self:BindSlider(
+		self.frame:WaitForChild("BarMusicVolume") :: GuiObject,
+		self.frame:WaitForChild("MusicVolumeText") :: TextLabel,
+		"MusicVolume"
+	)
+	self:BindSlider(
+		self.frame:WaitForChild("BarSoundEffect") :: GuiObject,
+		self.frame:WaitForChild("SoundEffectText") :: TextLabel,
+		"SoundEffect"
+	)
+	self:BindCodes()
 
 	self.topbarIcon = Icon.new()
 		:setName("Settings")
@@ -335,8 +379,8 @@ function SettingController:Init()
 		:setCaption("Settings")
 	self.topbarIcon.selected:Connect(function() self:Open() end)
 	self.topbarIcon.deselected:Connect(function() self:Close() end)
-	Shared.AnimateButton(self.exitButton, function() return false end)
-	Core:GetController("GamepadController"):OnActivated(self.exitButton, function() self.topbarIcon:deselect() end)
+	Shared.AnimateButton(self.closeButton, function() return false end)
+	Core:GetController("GamepadController"):OnActivated(self.closeButton, function() self.topbarIcon:deselect() end)
 	local Gamepad = Core:GetController("GamepadController")
 	Gamepad:RegisterMenu({
 		Priority = 25,

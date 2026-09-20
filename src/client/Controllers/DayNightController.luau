@@ -7,6 +7,7 @@ local Runservice = game:GetService("RunService")
 
 local Daynightconfig = require(Replicatedstorage.Shared.Config.DayNight)
 local Monetizationconfig = require(Replicatedstorage.Shared.Config.Monetization)
+local Uifade = require(Replicatedstorage.Shared.Utils.UiFade)
 
 local Daynightcontroller = {
 	Name = "DayNightController",
@@ -55,10 +56,11 @@ function Daynightcontroller:Init()
 	local HUD = Playergui:WaitForChild("HUD")
 	local Dayframe = HUD:WaitForChild("DayFrame")
 	self.DayText = Dayframe:WaitForChild("DayText")
-	self.TimeText = Dayframe:WaitForChild("TimeText")
+	self.HourText = Dayframe:WaitForChild("HourText")
 	self.SkipButton = Dayframe:WaitForChild("SkipButton") :: GuiButton
 	self.RobuxText = self.SkipButton:WaitForChild("RobuxText") :: TextLabel
 	Loadskipdayprice(self.RobuxText)
+	Uifade.BindButton(self.SkipButton)
 	Core:GetController("GamepadController"):OnActivated(self.SkipButton, function()
 		MarketplaceService:PromptProductPurchase(Player, Monetizationconfig.SkipDayProductId)
 	end)
@@ -73,11 +75,17 @@ function Daynightcontroller:Update()
 	local Day = Lighting:GetAttribute("Day") or 1
 	local Clocktime = Lighting.ClockTime
 	self.DayText.Text = "Day " .. tostring(Day)
-	self.TimeText.Text = Formattime(Clocktime)
-	self.SkipButton.Visible = Clocktime >= Daynightconfig.SkipDayAvailableHour or Clocktime < Daynightconfig.DayStartHour
+	self.HourText.Text = Formattime(Clocktime)
+	local Showskip = (Clocktime >= Daynightconfig.SkipDayAvailableHour or Clocktime < Daynightconfig.DayStartHour)
+		and not self.ComputerController:IsOpen()
+	if Uifade.SetVisible(self.SkipButton, Showskip) and Showskip then
+		Uifade.Pop(self.SkipButton)
+	end
+	Uifade.SetVisible(self.RobuxText, Showskip)
 end
 
 function Daynightcontroller:Start()
+	self.ComputerController = Core:GetController("ComputerController")
 	self:Update()
 	Runservice.RenderStepped:Connect(function()
 		self:Update()

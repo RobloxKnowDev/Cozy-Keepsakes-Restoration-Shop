@@ -15,8 +15,8 @@ local Settingsservice = {
 local Defaults = {
 	Graphism = true,
 	Effect = true,
-	MusicVolume = 0.5,
-	SoundEffect = 1,
+	MusicVolume = 0.75,
+	SoundEffect = 0.75,
 }
 
 local Settingsbyplayer: { [Player]: { [string]: any } } = {}

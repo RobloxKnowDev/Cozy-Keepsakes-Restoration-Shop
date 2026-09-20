@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local UiFade = require(ReplicatedStorage.Shared.Utils.UiFade)
 local Home = require(script.Apps.Home)
 local Index = require(script.Apps.Index)
 local Inventory = require(script.Apps.Inventory)
@@ -111,12 +112,12 @@ function ComputerController:FocusCamera()
 end
 
 function ComputerController:SetHudVisible(IsVisible: boolean)
-	if self.hudCashFrame then
-		self.hudCashFrame.Visible = IsVisible
-	end
-	if self.hudDayFrame then
-		self.hudDayFrame.Visible = IsVisible
-	end
+	UiFade.SetVisible(self.hudCashFrame, IsVisible)
+	UiFade.SetVisible(self.hudCashText, IsVisible)
+	UiFade.SetVisible(self.hudDayFrame, IsVisible)
+	UiFade.SetVisible(self.hudDayText, IsVisible)
+	UiFade.SetVisible(self.hudHourText, IsVisible)
+	self.hudCooldownFrame.Visible = IsVisible
 end
 
 function ComputerController:SetSellLocked(Locked: boolean)
@@ -141,8 +142,8 @@ function ComputerController:SyncHeader()
 	if self.dayText and self.hudDayText then
 		self.dayText.Text = self.hudDayText.Text
 	end
-	if self.timeText and self.hudTimeText then
-		self.timeText.Text = self.hudTimeText.Text
+	if self.timeText and self.hudHourText then
+		self.timeText.Text = self.hudHourText.Text
 	end
 end
 
@@ -360,9 +361,10 @@ function ComputerController:Init()
 	self.hud = PlayerGui:WaitForChild("HUD")
 	self.hudCashFrame = self.hud:WaitForChild("CashFrame") :: GuiObject
 	self.hudDayFrame = self.hud:WaitForChild("DayFrame") :: GuiObject
-	self.hudCashText = self.hudCashFrame:WaitForChild("CashText")
+	self.hudCooldownFrame = self.hud:WaitForChild("CooldownFrame") :: GuiObject
+	self.hudCashText = self.hudCashFrame:WaitForChild("Text")
 	self.hudDayText = self.hudDayFrame:WaitForChild("DayText")
-	self.hudTimeText = self.hudDayFrame:WaitForChild("TimeText")
+	self.hudHourText = self.hudDayFrame:WaitForChild("HourText")
 	self.activePage = "Home"
 	self.isOpen = false
 
