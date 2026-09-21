@@ -13,7 +13,6 @@ local DailyRewardService = {
 	Remotes = {
 		ClaimReward = "Function",
 		GetState = "Function",
-		ObjectRewardReady = "Event",
 		StateUpdated = "Event",
 	},
 }
@@ -151,27 +150,22 @@ function DailyRewardService:PushState(Player: Player)
 	if State then RemoteManager:FireClient(self.Name, "StateUpdated", Player, State) end
 end
 
-function DailyRewardService:ObjectRewardReady(Player: Player)
-	RemoteManager:FireClient(self.Name, "ObjectRewardReady", Player)
-end
-
-function DailyRewardService:GrantReward(Player: Player, Day: number, Data: DailyRewardData): (boolean, boolean)
+function DailyRewardService:GrantReward(Player: Player, Day: number, Data: DailyRewardData): boolean
 	local Reward = Config.Rewards[Day]
 	if Reward.Type == "Cash" then
 		Core:GetService("CashService"):AddCash(Player, tonumber(Reward.Amount) or 0, false, false)
-		return true, false
+		return true
 	end
-	if Reward.Type == "Object" then
-		return Core:GetService("RestorationService"):GrantObject(Player, tostring(Reward.ObjectKey), function()
-			self:ObjectRewardReady(Player)
-		end)
+	if Reward.Type == "Item" then
+		print("DailyRewardService: " .. Player.Name .. " received the day " .. Day .. " " .. Reward.Rarity .. " item")
+		return true
 	end
 	if Reward.Type == "SaleBoost" then
 		Data.SaleBoostEndsAt = math.max(Data.SaleBoostEndsAt, Now()) + (tonumber(Reward.DurationSeconds) or 0)
 		ActiveBoostByPlayer[Player] = true
-		return true, false
+		return true
 	end
-	return false, false
+	return false
 end
 
 function DailyRewardService:ClaimNextReward(Player: Player)
@@ -183,7 +177,7 @@ function DailyRewardService:ClaimNextReward(Player: Player)
 	if Day > #Config.Rewards then return { Success = false, Reason = "CycleComplete", State = self:BuildState(Player) } end
 	local CanClaim = Data.ClaimedDays == 0 or CurrentTime >= Data.NextClaimAt
 	if not CanClaim then return { Success = false, Reason = "NotReady", State = self:BuildState(Player) } end
-	local Granted, ObjectReady = self:GrantReward(Player, Day, Data)
+	local Granted = self:GrantReward(Player, Day, Data)
 	if not Granted then return { Success = false, Reason = "RewardFailed", State = self:BuildState(Player) } end
 	Data.ClaimedDays = Day
 	Data.NextClaimAt = CurrentTime + (tonumber(Config.ClaimIntervalSeconds) or 0)
@@ -194,7 +188,7 @@ function DailyRewardService:ClaimNextReward(Player: Player)
 		Success = true,
 		Day = Day,
 		RewardType = Config.Rewards[Day].Type,
-		ObjectReady = ObjectReady,
+		RewardText = Config.Rewards[Day].ValueText,
 		State = self:BuildState(Player),
 	}
 end

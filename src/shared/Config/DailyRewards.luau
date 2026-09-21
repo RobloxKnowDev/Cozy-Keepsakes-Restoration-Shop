@@ -1,6 +1,7 @@
 return {
 	ClaimIntervalSeconds = 24 * 60 * 60,
 	SkipProductId = 3708776063,
+	SaleBoostIcon = "rbxassetid://131705537343553",
 	Rewards = {
 		{
 			Type = "Cash",
@@ -8,9 +9,9 @@ return {
 			ValueText = "$100",
 		},
 		{
-			Type = "Object",
-			ObjectKey = "AlarmClock",
-			ValueText = "Alarm Clock",
+			Type = "Item",
+			Rarity = "Epic",
+			ValueText = "Epic Item",
 		},
 		{
 			Type = "Cash",
@@ -24,19 +25,19 @@ return {
 			ValueText = "Boost Sell 15%",
 		},
 		{
-			Type = "Object",
-			ObjectKey = "AlarmClock",
-			ValueText = "Alarm Clock",
-		},
-		{
 			Type = "Cash",
-			Amount = 1_500,
-			ValueText = "$1,500",
+			Amount = 1_000,
+			ValueText = "$1,000",
 		},
 		{
 			Type = "Cash",
 			Amount = 5_000,
 			ValueText = "$5,000",
+		},
+		{
+			Type = "Item",
+			Rarity = "Legendary",
+			ValueText = "Legendary Item",
 		},
 	},
 }
