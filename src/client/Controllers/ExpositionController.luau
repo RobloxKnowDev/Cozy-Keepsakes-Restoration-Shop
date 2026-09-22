@@ -20,13 +20,13 @@ type BlockerMode = "Disabled" | "Hidden"
 local Buttontweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Buttonhidetweeninfo = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local Buttonshowtweeninfo = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local Slotrotatetweeninfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Selectframeshowtweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local Selectframehidetweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local Fastselectframehidetweeninfo = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local Detailstweeninfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local ErrorMessageColor = Color3.fromRGB(255, 92, 92)
-local ReputationMessageColor = Color3.fromRGB(126, 255, 145)
-local ReputationLossMessageColor = Color3.fromRGB(255, 138, 138)
+local ErrorMessageColor = Color3.fromRGB(255, 0, 4)
+local ReputationMessageColor = Color3.fromRGB(21, 255, 0)
 
 local function FormatReputation(Value: number): string
 	local Rounded = math.round(Value * 100) / 100
@@ -69,10 +69,25 @@ function Controller:RestoreButtonHover(Button: GuiButton)
 	end
 end
 
+function Controller:RotateSlotText(Slot, Animate: boolean?)
+	local Currenttween = self.slotTextTweens[Slot.Text]
+	if Currenttween then Currenttween:Cancel() end
+	local Rotation = if Slot.Occupied then 45 else 0
+	if not Animate then
+		self.slotTextTweens[Slot.Text] = nil
+		Slot.Text.Rotation = Rotation
+		return
+	end
+	local Tween = Tweenservice:Create(Slot.Text, Slotrotatetweeninfo, { Rotation = Rotation })
+	self.slotTextTweens[Slot.Text] = Tween
+	Tween:Play()
+end
+
 function Controller:HideSlotButtons()
 	self.slotsVisible = false
 	for _, Slot in ipairs(self.slotButtons) do
 		self:ResetButton(Slot.Button)
+		self:RotateSlotText(Slot)
 		Slot.Button.Visible = false
 		Slot.Button.Active = false
 		Slot.Button.Interactable = false
@@ -345,14 +360,10 @@ function Controller:ApplyDisplayItems(State, Keepselectionopen: boolean?)
 		local Displayitem = self.displayItemsBySlot[Slot.Index]
 		Slot.Occupied = Displayitem ~= nil
 		Slot.Owned = Displayitem ~= nil and Displayitem.OwnerUserId == Players.LocalPlayer.UserId
-		Slot.Text.Text = if Slot.Occupied then "x" else "+"
-		Slot.Reputation.Visible = Slot.Occupied
-		if Displayitem then
-			Slot.Reputation.Text = "+" .. FormatReputation(math.max(tonumber(Displayitem.Reputation) or 0, 0))
-		end
 		local Canremove = Slot.Occupied and Slot.Owned
 		Slot.Icon.Visible = not Slot.Unlocked and not Canremove
 		Slot.Text.Visible = Slot.Unlocked or Canremove
+		if Slot.Occupied ~= Previousoccupied then self:RotateSlotText(Slot, Slot.Button.Visible) end
 		if Slot.Occupied ~= Previousoccupied and (Slot.Unlocked or Slot.Owned or Previousowned) then self:AnimateSlotChange(Slot) end
 	end
 	if not Keepselectionopen
@@ -495,7 +506,7 @@ function Controller:RemoveDisplayItem(Slotindex: number)
 		local Message = if Removedreputation > 0
 			then "-" .. FormatReputation(Removedreputation) .. " Reputation"
 			else "Item returned to inventory"
-		local Color = if Removedreputation > 0 then ReputationLossMessageColor else ReputationMessageColor
+		local Color = if Removedreputation > 0 then ErrorMessageColor else ReputationMessageColor
 		Core:GetController("MessageController"):Show(Message, Color)
 		return
 	end
@@ -682,6 +693,7 @@ function Controller:Init()
 	self.selectCloseButton = Selectframe:WaitForChild("CloseButton") :: GuiButton
 	self.buttonScales = {}
 	self.buttonTweens = {}
+	self.slotTextTweens = {}
 	self.hoveredButtons = {}
 	self.slotButtons = {}
 	self.animatedButtons = { self.reputationButtonL, self.reputationButtonR }
@@ -714,15 +726,14 @@ function Controller:Init()
 			Button = Button,
 			Icon = Button:WaitForChild("Icon") :: GuiObject,
 			Text = Button:WaitForChild("Text") :: TextLabel,
-			Reputation = Button:WaitForChild("ReputationText") :: TextLabel,
 			Unlocked = false,
 			Occupied = false,
 			Owned = false,
 		}
 		Slot.Icon.Visible = true
 		Slot.Text.Text = "+"
+		Slot.Text.Rotation = 0
 		Slot.Text.Visible = false
-		Slot.Reputation.Visible = false
 		Button.Visible = false
 		Button.Active = false
 		Button.Interactable = false

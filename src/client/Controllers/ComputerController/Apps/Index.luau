@@ -12,7 +12,7 @@ local Rarityrank = {}
 for Rank, Rarity in ipairs(Rarityconfig.Order) do
 	Rarityrank[Rarity] = Rank
 end
-local GainColor = Color3.fromRGB(126, 255, 145)
+local GainColor = Color3.fromRGB(21, 255, 0)
 local LockedIconColor = Color3.fromRGB(160, 160, 160)
 local LockedIconTransparency = 0.35
 

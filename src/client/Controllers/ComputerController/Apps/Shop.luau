@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
 local MonetizationConfig = require(ReplicatedStorage.Shared.Config.Monetization)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
@@ -56,11 +57,6 @@ local function BindProduct(Button: GuiButton, Id: number)
 	end)
 end
 
-local function FormatTime(Seconds: number): string
-	local Total = math.max(math.ceil(Seconds), 0)
-	return string.format("%d:%02d", math.floor(Total / 60), Total % 60)
-end
-
 function Shop.ApplyState(Controller, State)
 	Controller.shopState = State
 	local BoostController = Core:GetController("BoostController")
@@ -84,7 +80,7 @@ function Shop.ApplyState(Controller, State)
 
 	Controller.currentLuckText.Text = tostring(State.ServerLuckMultiplier) .. "x"
 	Controller.nextLuckText.Text = if State.ServerLuckNextMultiplier then tostring(State.ServerLuckNextMultiplier) .. "x" else "MAX"
-	Controller.minutesText.Text = FormatTime(State.ServerLuckEndsAt - workspace:GetServerTimeNow())
+	Controller.minutesText.Text = FormatDuration(State.ServerLuckEndsAt - workspace:GetServerTimeNow())
 	Controller.minutesText.Visible = true
 	local IsMax = State.ServerLuckNextMultiplier == nil
 	Controller.currentLuckText.Visible = not IsMax
@@ -195,7 +191,7 @@ function Shop.Start(Controller)
 	task.spawn(function()
 		while true do
 			task.wait(1)
-			Controller.minutesText.Text = FormatTime(Controller.shopState.ServerLuckEndsAt - workspace:GetServerTimeNow())
+			Controller.minutesText.Text = FormatDuration(Controller.shopState.ServerLuckEndsAt - workspace:GetServerTimeNow())
 		end
 	end)
 end

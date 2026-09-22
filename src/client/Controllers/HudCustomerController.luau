@@ -5,6 +5,7 @@ local Runservice = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Customerconfig = require(Replicatedstorage.Shared.Config.Customer)
+local Formatduration = require(Replicatedstorage.Shared.Utils.DurationFormatter)
 local Uifade = require(Replicatedstorage.Shared.Utils.UiFade)
 
 local Hudcustomercontroller = {
@@ -13,11 +14,6 @@ local Hudcustomercontroller = {
 }
 
 local Barmaxscale = 0.862
-
-local function Formatcountdown(Seconds: number): string
-	local Total = math.max(math.ceil(Seconds), 0)
-	return string.format("%d:%02d", math.floor(Total / 60), Total % 60)
-end
 
 function Hudcustomercontroller:UpdateCustomerText()
 	local Current = Lighting:GetAttribute("CustomersToday") or 0
@@ -38,7 +34,7 @@ function Hudcustomercontroller:UpdateTimer()
 	local Ratio = math.clamp(Remaining / Interval, 0, 1)
 	self.cooldownBar.Size =
 		UDim2.new(Ratio * Barmaxscale, 0, self.cooldownBarSize.Y.Scale, self.cooldownBarSize.Y.Offset)
-	self.nextText.Text = "Next Customer in " .. Formatcountdown(Remaining)
+	self.nextText.Text = "Next Customer in " .. Formatduration(Remaining)
 end
 
 function Hudcustomercontroller:Init()

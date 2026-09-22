@@ -6,6 +6,7 @@ local TweenService = game:GetService("TweenService")
 local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
 local Config = require(ReplicatedStorage.Shared.Config.DailyRewards)
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
@@ -15,7 +16,7 @@ local DailyRewardController = {
 }
 
 local Player = Players.LocalPlayer
-local ErrorColor = Color3.fromRGB(255, 138, 138)
+local ErrorColor = Color3.fromRGB(255, 0, 4)
 local ClaimColor = Color3.fromRGB(255, 214, 122)
 local OpenTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local CloseTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
@@ -53,13 +54,6 @@ local function CardMode(Card): string
 		return "Hop"
 	end
 	return "Idle"
-end
-
-local function FormatTime(Seconds: number): string
-	local Total = math.max(math.ceil(Seconds), 0)
-	local Hours = math.floor(Total / 3600)
-	local Minutes = math.floor(Total % 3600 / 60)
-	return string.format("%02d:%02d:%02d", Hours, Minutes, Total % 60)
 end
 
 function DailyRewardController:IsRewardAvailable(): boolean
@@ -196,7 +190,7 @@ function DailyRewardController:Refresh()
 	elseif Ready then
 		self.timeText.Text = ReadyText
 	else
-		self.timeText.Text = FormatTime(self.state.NextClaimAt - workspace:GetServerTimeNow())
+		self.timeText.Text = FormatDuration(self.state.NextClaimAt - workspace:GetServerTimeNow())
 	end
 	self:SetSwing(Ready)
 end

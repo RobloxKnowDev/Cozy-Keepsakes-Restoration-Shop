@@ -17,15 +17,20 @@ function Messagecontroller:Show(Text: string, Color: Color3?)
 	self.messageId += 1
 	local Currentmessageid = self.messageId
 	local Label = self.template:Clone()
+	local Stroke = Label:WaitForChild("UIStroke") :: UIStroke
 	Label.Name = "Message_" .. tostring(Currentmessageid)
 	Label.Visible = true
 	Label.Text = tostring(Text)
 	Label.TextTransparency = 1
 	Label.TextColor3 = Color or self.baseTextColor
+	Stroke.Transparency = 1
 	Label.Parent = self.frame
 
 	Tweenservice:Create(Label, Messagetweeninfo, {
 		TextTransparency = 0,
+	}):Play()
+	Tweenservice:Create(Stroke, Messagetweeninfo, {
+		Transparency = self.baseStrokeTransparency,
 	}):Play()
 
 	task.delay(Messagelifetime, function()
@@ -37,6 +42,9 @@ function Messagecontroller:Show(Text: string, Color: Color3?)
 			TextTransparency = 1,
 		})
 		Fadetween:Play()
+		Tweenservice:Create(Stroke, Messagetweeninfo, {
+			Transparency = 1,
+		}):Play()
 		Fadetween.Completed:Once(function()
 			if Label.Parent then
 				Label:Destroy()
@@ -51,6 +59,7 @@ function Messagecontroller:Init()
 	self.template = self.frame:WaitForChild("Template")
 
 	self.baseTextColor = self.template.TextColor3
+	self.baseStrokeTransparency = self.template:WaitForChild("UIStroke").Transparency
 	self.messageId = 0
 	self.template.Visible = false
 end

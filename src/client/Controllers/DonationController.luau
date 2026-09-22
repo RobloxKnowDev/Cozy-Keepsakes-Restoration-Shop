@@ -93,20 +93,15 @@ function DonationController:Init()
 	local PlayerGui = Player:WaitForChild("PlayerGui")
 	self.ui = PlayerGui:WaitForChild("DonationUi")
 	self.frame = self.ui:WaitForChild("Frame")
-	self.scrollingFrame = self.frame:WaitForChild("ScrollingFrame")
-	self.gridLayout = self.scrollingFrame:WaitForChild("UIGridLayout")
-	self.exitButton = self.frame:WaitForChild("ExitButton")
+	self.closeButton = self.frame:WaitForChild("CloseButton")
 	self.isOpen = false
 	self.framePosition = self.frame.Position
 	self.frameScale = Shared.EnsureScale(self.frame)
 	self.frame.Visible = false
 	self.frame.Active = true
-	self.gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-	for Order, Product in ipairs(Config.Products) do
-		local Card = self.scrollingFrame:WaitForChild(tostring(Product.Amount))
-		Card.LayoutOrder = Order
-		local Button = Card:WaitForChild("Button")
+	for _, Product in ipairs(Config.Products) do
+		local Button = self.frame:WaitForChild(tostring(Product.Amount))
 		Button:WaitForChild("Text").Text = RobuxIcon .. Separatenumber(Product.Amount)
 		Shared.AnimateButton(Button, function() return false end)
 		Core:GetController("GamepadController"):OnActivated(Button, function()
@@ -121,8 +116,8 @@ function DonationController:Init()
 		:setCaption("Donations")
 	self.topbarIcon.selected:Connect(function() self:Open() end)
 	self.topbarIcon.deselected:Connect(function() self:Close() end)
-	Shared.AnimateButton(self.exitButton, function() return false end)
-	Core:GetController("GamepadController"):OnActivated(self.exitButton, function() self.topbarIcon:deselect() end)
+	Shared.AnimateButton(self.closeButton, function() return false end)
+	Core:GetController("GamepadController"):OnActivated(self.closeButton, function() self.topbarIcon:deselect() end)
 	local Gamepad = Core:GetController("GamepadController")
 	Gamepad:RegisterMenu({
 		Priority = 25,
@@ -147,10 +142,6 @@ function DonationController:Start()
 				return
 			end
 		end
-	end)
-	self.scrollingFrame.CanvasSize = UDim2.fromOffset(0, self.gridLayout.AbsoluteContentSize.Y)
-	self.gridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		self.scrollingFrame.CanvasSize = UDim2.fromOffset(0, self.gridLayout.AbsoluteContentSize.Y)
 	end)
 end
 

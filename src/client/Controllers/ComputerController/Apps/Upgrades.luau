@@ -4,11 +4,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Customerconfig = require(ReplicatedStorage.Shared.Config.Customer)
+local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
 local Upgrades = {}
-local ErrorColor = Color3.fromRGB(255, 92, 92)
+local ErrorColor = Color3.fromRGB(255, 0, 4)
 local RobuxIcon = ""
 
 local function FormatValue(UpgradeName: string, Value: number?): string
@@ -16,10 +17,7 @@ local function FormatValue(UpgradeName: string, Value: number?): string
 	if UpgradeName == "PurchaseDiscount" then return string.format("%d%%", Value) end
 	if UpgradeName == "PriceEstimation" then return string.format("%d estimated / day", Value) end
 	if UpgradeName == "DailyCustomers" then return string.format("%d / day", Value) end
-	if UpgradeName == "CooldownReduction" then
-		local Seconds = Customerconfig.GetInterval(Value)
-		return string.format("%d:%02d", math.floor(Seconds / 60), Seconds % 60)
-	end
+	if UpgradeName == "CooldownReduction" then return FormatDuration(Customerconfig.GetInterval(Value)) end
 	if UpgradeName == "DisplaySpace" then return string.format("%d slots", Value) end
 	return tostring(Value)
 end
