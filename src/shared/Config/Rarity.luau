@@ -1,7 +1,6 @@
 return {
 	Order = {
 		"Common",
-		"Uncommon",
 		"Rare",
 		"Epic",
 		"Legendary",
@@ -14,42 +13,31 @@ return {
 
 	Common = {
 		Name = "Common",
-		Color = Color3.fromRGB(0, 166, 39),
+		Gradient = ColorSequence.new(Color3.fromHex("15FF00"), Color3.fromHex("90FF86")),
 		Weight = 100,
-	},
-
-	Uncommon = {
-		Name = "Uncommon",
-		Color = Color3.fromRGB(90, 210, 110),
-		Weight = 30,
 	},
 
 	Rare = {
 		Name = "Rare",
-		Color = Color3.fromRGB(0, 124, 162),
+		Gradient = ColorSequence.new(Color3.fromHex("0059FF"), Color3.fromHex("81C4FF")),
 		Weight = 8,
 	},
 
 	Epic = {
 		Name = "Epic",
-		Color = Color3.fromRGB(134, 0, 171),
+		Gradient = ColorSequence.new(Color3.fromHex("9D00FF"), Color3.fromHex("D187FF")),
 		Weight = 2,
 	},
 
 	Legendary = {
 		Name = "Legendary",
-		Color = Color3.fromRGB(220, 223, 0),
+		Gradient = ColorSequence.new(Color3.fromHex("FFD400"), Color3.fromHex("FFEB87")),
 		Weight = 0.5,
 	},
 
 	Mythic = {
 		Name = "Mythic",
-		Color = Color3.fromRGB(255, 0, 0),
+		Gradient = ColorSequence.new(Color3.fromHex("FF0000"), Color3.fromHex("FF8787")),
 		Weight = 0.1,
-	},
-
-	Exclusive = {
-		Name = "Exclusive",
-		Color = Color3.fromRGB(255, 170, 45),
 	},
 }

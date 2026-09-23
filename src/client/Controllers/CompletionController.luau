@@ -8,7 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
-local Mutationlabel = require(Replicatedstorage.Shared.Utils.MutationLabel)
+local Uigradient = require(Replicatedstorage.Shared.Utils.UiGradient)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 
 local MutationAmbientBlend = 0.65
@@ -101,12 +101,14 @@ function Completioncontroller:Init()
 	self.nextButton = self.frame:WaitForChild("NextButton") :: GuiButton
 	self.objectNameText = self.frame:WaitForChild("ObjectName")
 	self.rarityFrame = self.frame:WaitForChild("RarityFrame") :: GuiObject
+	self.rarityGradient = Uigradient.Ensure(self.rarityFrame)
 	self.rarityText = self.rarityFrame:WaitForChild("Rarity")
 	self.totalProgressText = self.frame:WaitForChild("TotalProgress")
 	self.valueText = self.frame:WaitForChild("Value")
 	self.reputationText = self.frame:WaitForChild("ReputationText")
 	self.mutationText = self.frame:WaitForChild("MutationText")
-	self.baseMutationColor = self.mutationText.TextColor3
+	self.mutationGradient = Uigradient.Ensure(self.mutationText)
+	self.baseMutationGradient = self.mutationGradient.Color
 	self.maxValueText = self.frame:WaitForChild("MaxValue")
 	self.frameShownPosition = self.frame.Position
 	self.transition = self.gui:FindFirstChild("CompletionTransition")
@@ -157,23 +159,20 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 	local Rarity = Rarityconfig[tostring(Object:GetAttribute("Rarity") or "Common")]
 
 	local Mutationname = Object:GetAttribute("Mutation")
-	Mutationlabel.Apply(self.objectNameText, {
-		Name = Object:GetAttribute("DisplayName") or Object.Name,
-		Mutation = Mutationname,
-	})
+	self.objectNameText.Text = Object:GetAttribute("DisplayName") or Object.Name
 	if Mutationname == nil then
 		self.mutationText.Text = UnknownText
-		self.mutationText.TextColor3 = self.baseMutationColor
+		self.mutationGradient.Color = self.baseMutationGradient
 	else
 		local Mutation = Mutationconfig[tostring(Mutationname)]
 		self.mutationText.Text = Mutation.Name
-		self.mutationText.TextColor3 = Mutation.Color
+		self.mutationGradient.Color = Mutation.Gradient
 	end
-	self.rainbowLabels = if Mutationname == "Rainbow"
-		then { self.mutationText, self.objectNameText }
+	self.rainbowGradients = if Mutationname == "Rainbow"
+		then { self.mutationGradient }
 		else nil
 	self.rarityText.Text = Rarity.Name
-	self.rarityFrame.BackgroundColor3 = Rarity.Color
+	self.rarityGradient.Color = Rarity.Gradient
 	self.totalProgressText.Text = string.format("%d%%", math.floor(Overallratio * 100 + 0.5))
 	self.valueText.Text = Formatcurrency(Currentvalue)
 	self.reputationText.Text = Formatreputation(Reputation)
@@ -647,10 +646,10 @@ function Completioncontroller:Update(Deltatime: number)
 		local Spin = CFrame.fromAxisAngle(Vector3.xAxis, self.pitch) * CFrame.fromAxisAngle(Vector3.yAxis, self.rotation)
 		Pivotto(self.displayObject, CFrame.new(Center) * Spin * CFrame.new(-Center) * self.basePivot)
 	end
-	if self.rainbowLabels then
-		local Color = Core:GetController("MutationController"):GetColor("Rainbow")
-		for _, Label in ipairs(self.rainbowLabels) do
-			Label.TextColor3 = Color
+	if self.rainbowGradients then
+		local Sequence = Core:GetController("MutationController"):GetGradient("Rainbow")
+		for _, Gradient in ipairs(self.rainbowGradients) do
+			Gradient.Color = Sequence
 		end
 	end
 	self:Tintpreview()

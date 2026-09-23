@@ -34,6 +34,12 @@ local RayCount = 14
 local ChargeRingCount = 5
 local MutationBuildupSeconds = 1.35
 local MutationSoundLead = 0.3
+local ShineTransparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 1),
+	NumberSequenceKeypoint.new(0.45, 0),
+	NumberSequenceKeypoint.new(0.55, 0),
+	NumberSequenceKeypoint.new(1, 1),
+})
 
 local function Shinesequence(Color: Color3): ColorSequence
 	return ColorSequence.new({
@@ -417,17 +423,18 @@ function FeedbackController:Shockwave(Color: Color3, Count: number)
 	end
 end
 
-function FeedbackController:ScheduleMutationReveal(Name: string, Color: Color3, Rainbow: boolean?, Delay: number)
+function FeedbackController:ScheduleMutationReveal(Name: string, Gradient: ColorSequence, Rainbow: boolean?, Delay: number)
 	task.delay(math.max(Delay - MutationSoundLead, 0), function()
 		self:PlaySound("Mutation", 0.2)
 	end)
 	task.delay(Delay, function()
-		self:MutationReveal(Name, Color, Rainbow)
+		self:MutationReveal(Name, Gradient, Rainbow)
 	end)
 end
 
-function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow: boolean?)
+function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence, Rainbow: boolean?)
 	if not self:IsDecorativeEnabled() then return end
+	local Color = Gradient.Keypoints[1].Value
 	local Buildup = MutationBuildupSeconds
 	local Camera = Workspace.CurrentCamera
 	local Fovorigin = Camera.FieldOfView
@@ -441,6 +448,7 @@ function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow:
 	Container.Parent = self.overlay
 
 	local Shine = nil
+	local Labelgradient = nil
 	local Tinted = {}
 	local function Tint(Object: Instance, Property: string)
 		table.insert(Tinted, { Object, Property })
@@ -609,18 +617,32 @@ function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow:
 		Label.BackgroundTransparency = 1
 		Label.Font = Enum.Font.GothamBlack
 		Label.Text = string.upper(Name)
-		Label.TextColor3 = Color
+		Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 		Label.TextScaled = true
 		Label.TextStrokeColor3 = Color3.fromRGB(18, 14, 10)
 		Label.TextStrokeTransparency = 0.1
 		Label.ZIndex = 34
 		Label.Parent = Titleframe
-		Tint(Label, "TextColor3")
+		Labelgradient = Instance.new("UIGradient")
+		Labelgradient.Color = Gradient
+		Labelgradient.Parent = Label
 
+		local Shinelabel = Instance.new("TextLabel")
+		Shinelabel.Name = "Shine"
+		Shinelabel.AnchorPoint = Vector2.new(0.5, 0.5)
+		Shinelabel.Position = UDim2.fromScale(0.5, 0.4)
+		Shinelabel.Size = UDim2.fromScale(1, 0.7)
+		Shinelabel.BackgroundTransparency = 1
+		Shinelabel.Font = Enum.Font.GothamBlack
+		Shinelabel.Text = string.upper(Name)
+		Shinelabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Shinelabel.TextScaled = true
+		Shinelabel.ZIndex = 35
+		Shinelabel.Parent = Titleframe
 		Shine = Instance.new("UIGradient")
-		Shine.Color = Shinesequence(Color)
+		Shine.Transparency = ShineTransparency
 		Shine.Offset = Vector2.new(-1.2, 0)
-		Shine.Parent = Label
+		Shine.Parent = Shinelabel
 
 		local Subtitle = Instance.new("TextLabel")
 		Subtitle.Name = "Subtitle"
@@ -657,12 +679,13 @@ function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow:
 		TweenService:Create(Glow, Fadeout, { TextTransparency = 1 }):Play()
 		TweenService:Create(Subtitle, Fadeout, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
 
+		local Burstcolor = if Rainbow then Core:GetController("MutationController"):GetColor("Rainbow") else Color
 		self:Flash(self.overlay, Color3.fromRGB(255, 255, 255))
-		self:Shockwave(Color, 4)
-		self:Burst(self.overlay, Color, 70)
+		self:Shockwave(Burstcolor, 4)
+		self:Burst(self.overlay, Burstcolor, 70)
 		self:Shake(self.overlay)
 		task.delay(0.22, function()
-			self:Burst(self.overlay, Color, 50)
+			self:Burst(self.overlay, Burstcolor, 50)
 		end)
 	end)
 
@@ -673,14 +696,15 @@ function FeedbackController:MutationReveal(Name: string, Color: Color3, Rainbow:
 				Connection:Disconnect()
 				return
 			end
-			local Current = Core:GetController("MutationController"):GetColor("Rainbow")
+			local Mutationcontroller = Core:GetController("MutationController")
+			local Current = Mutationcontroller:GetColor("Rainbow")
 			for _, Entry in ipairs(Tinted) do
 				if Entry[1].Parent then
 					Entry[1][Entry[2]] = Current
 				end
 			end
-			if Shine then
-				Shine.Color = Shinesequence(Current)
+			if Labelgradient then
+				Labelgradient.Color = Mutationcontroller:GetGradient("Rainbow")
 			end
 		end)
 	end
@@ -771,8 +795,9 @@ function FeedbackController:DonationThanks(AmountText: string)
 	Debris:AddItem(Container, 2)
 end
 
-function FeedbackController:Purchase(Name: string, ImageId: string, Color: Color3)
+function FeedbackController:Purchase(Name: string, ImageId: string, Gradient: ColorSequence)
 	if not self:IsDecorativeEnabled() then return end
+	local Color = Gradient.Keypoints[1].Value
 	local Container = Instance.new("Frame")
 	Container.Name = "PurchaseFeedback"
 	Container.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -787,7 +812,7 @@ function FeedbackController:Purchase(Name: string, ImageId: string, Color: Color
 	Halo.AnchorPoint = Vector2.new(0.5, 0.5)
 	Halo.Position = UDim2.fromScale(0.5, 0.4)
 	Halo.Size = UDim2.fromOffset(150, 150)
-	Halo.BackgroundColor3 = Color
+	Halo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	Halo.BackgroundTransparency = 0.7
 	Halo.BorderSizePixel = 0
 	Halo.ZIndex = 28
@@ -795,6 +820,9 @@ function FeedbackController:Purchase(Name: string, ImageId: string, Color: Color
 	local Halocorner = Instance.new("UICorner")
 	Halocorner.CornerRadius = UDim.new(1, 0)
 	Halocorner.Parent = Halo
+	local Halogradient = Instance.new("UIGradient")
+	Halogradient.Color = Gradient
+	Halogradient.Parent = Halo
 
 	local Icon = Instance.new("ImageLabel")
 	Icon.Name = "Icon"
@@ -815,12 +843,15 @@ function FeedbackController:Purchase(Name: string, ImageId: string, Color: Color
 	Label.BackgroundTransparency = 1
 	Label.Font = Enum.Font.GothamBlack
 	Label.Text = string.upper(Name)
-	Label.TextColor3 = Color
+	Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	Label.TextScaled = true
 	Label.TextStrokeColor3 = Color3.fromRGB(24, 18, 12)
 	Label.TextStrokeTransparency = 0.25
 	Label.ZIndex = 29
 	Label.Parent = Container
+	local Labelgradient = Instance.new("UIGradient")
+	Labelgradient.Color = Gradient
+	Labelgradient.Parent = Label
 
 	local Scale = GetScale(Container)
 	Scale.Scale = if self:IsMotionEnabled() then 0.4 else 1

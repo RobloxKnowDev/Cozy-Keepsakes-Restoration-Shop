@@ -6,7 +6,7 @@ local Tweenservice = game:GetService("TweenService")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
-local Mutationlabel = require(Replicatedstorage.Shared.Utils.MutationLabel)
+local Uigradient = require(Replicatedstorage.Shared.Utils.UiGradient)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
@@ -26,6 +26,7 @@ local Selectframehidetweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum
 local Fastselectframehidetweeninfo = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local Detailstweeninfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ErrorMessageColor = Color3.fromRGB(255, 0, 4)
+local UnknownText = "???"
 local ReputationMessageColor = Color3.fromRGB(21, 255, 0)
 
 local function FormatReputation(Value: number): string
@@ -239,63 +240,107 @@ function Controller:CloseTopbarFrames()
 end
 
 function Controller:SetSelectionControlsEnabled(Enabled: boolean)
-	local Canselect = Enabled and self.selectedDisplayItemId ~= nil
+	local Cardsenabled = Enabled and not self.infoFrame.Visible
 	self.selectCloseButton.Active = Enabled
 	self.selectCloseButton.Interactable = Enabled
-	self.selectDetailsSelectButton.Active = Canselect
-	self.selectDetailsSelectButton.Interactable = Canselect
-	self.selectDetailsSelectButton.AutoButtonColor = Canselect
+	self.infoCloseButton.Active = Enabled
+	self.infoCloseButton.Interactable = Enabled
 	for _, Card in ipairs(self.selectCards) do
-		Card.Button.Active = Enabled
-		Card.Button.Interactable = Enabled
-		Card.SelectButton.Active = Enabled
-		Card.SelectButton.Interactable = Enabled
+		for _, Button in ipairs({ Card.Button, Card.ButtonOpen, Card.InfoButton, Card.EquipButton }) do
+			Button.Active = Cardsenabled
+			Button.Interactable = Cardsenabled
+		end
 	end
 end
 
-function Controller:ShowSelectionDetails(Item, Animate: boolean?)
-	if self.selectProgressTween then self.selectProgressTween:Cancel() end
-	if not Item then
-		self.selectedDisplayItemId = nil
-		self.selectRainbowLabels = nil
-		self.selectDetailsNameText.Text = "No item selected"
-		self.selectDetailsRarityText.Text = "-"
-		self.selectDetailsRarityText.TextColor3 = Color3.fromRGB(255, 255, 255)
-		self.selectDetailsMutationText.Text = "-"
-		self.selectDetailsMutationText.TextColor3 = self.selectBaseMutationColor
-		self.selectDetailsRestorationText.Text = "0%"
-		self.selectDetailsValueText.Text = "$0"
-		self.selectDetailsReputationText.Text = "0"
-		self.selectDetailsIcon.Image = ""
-		self.selectDetailsProgressBar.Size = UDim2.fromScale(0, 1)
-		self.selectDetailsScale.Scale = 1
-		self:SetSelectionControlsEnabled(self.selectFrameOpen and not self.selectPlacementPending)
-		return
-	end
-
-	self.selectedDisplayItemId = Item.Id
-	local Rarity = Rarityconfig[tostring(Item.Rarity or "Common")]
-	Mutationlabel.Apply(self.selectDetailsNameText, Item)
-	self.selectDetailsRarityText.Text = Rarity.Name
-	self.selectDetailsRarityText.TextColor3 = Rarity.Color
-	local Mutation = Mutationconfig[tostring(Item.Mutation or "Normal")]
-	self.selectDetailsMutationText.Text = Mutation.Name
-	self.selectDetailsMutationText.TextColor3 = Mutation.Color
-	self.selectRainbowLabels = if Item.Mutation == "Rainbow"
-		then { self.selectDetailsMutationText, self.selectDetailsNameText }
-		else nil
-	self.selectDetailsRestorationText.Text = string.format("%d%%", Item.RestorationPercent or 0)
-	self.selectDetailsValueText.Text = Shared.FormatCurrency(Item.CurrentValue or 0)
-	self.selectDetailsReputationText.Text = "+" .. FormatReputation(self:GetBaseReputation(Item))
-	self.selectDetailsIcon.Image = tostring(Item.ImageId or "")
-	local Targetsize = UDim2.fromScale(math.clamp((Item.RestorationPercent or 0) / 100, 0, 1), 1)
-	self.selectProgressTween = Tweenservice:Create(self.selectDetailsProgressBar, Detailstweeninfo, { Size = Targetsize })
-	self.selectProgressTween:Play()
-	if Animate then
-		self.selectDetailsScale.Scale = 0.96
-		Tweenservice:Create(self.selectDetailsScale, Detailstweeninfo, { Scale = 1 }):Play()
-	end
+function Controller:RefreshSelectionControls()
 	self:SetSelectionControlsEnabled(self.selectFrameOpen and not self.selectPlacementPending)
+end
+
+function Controller:FillItemStats(Frame: GuiObject, Item)
+	Frame:WaitForChild("Icon").Image = tostring(Item.ImageId or "")
+	Frame:WaitForChild("CashText").Text = Shared.FormatCurrency(Item.CurrentValue or 0)
+	Frame:WaitForChild("ReputationText").Text = tostring(self:GetBaseReputation(Item))
+end
+
+function Controller:FillItemProgress(Frame: GuiObject, Item)
+	local Framebar = Frame:WaitForChild("FrameBar")
+	local Percent = math.clamp(tonumber(Item.RestorationPercent) or 0, 0, 100)
+	Framebar:WaitForChild("PourcentageText").Text = string.format("%d%%", Percent)
+	Framebar:WaitForChild("Bar").Size = UDim2.fromScale(Percent / 100, 1)
+end
+
+function Controller:SetCardOpen(Card, Item, Open: boolean)
+	if self.openCard and self.openCard ~= Card then
+		self.openCard.Button.Visible = true
+		self.openCard.ButtonOpen.Visible = false
+		self.openCard.Frame.ZIndex = 1
+	end
+	self.openCard = if Open then Card else nil
+	self.openCardItemId = if Open then Item.Id else nil
+	Card.Button.Visible = not Open
+	Card.ButtonOpen.Visible = Open
+	Card.Frame.ZIndex = if Open then 10 else 1
+	self:UpdateSelectionCanvas()
+	if Open then self:ScrollToOpenCard() end
+end
+
+function Controller:GetOpenCardBottom(): number
+	local Buttonopen = self.openCard.ButtonOpen
+	return Buttonopen.AbsolutePosition.Y + Buttonopen.AbsoluteSize.Y
+		- self.selectScrollingFrame.AbsolutePosition.Y
+		+ self.selectScrollingFrame.CanvasPosition.Y
+end
+
+function Controller:UpdateSelectionCanvas()
+	local Bottom = self.selectGridLayout.AbsoluteContentSize.Y
+	if self.openCard then
+		Bottom = math.max(Bottom, self:GetOpenCardBottom())
+	end
+	self.selectScrollingFrame.CanvasSize = UDim2.fromOffset(0, Bottom)
+end
+
+function Controller:ScrollToOpenCard()
+	local Scrolling = self.selectScrollingFrame
+	local Target = self:GetOpenCardBottom() - Scrolling.AbsoluteWindowSize.Y
+	if Target > Scrolling.CanvasPosition.Y then
+		Tweenservice:Create(Scrolling, Detailstweeninfo, { CanvasPosition = Vector2.new(0, Target) }):Play()
+	end
+end
+
+function Controller:ShowItemInfo(Item, Animate: boolean?)
+	self.infoItemId = Item.Id
+	local Rarity = Rarityconfig[tostring(Item.Rarity or "Common")]
+	local Mutation = if Item.Revealed then Mutationconfig[tostring(Item.Mutation or "Normal")] else nil
+	local Hasmutation = Mutation ~= nil and Mutation ~= Mutationconfig.Normal
+	self:FillItemStats(self.infoCard, Item)
+	self:FillItemProgress(self.infoCard, Item)
+	self.infoNameText.Text = tostring(Item.Name or "")
+	self.infoRarityText.Text = Rarity.Name
+	self.infoRarityGradient.Color = Rarity.Gradient
+	self.infoMutationText.Text = if Mutation then Mutation.Name else UnknownText
+	self.infoMutationGradient.Color = if Hasmutation then Mutation.Gradient else self.infoMutationBaseGradient
+	self.infoMutationFrameGradient.Color = if Hasmutation then Mutation.BackgroundGradient else self.infoMutationFrameBaseGradient
+	self.infoReputationText.Text = tostring(self:GetBaseReputation(Item))
+	self.selectRainbowGradients = if Hasmutation and Item.Mutation == "Rainbow"
+		then { self.infoMutationGradient, self.infoMutationFrameGradient }
+		else nil
+	self.blackFrame.Visible = true
+	self.infoFrame.Visible = true
+	if Animate then
+		self.infoScale.Scale = 0.96
+		Tweenservice:Create(self.infoScale, Detailstweeninfo, { Scale = 1 }):Play()
+	end
+	self:RefreshSelectionControls()
+end
+
+function Controller:CloseItemInfo()
+	self.infoItemId = nil
+	self.selectRainbowGradients = nil
+	self.infoFrame.Visible = false
+	self.blackFrame.Visible = false
+	self.infoScale.Scale = 1
+	self:RefreshSelectionControls()
 end
 
 function Controller:ApplySelectionItems(Items)
@@ -312,9 +357,9 @@ function Controller:ApplySelectionItems(Items)
 		if Child ~= self.selectTemplate and Child ~= self.selectGridLayout then Child:Destroy() end
 	end
 	table.clear(self.selectCards)
-	self.selectRainbowCards = {}
+	self.openCard = nil
 
-	local Selecteditem
+	local Infoitem
 	for Order, Item in ipairs(Sorteditems) do
 		local Card = self.selectTemplate:Clone()
 		Card.Name = "Item_" .. tostring(Item.Id)
@@ -322,27 +367,38 @@ function Controller:ApplySelectionItems(Items)
 		Card.Visible = true
 		Card.Parent = self.selectScrollingFrame
 		local Button = Card:WaitForChild("Button") :: GuiButton
-		local Selectbutton = Button:WaitForChild("SelectButton") :: GuiButton
-		local Nametext = Button:WaitForChild("NameText")
-		Mutationlabel.Apply(Nametext, Item)
-		if Item.Mutation == "Rainbow" then
-			table.insert(self.selectRainbowCards, Nametext)
-		end
-		Button:WaitForChild("ReputationText").Text = "+" .. FormatReputation(self:GetBaseReputation(Item)) .. " Reputation"
-		Button:WaitForChild("Icon").Image = tostring(Item.ImageId or "")
-		local Carddata = { Button = Button, SelectButton = Selectbutton }
+		local Buttonopen = Card:WaitForChild("ButtonOpen") :: GuiButton
+		local Infobutton = Buttonopen:WaitForChild("InfoButton") :: GuiButton
+		local Equipbutton = Buttonopen:WaitForChild("EquipButton") :: GuiButton
+		local Nametext = Buttonopen:WaitForChild("ObjectNameText") :: TextLabel
+		self:FillItemStats(Button, Item)
+		self:FillItemProgress(Button, Item)
+		self:FillItemStats(Buttonopen, Item)
+		Nametext.Text = tostring(Item.Name or "")
+		local Carddata = { Frame = Card, Button = Button, ButtonOpen = Buttonopen, InfoButton = Infobutton, EquipButton = Equipbutton }
 		table.insert(self.selectCards, Carddata)
+		local Isopen = self.openCardItemId == Item.Id
+		Button.Visible = not Isopen
+		Buttonopen.Visible = Isopen
+		Card.ZIndex = if Isopen then 10 else 1
+		if Isopen then self.openCard = Carddata end
 		Shared.AnimateButton(Button, function() return not Button.Active end)
-		Shared.AnimateButton(Selectbutton, function() return not Selectbutton.Active end)
-		Core:GetController("GamepadController"):OnActivated(Button, function() self:ShowSelectionDetails(Item, true) end)
-		Core:GetController("GamepadController"):OnActivated(Selectbutton, function() self:PlaceDisplayItem(Item.Id) end)
-		if self.selectedDisplayItemId == Item.Id then Selecteditem = Item end
+		Shared.AnimateButton(Infobutton, function() return not Infobutton.Active end)
+		Shared.AnimateButton(Equipbutton, function() return not Equipbutton.Active end)
+		Core:GetController("GamepadController"):OnActivated(Button, function() self:SetCardOpen(Carddata, Item, true) end)
+		Core:GetController("GamepadController"):OnActivated(Buttonopen, function() self:SetCardOpen(Carddata, Item, false) end)
+		Core:GetController("GamepadController"):OnActivated(Infobutton, function() self:ShowItemInfo(Item, true) end)
+		Core:GetController("GamepadController"):OnActivated(Equipbutton, function() self:PlaceDisplayItem(Item.Id) end)
+		if self.infoItemId == Item.Id then Infoitem = Item end
 	end
-	self:ShowSelectionDetails(Selecteditem, false)
-	self:SetSelectionControlsEnabled(self.selectFrameOpen and not self.selectPlacementPending)
+	if not self.openCard then self.openCardItemId = nil end
+	if self.infoItemId then
+		if Infoitem then self:ShowItemInfo(Infoitem, false) else self:CloseItemInfo() end
+	end
+	self:RefreshSelectionControls()
 
 	task.defer(function()
-		self.selectScrollingFrame.CanvasSize = UDim2.fromOffset(0, self.selectGridLayout.AbsoluteContentSize.Y)
+		self:UpdateSelectionCanvas()
 	end)
 end
 
@@ -377,12 +433,6 @@ function Controller:ApplyDisplayItems(State, Keepselectionopen: boolean?)
 
 end
 
-function Controller:SetSelectionFramePosition(SlotIndex: number)
-	local Xscale = if SlotIndex % 3 == 0 then 0.25 else 0.75
-	local Position = self.selectFrameBasePosition
-	self.selectFrame.Position = UDim2.new(Xscale, Position.X.Offset, Position.Y.Scale, Position.Y.Offset)
-end
-
 function Controller:OpenSelectionFrame(SlotIndex: number)
 	self:CloseTopbarFrames()
 	if self.selectFrameOpen or self.blockerMode ~= nil then return end
@@ -391,12 +441,18 @@ function Controller:OpenSelectionFrame(SlotIndex: number)
 	if self.selectFrameTween then self.selectFrameTween:Cancel() end
 	self.selectedSlotIndex = SlotIndex
 
-	self.selectedDisplayItemId = nil
 	self.selectPlacementPending = false
 	self.selectFrameOpen = true
-	self:SetSelectionFramePosition(SlotIndex)
 	self.selectScrollingFrame.CanvasPosition = Vector2.zero
-	self:ShowSelectionDetails(nil, false)
+	if self.openCard then
+		self.openCard.Button.Visible = true
+		self.openCard.ButtonOpen.Visible = false
+		self.openCard.Frame.ZIndex = 1
+	end
+	self.openCard = nil
+	self.openCardItemId = nil
+	self:UpdateSelectionCanvas()
+	self:CloseItemInfo()
 	self.selectFrame.Visible = true
 	self.selectFrameScale.Scale = 0.9
 	self:SetSelectionControlsEnabled(true)
@@ -414,8 +470,8 @@ function Controller:CloseSelectionFrame(Instant: boolean?, Fast: boolean?)
 	if self.selectFrameTween then self.selectFrameTween:Cancel() end
 	self.selectFrameOpen = false
 	self.selectPlacementPending = false
+	self:CloseItemInfo()
 	self:SetSelectionControlsEnabled(false)
-	self:ShowSelectionDetails(nil, false)
 	self:UpdateButtonAvailability()
 
 	if Instant then
@@ -666,31 +722,35 @@ function Controller:Init()
 	local Reputationfolder = Hud:WaitForChild("ReputationFolder")
 	local Expositionui = Playergui:WaitForChild("ExpositionUi") :: ScreenGui
 	local Slotsfolder = Expositionui:WaitForChild("SlotsButton")
-	local Selectframe = Expositionui:WaitForChild("SelectFrame") :: Frame
+	local Selectframe = Expositionui:WaitForChild("ExpositionFrame") :: Frame
 	local Selectscrollingframe = Selectframe:WaitForChild("ScrollingFrame") :: ScrollingFrame
-	local Selectdetailsframe = Selectframe:WaitForChild("StatsFrame") :: Frame
+	local Infoframe = Selectframe:WaitForChild("InfoFrame") :: Frame
+	local Statsframe = Infoframe:WaitForChild("StatsFrame") :: Frame
+	local Mutationframe = Statsframe:WaitForChild("MutationFrame") :: Frame
+	local Reputationframe = Statsframe:WaitForChild("ReputationFrame") :: Frame
 	Expositionui.Enabled = true
 	self.reputationButtonL = Reputationfolder:WaitForChild("ReputationButtonL") :: GuiButton
 	self.reputationButtonR = Reputationfolder:WaitForChild("ReputationButtonR") :: GuiButton
 	self.selectFrame = Selectframe
-	self.selectFrameBasePosition = Selectframe.Position
 	self.selectFrameScale = Shared.EnsureScale(Selectframe)
 	self.selectScrollingFrame = Selectscrollingframe
 	self.selectGridLayout = Selectscrollingframe:WaitForChild("UIGridLayout") :: UIGridLayout
 	self.selectTemplate = Selectscrollingframe:WaitForChild("Template") :: GuiObject
-	self.selectDetailsFrame = Selectdetailsframe
-	self.selectDetailsScale = Shared.EnsureScale(Selectdetailsframe)
-	self.selectDetailsSelectButton = Selectdetailsframe:WaitForChild("SelectButton") :: GuiButton
-	self.selectDetailsIcon = Selectdetailsframe:WaitForChild("Icon") :: ImageLabel
-	self.selectDetailsNameText = Selectdetailsframe:WaitForChild("NameText") :: TextLabel
-	self.selectDetailsRarityText = Selectdetailsframe:WaitForChild("RarityText") :: TextLabel
-	self.selectDetailsMutationText = Selectdetailsframe:WaitForChild("MutationText") :: TextLabel
-	self.selectBaseMutationColor = self.selectDetailsMutationText.TextColor3
-	self.selectDetailsRestorationText = Selectdetailsframe:WaitForChild("RestorationText") :: TextLabel
-	self.selectDetailsValueText = Selectdetailsframe:WaitForChild("ValueText") :: TextLabel
-	self.selectDetailsReputationText = Selectdetailsframe:WaitForChild("ReputationText") :: TextLabel
-	self.selectDetailsProgressBar = Selectdetailsframe:WaitForChild("FrameBar"):WaitForChild("Bar") :: GuiObject
 	self.selectCloseButton = Selectframe:WaitForChild("CloseButton") :: GuiButton
+	self.blackFrame = Selectframe:WaitForChild("BlackFrame") :: GuiObject
+	self.infoFrame = Infoframe
+	self.infoScale = Shared.EnsureScale(Infoframe)
+	self.infoCloseButton = Infoframe:WaitForChild("CloseButton") :: GuiButton
+	self.infoCard = Infoframe:WaitForChild("Button") :: GuiObject
+	self.infoNameText = Infoframe:WaitForChild("ObjectNameText") :: TextLabel
+	self.infoRarityText = Infoframe:WaitForChild("RarityText") :: TextLabel
+	self.infoRarityGradient = Uigradient.Ensure(self.infoRarityText)
+	self.infoMutationText = Mutationframe:WaitForChild("MutationText") :: TextLabel
+	self.infoMutationGradient = Uigradient.Ensure(self.infoMutationText)
+	self.infoMutationFrameGradient = Uigradient.Ensure(Mutationframe)
+	self.infoMutationBaseGradient = self.infoMutationGradient.Color
+	self.infoMutationFrameBaseGradient = self.infoMutationFrameGradient.Color
+	self.infoReputationText = Reputationframe:WaitForChild("ReputationText") :: TextLabel
 	self.buttonScales = {}
 	self.buttonTweens = {}
 	self.slotTextTweens = {}
@@ -713,7 +773,9 @@ function Controller:Init()
 	self.selectFrameAnimationId = 0
 	self.selectionRequestId = 0
 	self.selectedSlotIndex = nil
-	self.selectedDisplayItemId = nil
+	self.openCard = nil
+	self.openCardItemId = nil
+	self.infoItemId = nil
 	self.isOpen = false
 	self.isTransitioning = false
 	self.restorationPrepared = false
@@ -759,11 +821,22 @@ function Controller:Init()
 	self.selectTemplate.Visible = false
 	self.selectFrame.Visible = false
 	self.selectFrameScale.Scale = 1
-	self:ShowSelectionDetails(nil, false)
+	self.infoFrame.Visible = false
+	self.blackFrame.Visible = false
+	self:SetSelectionControlsEnabled(false)
 end
 
 function Controller:Start()
 	local Gamepad = Core:GetController("GamepadController")
+	Gamepad:RegisterMenu({
+		Priority = 35,
+		IsOpen = function()
+			return self.infoFrame.Visible
+		end,
+		Close = function()
+			self:CloseItemInfo()
+		end,
+	})
 	Gamepad:RegisterMenu({
 		Priority = 30,
 		IsOpen = function()
@@ -792,28 +865,18 @@ function Controller:Start()
 	self.settingController = Core:GetController("SettingController")
 	self.completionController = Core:GetController("CompletionController")
 	Runservice.Heartbeat:Connect(function()
-		local Color = Core:GetController("MutationController"):GetColor("Rainbow")
-		if not Color then
-			return
-		end
-		for _, Label in ipairs(self.selectRainbowLabels or {}) do
-			Label.TextColor3 = Color
-		end
-		for _, Label in ipairs(self.selectRainbowCards or {}) do
-			if Label.Parent then
-				Label.TextColor3 = Color
-			end
+		local Sequence = Core:GetController("MutationController"):GetGradient("Rainbow")
+		for _, Gradient in ipairs(self.selectRainbowGradients or {}) do
+			Gradient.Color = Sequence
 		end
 	end)
 	for _, Button in ipairs(self.animatedButtons) do self:BindButtonAnimation(Button) end
 	Shared.AnimateButton(self.selectCloseButton, function() return not self.selectCloseButton.Active end)
-	Shared.AnimateButton(self.selectDetailsSelectButton, function() return not self.selectDetailsSelectButton.Active end)
+	Shared.AnimateButton(self.infoCloseButton, function() return not self.infoCloseButton.Active end)
 	Core:GetController("GamepadController"):OnActivated(self.reputationButtonR, function() self:Open() end)
 	Core:GetController("GamepadController"):OnActivated(self.reputationButtonL, function() self:Close() end)
 	Core:GetController("GamepadController"):OnActivated(self.selectCloseButton, function() self:CloseSelectionFrame(false) end)
-	Core:GetController("GamepadController"):OnActivated(self.selectDetailsSelectButton, function()
-		if self.selectedDisplayItemId then self:PlaceDisplayItem(self.selectedDisplayItemId) end
-	end)
+	Core:GetController("GamepadController"):OnActivated(self.infoCloseButton, function() self:CloseItemInfo() end)
 	for _, Slot in ipairs(self.slotButtons) do
 		Core:GetController("GamepadController"):OnActivated(Slot.Button, function()
 			self:SyncFrameBlockers()
@@ -836,7 +899,7 @@ function Controller:Start()
 		end)
 	end
 	self.selectGridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		self.selectScrollingFrame.CanvasSize = UDim2.fromOffset(0, self.selectGridLayout.AbsoluteContentSize.Y)
+		self:UpdateSelectionCanvas()
 	end)
 	Remotemanager:OnClientEvent("InventoryService", "RestoredItemsUpdated", function(Items)
 		self:ApplySelectionItems(Items)

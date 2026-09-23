@@ -423,7 +423,7 @@ function Customercontroller:Respond(Decision: string)
 		Core:GetController("FeedbackController"):Purchase(
 			tostring(Offer.ObjectName),
 			tostring(Offer.ImageId or ""),
-			Rarityconfig[tostring(Definition.Rarity or "Common")].Color
+			Rarityconfig[tostring(Definition.Rarity or "Common")].Gradient
 		)
 		Core:GetController("RestorationController"):Enter()
 	end

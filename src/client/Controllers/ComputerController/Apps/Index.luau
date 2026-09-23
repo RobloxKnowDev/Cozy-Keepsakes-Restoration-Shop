@@ -5,6 +5,7 @@ local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Mutationconfig = require(ReplicatedStorage.Shared.Config.Mutation)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Uigradient = require(ReplicatedStorage.Shared.Utils.UiGradient)
 local Shared = require(script.Parent.Shared)
 
 local Index = {}
@@ -44,7 +45,7 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 	end)
 	Controller.indexEntries = Sortedentries
 	Controller.indexUnlockedByObject = {}
-	Controller.indexRainbowLabels = {}
+	Controller.indexRainbowGradients = {}
 	local Unlockedname = nil
 	for _, Child in ipairs(Controller.indexScrollingFrame:GetChildren()) do
 		if Child ~= Controller.indexTemplate and not Child:IsA("UIGridLayout") then Child:Destroy() end
@@ -73,11 +74,12 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 		NameText.Text = if IsUnlocked then tostring(Entry.Name or "") else "???"
 		NameText.Visible = true
 		RarityText.Text = Rarity.Name
-		RarityText.TextColor3 = Rarity.Color
+		Uigradient.Ensure(RarityText).Color = Rarity.Gradient
 		MutationText.Text = Mutation.Name
-		MutationText.TextColor3 = Mutation.Color
+		local MutationGradient = Uigradient.Ensure(MutationText)
+		MutationGradient.Color = Mutation.Gradient
 		if Page == "Rainbow" then
-			table.insert(Controller.indexRainbowLabels, MutationText)
+			table.insert(Controller.indexRainbowGradients, MutationGradient)
 		end
 		local DefaultColor = Icon.ImageColor3
 		local DefaultTransparency = Icon.ImageTransparency
@@ -119,8 +121,8 @@ function Index.Init(Controller)
 	Controller.indexUnlockedByObject = {}
 	Controller.indexTemplate.Visible = false
 	Controller.indexMutationFrame = Controller.indexFrame:WaitForChild("MutationFrame")
-	Controller.indexRainbowText = Controller.indexMutationFrame:WaitForChild("RainbowButton"):WaitForChild("Text")
-	Controller.indexRainbowLabels = {}
+	Controller.indexRainbowGradient = Uigradient.Ensure(Controller.indexMutationFrame:WaitForChild("RainbowButton"):WaitForChild("Text"))
+	Controller.indexRainbowGradients = {}
 	Controller.indexMutation = "Normal"
 	Controller.indexMutationButtons = {}
 	for _, Mutation in ipairs(Mutationconfig.Order) do
@@ -145,15 +147,10 @@ function Index.Start(Controller)
 		Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 	end)
 	RunService.Heartbeat:Connect(function()
-		local Color = Core:GetController("MutationController"):GetColor("Rainbow")
-		if not Color then
-			return
-		end
-		Controller.indexRainbowText.TextColor3 = Color
-		for _, Label in ipairs(Controller.indexRainbowLabels) do
-			if Label.Parent then
-				Label.TextColor3 = Color
-			end
+		local Sequence = Core:GetController("MutationController"):GetGradient("Rainbow")
+		Controller.indexRainbowGradient.Color = Sequence
+		for _, Gradient in ipairs(Controller.indexRainbowGradients) do
+			Gradient.Color = Sequence
 		end
 	end)
 end

@@ -153,7 +153,7 @@ function Controller:Enter()
 		if not Definition or Definition == Mutationconfig.Normal then return end
 		Core:GetController("FeedbackController"):ScheduleMutationReveal(
 			Definition.Name,
-			Definition.Color,
+			Definition.Gradient,
 			Mutation == "Rainbow",
 			Mutationconfig.RevealDelaySeconds
 		)

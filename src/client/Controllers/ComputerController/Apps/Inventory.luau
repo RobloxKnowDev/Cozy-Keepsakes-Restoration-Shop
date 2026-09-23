@@ -3,7 +3,7 @@ local RunService = game:GetService("RunService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Mutationconfig = require(ReplicatedStorage.Shared.Config.Mutation)
-local Mutationlabel = require(ReplicatedStorage.Shared.Utils.MutationLabel)
+local Uigradient = require(ReplicatedStorage.Shared.Utils.UiGradient)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
@@ -46,11 +46,10 @@ function Inventory.ShowDetails(Controller, Item)
 	if not Item then
 		Controller.selectedInventoryItemId = nil
 		Controller.inventoryNameText.Text = "No item selected"
-		Controller.inventoryNameText.TextColor3 = Controller.inventoryBaseNameColor
 		Controller.inventoryRarityText.Text = UnknownText
-		Controller.inventoryRarityText.TextColor3 = Controller.inventoryBaseRarityColor
+		Controller.inventoryRarityGradient.Color = Controller.inventoryBaseRarityGradient
 		Controller.inventoryMutationText.Text = UnknownText
-		Controller.inventoryMutationText.TextColor3 = Controller.inventoryBaseMutationColor
+		Controller.inventoryMutationGradient.Color = Controller.inventoryBaseMutationGradient
 		Controller.inventoryRestorationText.Text = "0%"
 		Controller.inventoryReputationText.Text = UnknownText
 		Controller.inventoryValueText.Text = UnknownText
@@ -63,9 +62,9 @@ function Inventory.ShowDetails(Controller, Item)
 	Controller.selectedInventoryItemId = Item.Id
 	local Percent = tonumber(Item.RestorationPercent) or 0
 	local Rarity = Rarityconfig[tostring(Item.Rarity or "Common")]
-	Mutationlabel.Apply(Controller.inventoryNameText, Item)
+	Controller.inventoryNameText.Text = tostring(Item.Name or "")
 	Controller.inventoryRarityText.Text = Rarity.Name
-	Controller.inventoryRarityText.TextColor3 = Rarity.Color
+	Controller.inventoryRarityGradient.Color = Rarity.Gradient
 	Controller.inventoryRestorationText.Text = string.format("%d%%", Percent)
 	Setcleanenabled(Controller, Percent < 100)
 	Controller.inventoryProgressBar.Size = UDim2.fromScale(math.clamp(Percent / 100, 0, 1), 1)
@@ -76,15 +75,15 @@ function Inventory.ShowDetails(Controller, Item)
 
 	if not Item.Revealed then
 		Controller.inventoryMutationText.Text = UnknownText
-		Controller.inventoryMutationText.TextColor3 = Controller.inventoryBaseMutationColor
+		Controller.inventoryMutationGradient.Color = Controller.inventoryBaseMutationGradient
 		return
 	end
 
 	local Mutation = Mutationconfig[tostring(Item.Mutation or "Normal")]
 	Controller.inventoryMutationText.Text = Mutation.Name
-	Controller.inventoryMutationText.TextColor3 = Mutation.Color
+	Controller.inventoryMutationGradient.Color = Mutation.Gradient
 	if Item.Mutation == "Rainbow" then
-		Controller.inventoryRainbowDetails = { Controller.inventoryMutationText, Controller.inventoryNameText }
+		Controller.inventoryRainbowDetails = { Controller.inventoryMutationGradient }
 	end
 end
 
@@ -113,7 +112,6 @@ function Inventory.ApplyItems(Controller, Items)
 		return (tonumber(Left.Id) or 0) > (tonumber(Right.Id) or 0)
 	end)
 	Controller.inventoryItems = Sorteditems
-	Controller.inventoryRainbowCards = {}
 
 	local Highestid = 0
 	for _, Item in ipairs(Controller.inventoryItems) do
@@ -150,10 +148,7 @@ function Inventory.ApplyItems(Controller, Items)
 			Inventory.ShowDetails(Controller, Item)
 		end)
 		local Nametext = RootButton:WaitForChild("NameText")
-		Mutationlabel.Apply(Nametext, Item)
-		if Item.Mutation == "Rainbow" then
-			table.insert(Controller.inventoryRainbowCards, Nametext)
-		end
+		Nametext.Text = tostring(Item.Name or "")
 		RootButton:WaitForChild("PriceText").Text = Shared.FormatCurrency(Item.CurrentValue or 0)
 		RootButton:WaitForChild("PourcentageText").Text = string.format("%d%%", tonumber(Item.RestorationPercent) or 0)
 		RootButton:WaitForChild("Icon").Image = tostring(Item.ImageId or "")
@@ -182,7 +177,9 @@ function Inventory.Init(Controller)
 	Controller.inventoryDetailsFrame = Controller.inventoryFrame:WaitForChild("StatsFrame")
 	Controller.inventoryNameText = Controller.inventoryDetailsFrame:WaitForChild("NameText")
 	Controller.inventoryRarityText = Controller.inventoryDetailsFrame:WaitForChild("RarityText")
+	Controller.inventoryRarityGradient = Uigradient.Ensure(Controller.inventoryRarityText)
 	Controller.inventoryMutationText = Controller.inventoryDetailsFrame:WaitForChild("MutationText")
+	Controller.inventoryMutationGradient = Uigradient.Ensure(Controller.inventoryMutationText)
 	Controller.inventoryRestorationText = Controller.inventoryDetailsFrame:WaitForChild("RestorationText")
 	Controller.inventoryReputationText = Controller.inventoryDetailsFrame:WaitForChild("ReputationText")
 	Controller.inventoryValueText = Controller.inventoryDetailsFrame:WaitForChild("ValueText")
@@ -190,11 +187,10 @@ function Inventory.Init(Controller)
 	Controller.inventoryProgressBar = Controller.inventoryDetailsFrame:WaitForChild("FrameBar").Bar
 	Controller.inventorySellButton = Controller.inventoryDetailsFrame:WaitForChild("SellButton")
 	Controller.inventoryCleanButton = Controller.inventoryDetailsFrame:WaitForChild("CleanButton")
-	Controller.inventoryBaseNameColor = Controller.inventoryNameText.TextColor3
 	Controller.inventoryBaseCleanColor = Controller.inventoryCleanButton.BackgroundColor3
 	Controller.inventoryBaseSellColor = Controller.inventorySellButton.BackgroundColor3
-	Controller.inventoryBaseRarityColor = Controller.inventoryRarityText.TextColor3
-	Controller.inventoryBaseMutationColor = Controller.inventoryMutationText.TextColor3
+	Controller.inventoryBaseRarityGradient = Controller.inventoryRarityGradient.Color
+	Controller.inventoryBaseMutationGradient = Controller.inventoryMutationGradient.Color
 	Controller.inventoryItems = {}
 	Controller.selectedInventoryItemId = nil
 	Controller.inventoryHighestItemId = nil
@@ -210,17 +206,9 @@ end
 
 function Inventory.Start(Controller)
 	RunService.Heartbeat:Connect(function()
-		local Color = Core:GetController("MutationController"):GetColor("Rainbow")
-		if not Color then
-			return
-		end
-		for _, Label in ipairs(Controller.inventoryRainbowCards or {}) do
-			if Label.Parent then
-				Label.TextColor3 = Color
-			end
-		end
-		for _, Label in ipairs(Controller.inventoryRainbowDetails or {}) do
-			Label.TextColor3 = Color
+		local Sequence = Core:GetController("MutationController"):GetGradient("Rainbow")
+		for _, Gradient in ipairs(Controller.inventoryRainbowDetails or {}) do
+			Gradient.Color = Sequence
 		end
 	end)
 

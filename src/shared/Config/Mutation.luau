@@ -1,3 +1,13 @@
+local Rainbowgradient = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromHex("FF0000")),
+	ColorSequenceKeypoint.new(1 / 6, Color3.fromHex("FFFF00")),
+	ColorSequenceKeypoint.new(2 / 6, Color3.fromHex("00FF00")),
+	ColorSequenceKeypoint.new(3 / 6, Color3.fromHex("00FFFF")),
+	ColorSequenceKeypoint.new(4 / 6, Color3.fromHex("0000FF")),
+	ColorSequenceKeypoint.new(5 / 6, Color3.fromHex("FF00FF")),
+	ColorSequenceKeypoint.new(1, Color3.fromHex("FF0000")),
+})
+
 return {
 	Order = {
 		"Normal",
@@ -17,7 +27,8 @@ return {
 
 	Normal = {
 		Name = "Normal",
-		Color = Color3.fromRGB(255, 255, 255),
+		Gradient = ColorSequence.new(Color3.fromRGB(255, 255, 255)),
+		BackgroundGradient = ColorSequence.new(Color3.fromRGB(255, 255, 255)),
 		Weight = 88,
 		ValueMultiplier = 1,
 		ReputationMultiplier = 1,
@@ -25,7 +36,8 @@ return {
 
 	Gold = {
 		Name = "Gold",
-		Color = Color3.fromRGB(255, 224, 90),
+		Gradient = ColorSequence.new(Color3.fromHex("FFE05A"), Color3.fromHex("FFE98C")),
+		BackgroundGradient = ColorSequence.new(Color3.fromHex("FFE05A"), Color3.fromHex("FFEEA7")),
 		Weight = 8,
 		ValueMultiplier = 2,
 		ReputationMultiplier = 1.5,
@@ -33,7 +45,8 @@ return {
 
 	Diamond = {
 		Name = "Diamond",
-		Color = Color3.fromRGB(37, 196, 254),
+		Gradient = ColorSequence.new(Color3.fromHex("25C4FE"), Color3.fromHex("8CE0FF")),
+		BackgroundGradient = ColorSequence.new(Color3.fromHex("25C4FE"), Color3.fromHex("9DE5FF")),
 		Weight = 3,
 		ValueMultiplier = 5,
 		ReputationMultiplier = 2.5,
@@ -41,7 +54,8 @@ return {
 
 	Rainbow = {
 		Name = "Rainbow",
-		Color = Color3.fromRGB(255, 105, 205),
+		Gradient = Rainbowgradient,
+		BackgroundGradient = Rainbowgradient,
 		Weight = 1,
 		ValueMultiplier = 12,
 		ReputationMultiplier = 5,

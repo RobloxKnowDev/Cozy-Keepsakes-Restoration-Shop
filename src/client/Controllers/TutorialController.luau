@@ -879,8 +879,11 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Text = "Put your frame on the shelf!",
 			Target = function()
-				local Cards = Core:GetController("ExpositionController").selectCards
-				return if Cards[1] then Cards[1].SelectButton else nil
+				local Exposition = Core:GetController("ExpositionController")
+				if Exposition.infoFrame.Visible then return Exposition.infoCloseButton end
+				local Card = Exposition.selectCards[1]
+				if not Card then return nil end
+				return if Card.Button.Visible then Card.Button else Card.EquipButton
 			end,
 			Done = function()
 				return not Core:GetController("ExpositionController"):IsSelectionOpen()

@@ -163,10 +163,7 @@ local function CollectOfferObjects()
 	end
 
 	for ObjectKey, Definition in pairs(Objectconfig.Object) do
-		local Rarity = Definition.Rarity
-		if Rarity ~= "Exclusive" then
-			table.insert(ObjectsByRarity[Rarity], ObjectKey)
-		end
+		table.insert(ObjectsByRarity[Definition.Rarity], ObjectKey)
 	end
 
 	for _, Rarity in ipairs(Rarityconfig.Order) do
@@ -716,15 +713,13 @@ end
 local function GetAffordableOfferThreshold(Player: Player): number
 	local Cheapestprice = math.huge
 	for _, Definition in pairs(Objectconfig.Object) do
-		if Definition.Rarity ~= "Exclusive" then
-			local Maxprice = math.max(
-				tonumber(Definition.PriceMaxValue) or tonumber(Definition.MaxPrice) or tonumber(Definition.MaxValue) or 0,
-				0
-			)
-			local Minprice = math.max(math.min(tonumber(Definition.PriceMinValue) or Maxprice, Maxprice), 0)
-			local Affordableprice = Minprice + (Maxprice - Minprice) * Objectconfig.Offer.EmergencyPriceMargin
-			Cheapestprice = math.min(Cheapestprice, Affordableprice)
-		end
+		local Maxprice = math.max(
+			tonumber(Definition.PriceMaxValue) or tonumber(Definition.MaxPrice) or tonumber(Definition.MaxValue) or 0,
+			0
+		)
+		local Minprice = math.max(math.min(tonumber(Definition.PriceMinValue) or Maxprice, Maxprice), 0)
+		local Affordableprice = Minprice + (Maxprice - Minprice) * Objectconfig.Offer.EmergencyPriceMargin
+		Cheapestprice = math.min(Cheapestprice, Affordableprice)
 	end
 	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
 	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
