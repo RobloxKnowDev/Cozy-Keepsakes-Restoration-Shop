@@ -16,6 +16,7 @@ local Rowheight = 26
 local Maximumrows = 6
 local Backgroundcolor = Color3.fromRGB(18, 18, 22)
 local Hintcolor = Color3.fromRGB(150, 150, 160)
+local Textfont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
 
 local function Makelabel(Parent: Instance, Order: number): TextLabel
 	local Label = Instance.new("TextLabel")
@@ -23,7 +24,7 @@ local function Makelabel(Parent: Instance, Order: number): TextLabel
 	Label.LayoutOrder = Order
 	Label.BackgroundTransparency = 1
 	Label.Size = UDim2.new(1, -20, 0, Rowheight)
-	Label.FontFace = Font.new("rbxasset://fonts/families/Inter.json", Enum.FontWeight.Medium)
+	Label.FontFace = Textfont
 	Label.TextSize = 15
 	Label.TextColor3 = Hintcolor
 	Label.TextXAlignment = Enum.TextXAlignment.Left
@@ -62,7 +63,7 @@ function Admincontroller:Buildgui()
 	self.input.BackgroundTransparency = 1
 	self.input.Size = UDim2.new(1, -20, 0, 40)
 	self.input.Position = UDim2.fromOffset(10, 0)
-	self.input.FontFace = Font.new("rbxasset://fonts/families/Inter.json", Enum.FontWeight.SemiBold)
+	self.input.FontFace = Textfont
 	self.input.TextSize = 17
 	self.input.TextColor3 = Color3.new(1, 1, 1)
 	self.input.PlaceholderText = "Command..."

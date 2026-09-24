@@ -179,13 +179,12 @@ end
 
 local function Getdisplayreputation(Player: Player): number
 	local Reputation = 0
-	local Statsservice = Core:GetService("StatsService")
 	for _, Placement in pairs(Occupiedslots) do
 		if Placement.Player == Player then
-			Reputation += Statsservice:GetReputationContribution(Player, Placement.Item.Reputation)
+			Reputation += Placement.Item.Reputation
 		end
 	end
-	return Reputation
+	return Core:GetService("StatsService"):GetReputationContribution(Player, Reputation)
 end
 
 local function Refreshdisplayreputation(Player: Player): number

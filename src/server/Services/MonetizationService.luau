@@ -213,6 +213,7 @@ end
 function MonetizationService:GrantReputationBoost(Player: Player, Seconds: number)
 	PersonalReputationBoostEndsAt[Player] = math.max(PersonalReputationBoostEndsAt[Player] or 0, Now()) + Seconds
 	self:PushAllStates()
+	Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
 end
 
 function MonetizationService:Init()
@@ -220,6 +221,7 @@ function MonetizationService:Init()
 		Load = function(Player, Saved)
 			PersonalReputationBoostEndsAt[Player] = math.max(tonumber(Saved.PersonalReputationBoostEndsAt) or 0, 0)
 			self:PushAllStates()
+			Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
 		end,
 		Save = function(Player)
 			return { PersonalReputationBoostEndsAt = PersonalReputationBoostEndsAt[Player] or 0 }

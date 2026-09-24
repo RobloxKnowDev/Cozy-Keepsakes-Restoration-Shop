@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local BoostConfig = require(ReplicatedStorage.Shared.Config.Boosts)
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
 local MonetizationConfig = require(ReplicatedStorage.Shared.Config.Monetization)
@@ -60,8 +61,8 @@ end
 function Shop.ApplyState(Controller, State)
 	Controller.shopState = State
 	local BoostController = Core:GetController("BoostController")
-	BoostController:SetBoost("StarterReputation", Controller.personalReputationBoostIcon, State.PersonalReputationBoostEndsAt, 1)
-	BoostController:SetBoost("ServerReputationLuck", Controller.serverReputationBoostIcon, State.ServerLuckEndsAt, 2)
+	BoostController:SetBoost("StarterReputation", State.PersonalReputationBoostEndsAt, 1)
+	BoostController:SetBoost("ServerReputationLuck", State.ServerLuckEndsAt, 2, State.ServerLuckMultiplier)
 
 	if State.OwnsVIP then
 		SetPrice(Controller.vipButton, "OWNED")
@@ -141,8 +142,8 @@ function Shop.Init(Controller)
 	Controller.luckArrowDefaultText = Controller.luckArrowText.Text
 	Controller.luckArrowDefaultColor = Controller.luckArrowText.TextColor3
 	Controller.nextLuckColor = Controller.nextLuckText.TextColor3
-	Controller.personalReputationBoostIcon = StarterPack:WaitForChild("Reputation"):WaitForChild("Icon").Image
-	Controller.serverReputationBoostIcon = ServerLuck:WaitForChild("Icon").Image
+	StarterPack:WaitForChild("Reputation"):WaitForChild("Icon").Image = BoostConfig.StarterReputation.Icon
+	ServerLuck:WaitForChild("Icon").Image = BoostConfig.ServerReputationLuck.Icon
 	for _, Button in ipairs({
 		Controller.doubleMoneyButton,
 		Controller.vipButton,

@@ -16,21 +16,19 @@ function BoostController:RemoveBoost(Name: string)
 	self.boosts[Name] = nil
 end
 
-function BoostController:SetBoost(Name: string, Icon: string, EndsAt: number, LayoutOrder: number)
+function BoostController:SetBoost(Name: string, EndsAt: number, LayoutOrder: number, Multiplier: number?)
 	if EndsAt <= workspace:GetServerTimeNow() then
 		self:RemoveBoost(Name)
 		return
 	end
 
+	local Info = BoostConfig[Name]
 	local Boost = self.boosts[Name]
 	if not Boost then
-		local Info = BoostConfig[Name]
 		local Frame = self.template:Clone() :: ImageLabel
 		local Tooltip = Frame:WaitForChild("Frame") :: Frame
 		local BaseZIndex = Frame.ZIndex
-		local NameText = Tooltip:WaitForChild("NameText") :: TextLabel
 		local DescriptionText = Tooltip:WaitForChild("DescriptionText") :: TextLabel
-		NameText.Text = Info.Title
 		DescriptionText.Text = Info.Description
 		Tooltip.Visible = false
 		Frame.Name = Name
@@ -38,6 +36,7 @@ function BoostController:SetBoost(Name: string, Icon: string, EndsAt: number, La
 		Boost = {
 			Frame = Frame,
 			Text = Frame:WaitForChild("Text") :: TextLabel,
+			NameText = Tooltip:WaitForChild("NameText") :: TextLabel,
 			EndsAt = EndsAt,
 		}
 		self.boosts[Name] = Boost
@@ -52,7 +51,8 @@ function BoostController:SetBoost(Name: string, Icon: string, EndsAt: number, La
 		end)
 	end
 
-	Boost.Frame.Image = Icon
+	Boost.NameText.Text = if Multiplier then string.format("%s x%d", Info.Title, Multiplier) else Info.Title
+	Boost.Frame.Image = Info.Icon
 	Boost.Frame.LayoutOrder = LayoutOrder
 	Boost.Frame.Visible = true
 	Boost.EndsAt = EndsAt

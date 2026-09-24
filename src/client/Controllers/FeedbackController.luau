@@ -30,6 +30,7 @@ local MusicLoopFadeTween = TweenInfo.new(1.2, Enum.EasingStyle.Linear)
 local UiClickCooldown = 0.08
 local ConfirmCooldown = 0.15
 local DonationColor = Color3.fromRGB(126, 255, 145)
+local TextFont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
 local RayCount = 14
 local ChargeRingCount = 5
 local MutationBuildupSeconds = 1.35
@@ -165,7 +166,7 @@ function FeedbackController:FloatingText(Parent: GuiObject, Text: string, Color:
 	Label.Position = UDim2.fromScale(0.5, 0.45)
 	Label.Size = UDim2.fromOffset(300, 52)
 	Label.BackgroundTransparency = 1
-	Label.Font = Enum.Font.GothamBold
+	Label.FontFace = TextFont
 	Label.Text = Text
 	Label.TextColor3 = Color
 	Label.TextScaled = true
@@ -191,7 +192,7 @@ function FeedbackController:CenterText(Text: string, Color: Color3, Major: boole
 	Label.Position = UDim2.fromScale(0.5, 0.5)
 	Label.Size = UDim2.fromOffset(if Major then 620 else 460, if Major then 100 else 74)
 	Label.BackgroundTransparency = 1
-	Label.Font = Enum.Font.GothamBlack
+	Label.FontFace = TextFont
 	Label.Text = Text
 	Label.TextColor3 = Color
 	Label.TextScaled = true
@@ -220,7 +221,7 @@ function FeedbackController:CleaningPercent(Position: Vector2, Amount: number)
 	local Size = math.random(18, 28)
 	Label.Size = UDim2.fromOffset(Size * 2.7, Size)
 	Label.BackgroundTransparency = 1
-	Label.Font = Enum.Font.GothamBlack
+	Label.FontFace = TextFont
 	Label.Text = if Amount >= 1 then string.format("+%d%%", Amount) else string.format("+%.1f%%", Amount)
 	Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	Label.TextScaled = true
@@ -285,7 +286,7 @@ function FeedbackController:RestorationCompleteText()
 	Glow.Position = UDim2.fromScale(0.5, 0.38)
 	Glow.Size = UDim2.fromScale(1.08, 0.68)
 	Glow.BackgroundTransparency = 1
-	Glow.Font = Enum.Font.GothamBlack
+	Glow.FontFace = TextFont
 	Glow.Text = "RESTORATION COMPLETE!"
 	Glow.TextColor3 = Color3.fromRGB(255, 177, 59)
 	Glow.TextScaled = true
@@ -298,7 +299,7 @@ function FeedbackController:RestorationCompleteText()
 	Title.Position = UDim2.fromScale(0.5, 0.38)
 	Title.Size = UDim2.fromScale(1, 0.62)
 	Title.BackgroundTransparency = 1
-	Title.Font = Enum.Font.GothamBlack
+	Title.FontFace = TextFont
 	Title.Text = "RESTORATION COMPLETE!"
 	Title.TextColor3 = Color3.fromRGB(255, 244, 196)
 	Title.TextScaled = true
@@ -321,7 +322,7 @@ function FeedbackController:RestorationCompleteText()
 	Subtitle.Position = UDim2.fromScale(0.5, 0.82)
 	Subtitle.Size = UDim2.fromScale(0.58, 0.25)
 	Subtitle.BackgroundTransparency = 1
-	Subtitle.Font = Enum.Font.GothamBold
+	Subtitle.FontFace = TextFont
 	Subtitle.Text = "100%  •  PERFECT CLEAN"
 	Subtitle.TextColor3 = Color3.fromRGB(255, 219, 127)
 	Subtitle.TextScaled = true
@@ -600,7 +601,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 		Glow.Position = UDim2.fromScale(0.5, 0.4)
 		Glow.Size = UDim2.fromScale(1.14, 0.78)
 		Glow.BackgroundTransparency = 1
-		Glow.Font = Enum.Font.GothamBlack
+		Glow.FontFace = TextFont
 		Glow.Text = string.upper(Name)
 		Glow.TextColor3 = Color
 		Glow.TextScaled = true
@@ -615,7 +616,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 		Label.Position = UDim2.fromScale(0.5, 0.4)
 		Label.Size = UDim2.fromScale(1, 0.7)
 		Label.BackgroundTransparency = 1
-		Label.Font = Enum.Font.GothamBlack
+		Label.FontFace = TextFont
 		Label.Text = string.upper(Name)
 		Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 		Label.TextScaled = true
@@ -633,7 +634,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 		Shinelabel.Position = UDim2.fromScale(0.5, 0.4)
 		Shinelabel.Size = UDim2.fromScale(1, 0.7)
 		Shinelabel.BackgroundTransparency = 1
-		Shinelabel.Font = Enum.Font.GothamBlack
+		Shinelabel.FontFace = TextFont
 		Shinelabel.Text = string.upper(Name)
 		Shinelabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		Shinelabel.TextScaled = true
@@ -650,7 +651,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 		Subtitle.Position = UDim2.fromScale(0.5, 0.88)
 		Subtitle.Size = UDim2.fromScale(0.62, 0.24)
 		Subtitle.BackgroundTransparency = 1
-		Subtitle.Font = Enum.Font.GothamBold
+		Subtitle.FontFace = TextFont
 		Subtitle.Text = "MUTATION FOUND"
 		Subtitle.TextColor3 = Color
 		Subtitle.TextScaled = true
@@ -729,7 +730,7 @@ function FeedbackController:DonationThanks(AmountText: string)
 	Glow.Position = UDim2.fromScale(0.5, 0.38)
 	Glow.Size = UDim2.fromScale(1.12, 0.74)
 	Glow.BackgroundTransparency = 1
-	Glow.Font = Enum.Font.GothamBlack
+	Glow.FontFace = TextFont
 	Glow.Text = "THANK YOU!"
 	Glow.TextColor3 = DonationColor
 	Glow.TextScaled = true
@@ -743,7 +744,7 @@ function FeedbackController:DonationThanks(AmountText: string)
 	Label.Position = UDim2.fromScale(0.5, 0.38)
 	Label.Size = UDim2.fromScale(1, 0.66)
 	Label.BackgroundTransparency = 1
-	Label.Font = Enum.Font.GothamBlack
+	Label.FontFace = TextFont
 	Label.Text = "THANK YOU!"
 	Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	Label.TextScaled = true
@@ -763,7 +764,7 @@ function FeedbackController:DonationThanks(AmountText: string)
 	Subtitle.Position = UDim2.fromScale(0.5, 0.86)
 	Subtitle.Size = UDim2.fromScale(0.7, 0.26)
 	Subtitle.BackgroundTransparency = 1
-	Subtitle.Font = Enum.Font.GothamBold
+	Subtitle.FontFace = TextFont
 	Subtitle.Text = AmountText .. " DONATED"
 	Subtitle.TextColor3 = DonationColor
 	Subtitle.TextScaled = true
@@ -841,7 +842,7 @@ function FeedbackController:Purchase(Name: string, ImageId: string, Gradient: Co
 	Label.Position = UDim2.fromScale(0.5, 0.85)
 	Label.Size = UDim2.fromScale(1.6, 0.17)
 	Label.BackgroundTransparency = 1
-	Label.Font = Enum.Font.GothamBlack
+	Label.FontFace = TextFont
 	Label.Text = string.upper(Name)
 	Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	Label.TextScaled = true

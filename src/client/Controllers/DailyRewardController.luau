@@ -201,7 +201,7 @@ function DailyRewardController:ApplyState(State)
 	end
 	self.state = State
 	self:Refresh()
-	Core:GetController("BoostController"):SetBoost("DailySaleBoost", Config.SaleBoostIcon, State.SaleBoostEndsAt, 3)
+	Core:GetController("BoostController"):SetBoost("DailySaleBoost", State.SaleBoostEndsAt, 3)
 end
 
 function DailyRewardController:Open()

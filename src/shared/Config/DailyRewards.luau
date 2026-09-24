@@ -1,7 +1,6 @@
 return {
 	ClaimIntervalSeconds = 24 * 60 * 60,
 	SkipProductId = 3708776063,
-	SaleBoostIcon = "rbxassetid://131705537343553",
 	Rewards = {
 		{
 			Type = "Cash",

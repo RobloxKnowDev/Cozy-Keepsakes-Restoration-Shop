@@ -11,6 +11,7 @@ local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 local Objectconfig = require(Replicatedstorage.Shared.Config.Object)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
+local Uigradient = require(Replicatedstorage.Shared.Utils.UiGradient)
 
 local Customercontroller = {
 	Name = "CustomerController",
@@ -43,32 +44,6 @@ local TouchRayOffsets = {
 	Vector2.new(0, 52),
 }
 
-
-local function GetOrCreateCloseButton(CustomerFrame: Frame): GuiButton
-	local Existing = CustomerFrame:FindFirstChild("CloseButton")
-	if Existing and Existing:IsA("GuiButton") then
-		return Existing
-	end
-
-	local Button = Instance.new("TextButton")
-	Button.Name = "CloseButton"
-	Button.AnchorPoint = Vector2.new(1, 0)
-	Button.Position = UDim2.new(1, -10, 0, 10)
-	Button.Size = UDim2.fromOffset(36, 36)
-	Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-	Button.Font = Enum.Font.GothamBold
-	Button.Text = "X"
-	Button.TextColor3 = Color3.new(1, 1, 1)
-	Button.TextScaled = true
-	Button.ZIndex = 20
-	Button.Parent = CustomerFrame
-
-	local Corner = Instance.new("UICorner")
-	Corner.CornerRadius = UDim.new(0, 8)
-	Corner.Parent = Button
-	return Button
-end
-
 function Customercontroller:HideEstimateText()
 	if not self.estimatePriceText then
 		return
@@ -96,11 +71,9 @@ function Customercontroller:RevealEstimate(MaxPrice: number)
 end
 
 function Customercontroller:UpdateEstimateButtonAppearance()
-	if not self.estimateButton then
-		return
-	end
 	local HasEstimatedCurrentOffer = self.activeOfferId ~= nil and self.estimatedOfferId == self.activeOfferId
-	local IsAvailable = (self.estimatesRemaining or 0) > 0 and not HasEstimatedCurrentOffer
+	local IsAvailable = self.estimatesRemaining > 0 and not HasEstimatedCurrentOffer
+	self.estimateCountText.Text = string.format("x%d", self.estimatesRemaining)
 	self.estimateButton.Visible = self:IsVisible()
 	self.estimateButton.Interactable = not HasEstimatedCurrentOffer
 	self.estimateButton.Active = true
@@ -155,6 +128,7 @@ function Customercontroller:HideInstant()
 	self.isBusy = false
 	self.offerOpen = false
 	self.gui.Enabled = false
+	self.blackFrame.Visible = false
 	self.frame.Visible = false
 	self.frame.Position = self.hiddenPosition
 	self.frameScale.Scale = 0.96
@@ -272,23 +246,18 @@ function Customercontroller:ShowOffer(Offer)
 	self.activeOffer = Offer
 	self.offerOpen = true
 	self.gui.Enabled = true
+	self.blackFrame.Visible = true
 	self.frame.Visible = true
 	self.frame.Position = self.hiddenPosition
 	self.frameScale.Scale = 0.96
 	self.frame.BackgroundTransparency = 1
 
-
-	if self.objectLabel then
-		self.objectLabel.Text = Offer.ObjectName
-	end
-
-	if self.priceValueLabel then
-		self.priceValueLabel.Text = if self.activeOfferPrice > 0 then Formatcurrency(Offer.Price) else "Free"
-	end
-
-	if self.iconImage and (self.iconImage:IsA("ImageLabel") or self.iconImage:IsA("ImageButton")) then
-		self.iconImage.Image = tostring(Offer.ImageId or "")
-	end
+	local Rarity = Rarityconfig[Objectconfig.Object[Offer.ObjectKey].Rarity]
+	self.objectLabel.Text = Offer.ObjectName
+	self.rarityText.Text = Rarity.Name
+	self.rarityGradient.Color = Rarity.Gradient
+	self.buyPriceText.Text = if self.activeOfferPrice > 0 then Formatcurrency(Offer.Price) else "Free"
+	self.iconImage.Image = tostring(Offer.ImageId or "")
 	if HasCachedEstimate then
 		self:RevealEstimate(self.estimatedMaxPrice)
 	else
@@ -344,6 +313,7 @@ function Customercontroller:HideAnimated(Fast: boolean?)
 	self.activeOfferId = nil
 	self.offerOpen = false
 	local Tweeninfo = if Fast then Fastframetweeninfo else Frametweeninfo
+	self.blackFrame.Visible = false
 	local Selectedobject = Guiservice.SelectedObject
 	if Selectedobject and Selectedobject:IsDescendantOf(self.frame) then Guiservice.SelectedObject = nil end
 	Tweenservice:Create(self.frame, Tweeninfo, {
@@ -432,23 +402,26 @@ end
 function Customercontroller:Init()
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.gui = Playergui:WaitForChild("CustomerUi") :: ScreenGui
-	self.frame = self.gui:WaitForChild("CustomerFrame") :: Frame
-	self.acceptButton = self.frame:WaitForChild("AcceptButton") :: GuiButton
-	self.acceptButton:SetAttribute("SilentClick", true)
+	self.frame = self.gui:WaitForChild("Frame") :: Frame
+	self.blackFrame = self.gui:WaitForChild("BlackFrame") :: GuiObject
+	self.buyButton = self.frame:WaitForChild("BuyButton") :: GuiButton
+	self.buyButton:SetAttribute("SilentClick", true)
+	self.buyPriceText = self.buyButton:WaitForChild("Text") :: TextLabel
 	self.declineButton = self.frame:WaitForChild("DeclineButton") :: GuiButton
 	self.declineButton:SetAttribute("SilentClick", true)
-	self.closeButton = GetOrCreateCloseButton(self.frame)
+	self.closeButton = self.frame:WaitForChild("CloseButton") :: GuiButton
 	self.frameScale = EnsureScale(self.frame)
 	self.shownPosition = self.frame.Position
 	self.hiddenPosition = self.shownPosition + UDim2.fromOffset(0, 24)
 	self.baseBackgroundTransparency = self.frame.BackgroundTransparency
 
-	self.objectLabel = self.frame:WaitForChild("ObjectName")
-	self.priceLabel = self.frame:WaitForChild("PriceLabel")
-	self.priceValueLabel = self.frame:WaitForChild("PriceText")
-	self.iconImage = self.frame:WaitForChild("Icon")
-	self.estimateButton = self.frame:WaitForChild("EstimationButton") :: GuiButton
-	self.estimatePriceText = self.frame:WaitForChild("EstimationText") :: TextLabel
+	self.objectLabel = self.frame:WaitForChild("ObjectNameText") :: TextLabel
+	self.rarityText = self.frame:WaitForChild("RarityText") :: TextLabel
+	self.rarityGradient = Uigradient.Ensure(self.rarityText)
+	self.iconImage = self.frame:WaitForChild("Icon") :: ImageLabel
+	self.estimateButton = self.frame:WaitForChild("PriceEstimationButton") :: GuiButton
+	self.estimateCountText = self.estimateButton:WaitForChild("Text") :: TextLabel
+	self.estimatePriceText = self.frame:WaitForChild("EstimationPriceText") :: TextLabel
 	self.estimateTextScale = EnsureScale(self.estimatePriceText)
 	self.baseEstimateTextTransparency = self.estimatePriceText.TextTransparency
 	self.baseEstimateStrokeTransparency = self.estimatePriceText.TextStrokeTransparency
@@ -475,16 +448,12 @@ function Customercontroller:Init()
 	self.hoverHighlight.Enabled = false
 	self.hoverHighlight.Parent = Workspace
 
-	if self.priceLabel then
-		self.priceLabel.Text = "Price :"
-	end
-
-	AnimateButton(self.acceptButton)
+	AnimateButton(self.buyButton)
 	AnimateButton(self.declineButton)
 	AnimateButton(self.estimateButton)
 	AnimateButton(self.closeButton)
 
-	Core:GetController("GamepadController"):OnActivated(self.acceptButton, function()
+	Core:GetController("GamepadController"):OnActivated(self.buyButton, function()
 		self:Respond("Accept")
 	end)
 

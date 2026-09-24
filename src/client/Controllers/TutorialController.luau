@@ -28,6 +28,7 @@ local Largetextscale = 1.6
 local Textsizemax = 30
 local Largetextsizemax = 42
 local Textgap = 18
+local Textfont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
 local Behindtext = "It's on the other side!"
 local Handimage = "rbxassetid://116068912861302"
 local Mouseimage = "rbxassetid://123373213717142"
@@ -156,7 +157,7 @@ function Tutorialcontroller:Buildgui()
 	self.text.Name = "Text"
 	self.text.BackgroundTransparency = 1
 	self.text.Size = UDim2.fromScale(1, 1)
-	self.text.FontFace = Font.new("rbxasset://fonts/families/Inter.json", Enum.FontWeight.SemiBold)
+	self.text.FontFace = Textfont
 	self.text.TextColor3 = Color3.new(1, 1, 1)
 	self.text.TextScaled = true
 	self.text.TextWrapped = true
@@ -631,7 +632,7 @@ function Tutorialcontroller:Buildsteps()
 				self.boughtBaseline = #Core:GetController("ComputerController").inventoryItems
 			end,
 			Target = function()
-				return Core:GetController("CustomerController").acceptButton
+				return Core:GetController("CustomerController").buyButton
 			end,
 			Done = function()
 				return #Core:GetController("ComputerController").inventoryItems > (self.boughtBaseline or 0)
