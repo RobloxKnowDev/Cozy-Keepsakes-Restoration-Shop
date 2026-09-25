@@ -92,6 +92,7 @@ local function Showcompletion()
 		Activeobject = nil
 		Runtime:SetObject(nil)
 		Interface:ShowIntro()
+		Core:GetController("ComputerController"):SetHudVisible(true)
 		Completion:Hide()
 		Core:GetController("ExpositionController"):CompleteRestoration()
 	end)
@@ -163,8 +164,8 @@ function Controller:Enter()
 	Core:GetController("CompletionController"):Hide()
 	Core:GetController("InspectionCameraController"):Begin(Object)
 	Interface.Gui.Enabled = true
+	Core:GetController("ComputerController"):SetHudVisible(false)
 	Interface:ShowForRestoration()
-	Interface.ProgressText.Visible = true
 	Userinputservice.MouseBehavior = Enum.MouseBehavior.Default
 	Updateprogress()
 	Runtime:Select("Transform")
@@ -208,7 +209,7 @@ function Controller:Start()
 		function() Cameracontroller:FlipObject() end,
 		function() Showcompletion() end
 	)
-	Cameracontroller:SetTransformMode("Locked")
+	Cameracontroller:SetTransformMode("Orbit")
 	Cameracontroller:ShowIntroCamera()
 	Interface:ShowIntro()
 	Core:GetController("CompletionController"):Hide()

@@ -54,7 +54,6 @@ function Interface.new(Tools)
 	Self.Cursor = Hud:WaitForChild("CurseurFrame")
 	Self.Cursor.Visible = false
 	Self.Cursor.Active = false
-	Self.ProgressText = Gui:WaitForChild("Progress")
 	Self.ReturnButton = Gui:WaitForChild("ReturnButton")
 	Self.ContinueButton = Gui:WaitForChild("ContinueButton")
 	Self.TurnButton = Self.TransformFrame:WaitForChild("TurnButton")
@@ -163,7 +162,6 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 		end)
 	end)
 	for Name, Button in pairs(self.Buttons) do
-		Button.BackgroundTransparency = 0.7
 		self.Actions[Button] = function()
 			Selecttool(Name)
 		end
@@ -171,26 +169,23 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 	for _, Button in ipairs({ self.TurnButton, self.LockButton, self.ReturnButton, self.ContinueButton }) do
 		Animate(Button)
 	end
-	self.TurnButton.BackgroundTransparency = 0
-	local Locked = true
+	local Locked = false
 	local function Refreshlock()
 		self.LockImage.Visible, self.UnlockImage.Visible = Locked, not Locked
-		self.LockButton.BackgroundTransparency = 0
+	end
+	local function Setlocked(Value: boolean)
+		Locked = Value
+		Setmode(if Locked then "Rotate" else "Orbit")
+		Refreshlock()
 	end
 	self.Resetlock = function()
-		Locked = true
-		Setmode("Locked")
-		Refreshlock()
+		Setlocked(false)
 	end
 	self.Actions[self.TurnButton] = function()
-		Locked = false
-		Setmode("Rotate")
-		Refreshlock()
+		Setlocked(true)
 	end
 	self.Actions[self.LockButton] = function()
-		Locked = not Locked
-		Setmode(Locked and "Locked" or "Rotate")
-		Refreshlock()
+		Setlocked(not Locked)
 	end
 	self.Actions[self.ReturnButton] = Flipobject
 	self.Actions[self.ContinueButton] = Continue
@@ -251,7 +246,6 @@ function Interface:ShowForRestoration()
 		self.PercentFrame,
 		self.Cursor,
 		self.ReturnButton,
-		self.ProgressText,
 		self.ContinueButton,
 	}) do
 		Item.Visible = true
@@ -271,7 +265,6 @@ function Interface:IsPointerOverUi(Position: Vector2): boolean
 		self.ProgressFrame,
 		self.PercentFrame,
 		self.ReturnButton,
-		self.ProgressText,
 		self.ContinueButton,
 	}) do
 		if Item.Visible then
@@ -299,7 +292,6 @@ function Interface:HideForCompletion()
 		self.PercentFrame,
 		self.Cursor,
 		self.ReturnButton,
-		self.ProgressText,
 		self.ContinueButton,
 	}) do
 		Item.Visible = false

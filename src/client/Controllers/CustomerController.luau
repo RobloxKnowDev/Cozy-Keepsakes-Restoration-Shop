@@ -132,7 +132,6 @@ function Customercontroller:HideInstant()
 	self.frame.Visible = false
 	self.frame.Position = self.hiddenPosition
 	self.frameScale.Scale = 0.96
-	self.frame.BackgroundTransparency = 1
 	local Selectedobject = Guiservice.SelectedObject
 	if Selectedobject and Selectedobject:IsDescendantOf(self.frame) then Guiservice.SelectedObject = nil end
 	self:HideEstimateText()
@@ -250,7 +249,6 @@ function Customercontroller:ShowOffer(Offer)
 	self.frame.Visible = true
 	self.frame.Position = self.hiddenPosition
 	self.frameScale.Scale = 0.96
-	self.frame.BackgroundTransparency = 1
 
 	local Rarity = Rarityconfig[Objectconfig.Object[Offer.ObjectKey].Rarity]
 	self.objectLabel.Text = Offer.ObjectName
@@ -267,7 +265,6 @@ function Customercontroller:ShowOffer(Offer)
 
 	Tweenservice:Create(self.frame, Frametweeninfo, {
 		Position = self.shownPosition,
-		BackgroundTransparency = self.baseBackgroundTransparency,
 	}):Play()
 	Tweenservice:Create(self.frameScale, Frametweeninfo, {
 		Scale = 1,
@@ -318,7 +315,6 @@ function Customercontroller:HideAnimated(Fast: boolean?)
 	if Selectedobject and Selectedobject:IsDescendantOf(self.frame) then Guiservice.SelectedObject = nil end
 	Tweenservice:Create(self.frame, Tweeninfo, {
 		Position = self.hiddenPosition,
-		BackgroundTransparency = 1,
 	}):Play()
 	local Scaletween = Tweenservice:Create(self.frameScale, Tweeninfo, {
 		Scale = 0.96,
@@ -413,7 +409,6 @@ function Customercontroller:Init()
 	self.frameScale = EnsureScale(self.frame)
 	self.shownPosition = self.frame.Position
 	self.hiddenPosition = self.shownPosition + UDim2.fromOffset(0, 24)
-	self.baseBackgroundTransparency = self.frame.BackgroundTransparency
 
 	self.objectLabel = self.frame:WaitForChild("ObjectNameText") :: TextLabel
 	self.rarityText = self.frame:WaitForChild("RarityText") :: TextLabel

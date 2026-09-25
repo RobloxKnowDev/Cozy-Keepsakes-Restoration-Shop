@@ -23,7 +23,7 @@ local Mindistance = 4
 local Maxdistance = 16
 local Dragging = false
 local Enabled = false
-local Transformmode = "Rotate"
+local Transformmode = "Orbit"
 local Dragmode = "RotateObject"
 local Draginput: InputObject? = nil
 local Lastpointer = Vector2.zero
@@ -204,7 +204,7 @@ function Controller:NudgeZoom(Direction: number)
 end
 
 function Controller:SetTransformMode(Mode: string)
-	if Mode ~= "Rotate" and Mode ~= "Locked" then
+	if Mode ~= "Rotate" and Mode ~= "Orbit" then
 		return
 	end
 	Transformmode = Mode
@@ -364,7 +364,7 @@ local function Applystick(Deltatime: number)
 	end
 	Stickdragging = true
 	local Direction = Stick.Unit * ((Stick.Magnitude - Stickdeadzone) / (1 - Stickdeadzone))
-	if Enabled and Objectselected and Transformmode == "Rotate" then
+	if Enabled and Transformmode == "Rotate" then
 		Objectrotationgoal = nil
 		local Angle = Stickrotatespeed * Deltatime
 		Pivotobject(Target, Objectpivot(Target) * CFrame.Angles(Direction.Y * Angle, -Direction.X * Angle, 0))
@@ -396,16 +396,9 @@ function Controller:Start()
 				return
 			end
 			local Ontarget = Ispointerontarget(Position)
-			if Enabled and Ontarget then
-				Setobjectselected(true)
-				if Transformmode == "Rotate" then
-					Begindrag(Input, "RotateObject")
-				else
-					Begindrag(Input, "OrbitCamera")
-				end
-			elseif Enabled then
-				Setobjectselected(false)
-				Begindrag(Input, "OrbitCamera")
+			if Enabled then
+				Setobjectselected(Ontarget)
+				Begindrag(Input, if Transformmode == "Rotate" then "RotateObject" else "OrbitCamera")
 			elseif not Ontarget then
 				Begindrag(Input, "OrbitCamera")
 			end
@@ -419,7 +412,7 @@ function Controller:Start()
 		elseif Ismiddle or (Issecondary and Shiftdown) then
 			Begindrag(Input, "Move")
 			Userinputservice.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
-		elseif Issecondary and Enabled and Objectselected and Transformmode == "Rotate" then
+		elseif Issecondary and Enabled and Transformmode == "Rotate" then
 			Begindrag(Input, "RotateObject")
 			Userinputservice.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
 		elseif Issecondary then
