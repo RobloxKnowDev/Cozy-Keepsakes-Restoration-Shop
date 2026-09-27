@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
+local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Uigradient = require(Replicatedstorage.Shared.Utils.UiGradient)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 
@@ -38,6 +39,7 @@ local Completioncontroller = {
 	pitch = 0,
 	celebrationId = 0,
 	closing = false,
+	emptyRows = {},
 	stick = Vector2.zero,
 }
 
@@ -178,9 +180,13 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 	self.reputationText.Text = Formatreputation(Reputation)
 	self.maxValueText.Text = Formatcurrency(Maxvalue)
 
+	table.clear(self.emptyRows)
 	for _, Kind in ipairs(Completionkinds) do
 		local Row = Progressframe:WaitForChild(Rownames[Kind])
 		local Ratio = Ratiofromattributes(Object, Kind)
+		if (Object:GetAttribute("Total_" .. Kind) or 0) <= 0 then
+			self.emptyRows[Row] = true
+		end
 		Row:WaitForChild("PercentText").Text = string.format("%d%%", math.floor(Ratio * 100 + 0.5))
 		Row:WaitForChild("FrameBar"):WaitForChild("Bar").Size = UDim2.fromScale(Ratio, 1)
 	end
@@ -349,7 +355,11 @@ function Completioncontroller:PlayProgressAnimation()
 	local Rows = {}
 	for _, Child in Progressframe:GetChildren() do
 		if Child:IsA("Frame") then
-			table.insert(Rows, Child)
+			if self.emptyRows[Child] then
+				Child.Visible = false
+			else
+				table.insert(Rows, Child)
+			end
 		end
 	end
 	table.sort(Rows, function(A, B)
@@ -517,6 +527,8 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 				Item.CanCollide = false
 				Item.CanQuery = false
 				Item.CanTouch = false
+			elseif Item:IsA("Decal") and Cleaningconfig.DirtDecals[Item.Name] then
+				Item:Destroy()
 			end
 		end
 		if Clone:IsA("BasePart") then

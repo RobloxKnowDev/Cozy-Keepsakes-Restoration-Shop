@@ -23,9 +23,14 @@ local Halobreathamount = 0.04
 local Lit = false
 local Lastscan = 0
 local Lastupdate = os.clock()
+local Halocanvassize = 256
 local Halo: ImageLabel? = nil
 local Haloimage: EditableImage? = nil
 local Halosurface: SurfaceGui? = nil
+local Halocanvas: EditableImage? = nil
+local Halodecal: Decal? = nil
+local Halodirt: Decal? = nil
+local Haloclear = buffer.create(Halocanvassize * Halocanvassize * 4)
 local Halotarget = { Center = Vector2.new(0.5, 0.5), Size = Vector2.zero, Alpha = 0 }
 local Halostate = { Center = Vector2.new(0.5, 0.5), Size = Vector2.zero, Alpha = 0 }
 
@@ -81,15 +86,46 @@ local function Gethalo(): ImageLabel
 	return Label
 end
 
-local function Hidehalo()
-	Halotarget.Alpha = 0
-	Halostate.Alpha = 0
+local function Gethalodecal(): Decal
+	if Halodecal then return Halodecal end
+	if not Haloimage then Haloimage = Buildhaloimage() end
+	if not Halocanvas then
+		Halocanvas = Assetservice:CreateEditableImage({ Size = Vector2.new(Halocanvassize, Halocanvassize) })
+	end
+	local Decal = Instance.new("Decal")
+	Decal.Name = "UvHalo"
+	Decal.TextureContent = Content.fromObject(Halocanvas)
+	Decal.Color3 = Uvcolor
+	Decal.Transparency = 1
+	Decal.Destroying:Connect(function()
+		if Halodecal == Decal then Halodecal, Halodirt = nil, nil end
+	end)
+	Halodecal = Decal
+	return Decal
+end
+
+local function Detachsurfacehalo()
 	Halosurface = nil
 	if Halo then
 		Halo.Visible = false
 		Halo.ImageTransparency = 1
 		Halo.Parent = nil
 	end
+end
+
+local function Detachdecalhalo()
+	Halodirt = nil
+	if Halodecal then
+		Halodecal.Transparency = 1
+		Halodecal.Parent = nil
+	end
+end
+
+local function Hidehalo()
+	Halotarget.Alpha = 0
+	Halostate.Alpha = 0
+	Detachsurfacehalo()
+	Detachdecalhalo()
 end
 
 local function Scan(Context)
@@ -109,22 +145,53 @@ local function Scan(Context)
 		Halotarget.Alpha = 0
 		return
 	end
-	local Label = Gethalo()
 	local Halopixels = math.clamp(Found.Spread * 2.2 + Found.Radius * 0.25, Found.Radius * 0.45, Found.Radius * 1.15)
 	local Extent = 2 * Halopixels / Haloringratio
 	local Size = Vector2.new(Extent * Found.Scale.X, Extent * Found.Scale.Y)
-	if Halosurface ~= Found.Surface then
-		Halosurface = Found.Surface
-		Label.ZIndex = Halozindex
-		Label.Parent = Found.Surface
-		Halostate.Center, Halostate.Size, Halostate.Alpha = Found.Center, Size * 1.5, 0
+	if Found.Decal then
+		Detachsurfacehalo()
+		local Decal = Gethalodecal()
+		if Halodirt ~= Found.Decal then
+			Halodirt = Found.Decal
+			Decal.Face = Found.Decal.Face
+			Decal.ZIndex = Found.Decal.ZIndex + 1
+			Decal.Parent = Found.Decal.Parent
+			Halostate.Center, Halostate.Size, Halostate.Alpha = Found.Center, Size * 1.5, 0
+		end
+	else
+		Detachdecalhalo()
+		local Label = Gethalo()
+		if Halosurface ~= Found.Surface then
+			Halosurface = Found.Surface
+			Label.ZIndex = Halozindex
+			Label.Parent = Found.Surface
+			Halostate.Center, Halostate.Size, Halostate.Alpha = Found.Center, Size * 1.5, 0
+		end
 	end
 	Halotarget.Center, Halotarget.Size = Found.Center, Size
 	Halotarget.Alpha = 0.55 + 0.45 * math.clamp(Found.Amount / 0.2, 0, 1)
 end
 
+local function Drawhalodecal(Decal: Decal, Breath: number, Shimmer: number)
+	if Halostate.Alpha <= 0.02 then
+		Decal.Transparency = 1
+		return
+	end
+	local Canvas = Halocanvas :: EditableImage
+	local Image = Haloimage :: EditableImage
+	Canvas:WritePixelsBuffer(Vector2.zero, Canvas.Size, Haloclear)
+	Canvas:DrawImageTransformed(
+		Halostate.Center * Halocanvassize,
+		Halostate.Size * Breath * (Halocanvassize / Haloimagesize),
+		0,
+		Image,
+		{ CombineType = Enum.ImageCombineType.Overwrite, PivotPoint = Image.Size / 2 }
+	)
+	Decal.Transparency = 1 - Halostate.Alpha * Shimmer
+end
+
 local function Animatehalo(Deltatime: number)
-	if not Halo then return end
+	if not Halo and not Halodecal then return end
 	local Blend = 1 - math.exp(-Halosmoothing * Deltatime)
 	Halostate.Center = Halostate.Center:Lerp(Halotarget.Center, Blend)
 	Halostate.Size = Halostate.Size:Lerp(Halotarget.Size, Blend)
@@ -132,10 +199,15 @@ local function Animatehalo(Deltatime: number)
 	local Clock = os.clock()
 	local Breath = 1 + Halobreathamount * math.sin(Clock * Halobreathspeed)
 	local Shimmer = 0.92 + 0.08 * math.sin(Clock * Halobreathspeed * 2)
-	Halo.Position = UDim2.fromScale(Halostate.Center.X, Halostate.Center.Y)
-	Halo.Size = UDim2.fromScale(Halostate.Size.X * Breath, Halostate.Size.Y * Breath)
-	Halo.ImageTransparency = 1 - Halostate.Alpha * Shimmer
-	Halo.Visible = Halostate.Alpha > 0.02
+	if Halo then
+		Halo.Position = UDim2.fromScale(Halostate.Center.X, Halostate.Center.Y)
+		Halo.Size = UDim2.fromScale(Halostate.Size.X * Breath, Halostate.Size.Y * Breath)
+		Halo.ImageTransparency = 1 - Halostate.Alpha * Shimmer
+		Halo.Visible = Halostate.Alpha > 0.02
+	end
+	if Halodecal and Halodirt then
+		Drawhalodecal(Halodecal, Breath, Shimmer)
+	end
 end
 
 function Uvtorch.OnSelected(Context)

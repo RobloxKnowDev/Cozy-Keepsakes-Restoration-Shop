@@ -64,6 +64,28 @@ local function Findkey(Container: { [string]: any }, Name: string?): string?
 	return nil
 end
 
+local function Giveitem(Target: Player, Objectkey: string, Percent: number)
+	local Definition = Objectconfig.Object[Objectkey]
+	local Ratio = Percent / 100
+	local Maximums = Core:GetService("RestorationService"):GenerateObjectMaximums(Objectkey)
+	local Value = math.round(Maximums.MaxValue * Ratio * 100) / 100
+	Core:GetService("InventoryService"):AddRestoredItem(Target, {
+		Id = 0,
+		ObjectKey = Objectkey,
+		Name = Definition.Name or Objectkey,
+		ImageId = tostring(Definition.IdImage or ""),
+		Rarity = tostring(Definition.Rarity or "Common"),
+		Mutation = Maximums.Mutation or "Normal",
+		RestorationPercent = math.floor(Percent),
+		PurchasePrice = 0,
+		CurrentValue = Value,
+		MaxValue = Maximums.MaxValue,
+		MaxReputation = Maximums.MaxReputation,
+		NetProfit = Value,
+		Reputation = math.round(Maximums.MaxReputation * Ratio * 100) / 100,
+	})
+end
+
 local function Setban(Userid: number, Entry: any): boolean
 	local Success, Error = pcall(function()
 		if Entry then
@@ -227,38 +249,28 @@ local Commands = {
 	},
 	{
 		Name = "giveitem",
-		Usage = "giveitem <player> <object> [percent]",
-		Description = "Add a restored item to the inventory",
+		Usage = "giveitem <player> <object|all> [percent]",
+		Description = "Add a restored item to the inventory, or one of every object with all",
 		Arguments = { "player", "object", "number" },
 		Run = function(_Caller: Player, Arguments: { string }): string
 			local Target = Findplayer(Arguments[1])
 			if not Target then
 				return "Player not found: " .. tostring(Arguments[1])
 			end
+			local Percent = math.clamp(tonumber(Arguments[3]) or 100, 0, 100)
+			if string.lower(tostring(Arguments[2])) == "all" then
+				local Count = 0
+				for Objectkey in pairs(Objectconfig.Object) do
+					Giveitem(Target, Objectkey, Percent)
+					Count += 1
+				end
+				return string.format("%s received all %d objects (%d%%)", Target.Name, Count, Percent)
+			end
 			local Objectkey = Findkey(Objectconfig.Object, Arguments[2])
 			if not Objectkey then
 				return "Unknown object: " .. tostring(Arguments[2])
 			end
-			local Definition = Objectconfig.Object[Objectkey]
-			local Percent = math.clamp(tonumber(Arguments[3]) or 100, 0, 100)
-			local Ratio = Percent / 100
-			local Maximums = Core:GetService("RestorationService"):GenerateObjectMaximums(Objectkey)
-			local Value = math.round(Maximums.MaxValue * Ratio * 100) / 100
-			Core:GetService("InventoryService"):AddRestoredItem(Target, {
-				Id = 0,
-				ObjectKey = Objectkey,
-				Name = Definition.Name or Objectkey,
-				ImageId = tostring(Definition.IdImage or ""),
-				Rarity = tostring(Definition.Rarity or "Common"),
-				Mutation = Maximums.Mutation or "Normal",
-				RestorationPercent = math.floor(Percent),
-				PurchasePrice = 0,
-				CurrentValue = Value,
-				MaxValue = Maximums.MaxValue,
-				MaxReputation = Maximums.MaxReputation,
-				NetProfit = Value,
-				Reputation = math.round(Maximums.MaxReputation * Ratio * 100) / 100,
-			})
+			Giveitem(Target, Objectkey, Percent)
 			return string.format("%s received %s (%d%%)", Target.Name, Objectkey, Percent)
 		end,
 	},
@@ -378,6 +390,7 @@ function Adminservice:Init()
 			table.insert(Objectkeys, Key)
 		end
 		table.sort(Objectkeys)
+		table.insert(Objectkeys, 1, "all")
 		local Upgradekeys = {}
 		for Key in pairs(Upgradesconfig) do
 			table.insert(Upgradekeys, Key)

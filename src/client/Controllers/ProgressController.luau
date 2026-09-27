@@ -141,6 +141,7 @@ function ProgressController:Update(Object: Model | BasePart, InteractionPosition
 	end
 	for _, Kind in ipairs(Kinds) do
 		local Current, Total = GetRatio(Object, Kind)
+		self.rows[Kind].Visible = Total > 0
 		local Previous = self.previousRatios[Kind] or 0
 		if Current ~= Previous then
 			self.previousRatios[Kind] = Current

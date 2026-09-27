@@ -7,6 +7,7 @@ local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
+local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
 
 local function Countcopies(Name: string): number
 	local Count = 0
@@ -32,6 +33,10 @@ local Cleaninterval = 0.075
 local Scratchcleaninterval = Cleaninterval
 local Inkcleaninterval = Cleaninterval
 local Liquidapplyinterval = 0.25
+local Maxdirtstrokes = 8
+local Minimumfacedot = 0.01
+local Dirtdecalnames = Cleaningconfig.DirtDecals
+local Getfacepoint = Facemapping.GetPoint
 
 local function Getfacename(Localnormal: Vector3): string
 	local Absolutex = math.abs(Localnormal.X)
@@ -64,39 +69,15 @@ local function Getinkimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel?
 	return Texture
 end
 
-local function Getfacepoint(Part: BasePart, Worldposition: Vector3, Facename: string): Vector2
-	local Position = Part.CFrame:PointToObjectSpace(Worldposition)
-	local Size = Part.Size
-	if Facename == "Front" then
-		return Vector2.new(0.5 - Position.X / Size.X, 0.5 - Position.Y / Size.Y)
+local function Getdirtdecals(Part: BasePart, Worldnormal: Vector3): { Decal }
+	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
+	local Decals = {}
+	for _, Child in ipairs(Part:GetChildren()) do
+		if Child:IsA("Decal") and Dirtdecalnames[Child.Name] and Vector3.FromNormalId(Child.Face):Dot(Localnormal) > Minimumfacedot then
+			table.insert(Decals, Child)
+		end
 	end
-	if Facename == "Back" then
-		return Vector2.new(0.5 + Position.X / Size.X, 0.5 - Position.Y / Size.Y)
-	end
-	if Facename == "Left" then
-		return Vector2.new(0.5 + Position.Z / Size.Z, 0.5 - Position.Y / Size.Y)
-	end
-	if Facename == "Right" then
-		return Vector2.new(0.5 - Position.Z / Size.Z, 0.5 - Position.Y / Size.Y)
-	end
-	if Facename == "Top" then
-		return Vector2.new(0.5 - Position.Z / Size.Z, 0.5 + Position.X / Size.X)
-	end
-	return Vector2.new(0.5 - Position.Z / Size.Z, 0.5 - Position.X / Size.X)
-end
-
-local function Getdirtimage(Surface: SurfaceGui, Facepoint: Vector2): (ImageLabel?, Vector2?)
-	local Dirtframe = Surface:FindFirstChild("DirtFrame")
-	if not Dirtframe then return nil end
-	assert(Dirtframe:IsA("GuiObject"), "CleaningController: " .. Dirtframe:GetFullName() .. " must be a GuiObject")
-	if not Dirtframe.Visible or Dirtframe:GetAttribute("Cleaned") == true then return nil end
-	local Texture = Dirtframe:FindFirstChild("Texture")
-	if not Texture or not Texture:IsA("ImageLabel") then return nil end
-	local Canvaspoint = Surface.AbsolutePosition
-		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
-	local Framepoint = (Canvaspoint - Dirtframe.AbsolutePosition) / Dirtframe.AbsoluteSize
-	if Framepoint.X < 0 or Framepoint.Y < 0 or Framepoint.X > 1 or Framepoint.Y > 1 then return nil end
-	return Texture, Framepoint
+	return Decals
 end
 
 local function Getscratchimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel?
@@ -124,18 +105,19 @@ local function Getscratchimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLa
 	return nil
 end
 
-local Overlayimages: { [ImageLabel]: EditableImage } = {}
-local Overlaypending: { [ImageLabel]: boolean } = {}
+local Overlayimages: { [Instance]: EditableImage } = {}
+local Overlaypending: { [Instance]: boolean } = {}
 local Overlayradiusratio = 1 / 16
 local Cottonscale = 4 / 3
 local Brushscale = 1.5
 local Dirtfadestep = math.ceil(255 / Cleaningconfig.DirtPasses)
 local Stainsamplestep = 2
 local Stainspotratio = 0.2
-local Tickmarks: { [ImageLabel]: buffer } = {}
+local Tickmarks: { [Instance]: buffer } = {}
 
 export type StainCluster = {
-	Surface: SurfaceGui,
+	Surface: SurfaceGui?,
+	Decal: Decal?,
 	Center: Vector2,
 	Spread: number,
 	Radius: number,
@@ -169,22 +151,26 @@ local function Roundcorners(Editable: EditableImage, Shape)
 	Editable:WritePixelsBuffer(Vector2.zero, Size, Pixels)
 end
 
-local function Getoverlayimage(Test: ImageLabel): EditableImage?
+local function Getoverlayimage(Test: ImageLabel | Decal): EditableImage?
 	local Editable = Overlayimages[Test]
 	if Editable then return Editable end
 	if Overlaypending[Test] then return nil end
 	Overlaypending[Test] = true
 	task.spawn(function()
+		local Source = if Test:IsA("Decal") then Test.Texture else Test.Image
 		local Success, Created = pcall(function()
-			return Assetservice:CreateEditableImageAsync(Content.fromUri(Test.Image))
+			return Assetservice:CreateEditableImageAsync(Content.fromUri(Source))
 		end)
 		if not Success then
 			warn("CleaningController: EditableImage failed for " .. Test:GetFullName() .. ": " .. tostring(Created))
 			return
 		end
-		local Shape = Roundedtexture.GetShape(Test)
-		Roundcorners(Created, Shape)
-		Test.ImageContent = Content.fromObject(Created)
+		if Test:IsA("Decal") then
+			Test.TextureContent = Content.fromObject(Created)
+		else
+			Roundcorners(Created, Roundedtexture.GetShape(Test))
+			Test.ImageContent = Content.fromObject(Created)
+		end
 		Overlayimages[Test] = Created
 		Test.Destroying:Connect(function()
 			Overlayimages[Test] = nil
@@ -197,6 +183,7 @@ local function Getoverlayimage(Test: ImageLabel): EditableImage?
 end
 
 local Pendingpoints: { [ImageLabel]: { Vector2 } } = {}
+local Pendingdirt: { [Decal]: { Vector2 } } = {}
 
 local function Takepoints(Texture: ImageLabel): { Vector2 }?
 	local Points = Pendingpoints[Texture]
@@ -223,18 +210,15 @@ local function Erasetexture(Texture: ImageLabel, Surface: SurfaceGui, Facepoint:
 	Editable:DrawCircle(Center, Radius, Color3.new(0, 0, 0), 1, Enum.ImageCombineType.Overwrite)
 end
 
-local function Fadetexture(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: Vector2, Radiusscale: number)
-	local Canvaspoint = Surface.AbsolutePosition
-		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
-	local Localpoint = (Canvaspoint - Texture.AbsolutePosition) / Texture.AbsoluteSize
+local function Fadedecal(Decal: Decal, Localpoint: Vector2, Radiusscale: number)
 	if Localpoint.X < 0 or Localpoint.Y < 0 or Localpoint.X > 1 or Localpoint.Y > 1 then return end
-	local Points = Pendingpoints[Texture]
+	local Points = Pendingdirt[Decal]
 	if not Points then
 		Points = {}
-		Pendingpoints[Texture] = Points
+		Pendingdirt[Decal] = Points
 	end
 	if #Points < 16 then table.insert(Points, Localpoint) end
-	local Editable = Getoverlayimage(Texture)
+	local Editable = Getoverlayimage(Decal)
 	if not Editable then return end
 	local Size = Editable.Size
 	local Width, Height = Size.X, Size.Y
@@ -249,10 +233,10 @@ local function Fadetexture(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: 
 	local Regionwidth = Maxx - Minx + 1
 	local Regionheight = Maxy - Miny + 1
 	local Pixels = Editable:ReadPixelsBuffer(Vector2.new(Minx, Miny), Vector2.new(Regionwidth, Regionheight))
-	local Marks = Tickmarks[Texture]
+	local Marks = Tickmarks[Decal]
 	if not Marks then
 		Marks = buffer.create(Width * Height * 2)
-		Tickmarks[Texture] = Marks
+		Tickmarks[Decal] = Marks
 	end
 	local Tick = math.floor(os.clock() / Cleaninterval) % 65535 + 1
 	local Radiussquared = Radius * Radius
@@ -276,18 +260,11 @@ local function Fadetexture(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: 
 	Editable:WritePixelsBuffer(Vector2.new(Minx, Miny), Vector2.new(Regionwidth, Regionheight), Pixels)
 end
 
-local function Erasedirtoverlay(Surface: SurfaceGui, Facepoint: Vector2, Radiusscale: number)
-	local Dirtframe = Surface:FindFirstChild("DirtFrame")
-	if not Dirtframe or not Dirtframe:IsA("GuiObject") or not Dirtframe.Visible then return end
-	local Texture = Dirtframe:FindFirstChild("Texture")
-	if not Texture or not Texture:IsA("ImageLabel") then return end
-	Fadetexture(Texture, Surface, Facepoint, Radiusscale)
-end
-
-local Overlayframenames = { DirtFrame = true, Ink = true, ScratchesFrame = true }
+local Overlayframenames = { Ink = true, ScratchesFrame = true }
 
 function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 	table.clear(Pendingpoints)
+	table.clear(Pendingdirt)
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if
 			Descendant:IsA("ImageLabel")
@@ -297,16 +274,30 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 			and Descendant.Parent.Visible
 		then
 			Getoverlayimage(Descendant)
+		elseif Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
+			Getoverlayimage(Descendant)
 		end
 	end
 end
 
 function Cleaningcontroller:EraseDirtOverlay(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3, Radiusscale: number)
-	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
-	local Facename = Getfacename(Localnormal)
-	local Surface = Part:FindFirstChild("Ui" .. Facename)
-	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return end
-	Erasedirtoverlay(Surface, Getfacepoint(Part, Worldposition, Facename), Radiusscale)
+	for _, Decal in ipairs(Getdirtdecals(Part, Worldnormal)) do
+		Fadedecal(Decal, Getfacepoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
+	end
+end
+
+function Cleaningcontroller:SendDirt(Toolname: string)
+	if os.clock() - self.lastRequest < Cleaninterval then return end
+	local Strokes = {}
+	for Decal, Points in pairs(Pendingdirt) do
+		if Decal.Parent and Decal:GetAttribute("Cleaned") ~= true and #Strokes < Maxdirtstrokes then
+			table.insert(Strokes, { Target = Decal, Points = Points })
+		end
+	end
+	table.clear(Pendingdirt)
+	if #Strokes == 0 then return end
+	self.lastRequest = os.clock()
+	Remotemanager:FireServer("RestorationService", "CleanDirt", Toolname, Strokes)
 end
 
 function Cleaningcontroller:EraseTextureAt(
@@ -358,25 +349,7 @@ function Cleaningcontroller:Init()
 	self.lastScratchPolishRequest = 0
 end
 
-function Cleaningcontroller:GetDirtImage(
-	Part: BasePart,
-	Worldposition: Vector3,
-	Worldnormal: Vector3
-): (ImageLabel?, Vector2?)
-	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
-	local Facename = Getfacename(Localnormal)
-	local Surface = Part:FindFirstChild("Ui" .. Facename)
-	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return nil end
-	assert(Surface.Face.Name == Facename, "CleaningController: " .. Surface:GetFullName() .. " must use the face " .. Facename)
-	return Getdirtimage(Surface, Getfacepoint(Part, Worldposition, Facename))
-end
-
-local function Scanstain(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: Vector2, Radiusscale: number): StainCluster?
-	local Editable = Overlayimages[Texture]
-	if not Editable then return nil end
-	local Canvaspoint = Surface.AbsolutePosition
-		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
-	local Localpoint = (Canvaspoint - Texture.AbsolutePosition) / Texture.AbsoluteSize
+local function Scanpixels(Editable: EditableImage, Localpoint: Vector2, Radiusscale: number)
 	if Localpoint.X < 0 or Localpoint.Y < 0 or Localpoint.X > 1 or Localpoint.Y > 1 then return nil end
 	local Size = Editable.Size
 	local Width, Height = Size.X, Size.Y
@@ -416,16 +389,48 @@ local function Scanstain(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: Ve
 	if Spotweight == 0 then return nil end
 	local Meanx, Meany = Sumx / Weight, Sumy / Weight
 	local Variance = math.max(Sumxx / Weight - Meanx * Meanx + Sumyy / Weight - Meany * Meany, 0)
-	local Pixelscale = Texture.AbsoluteSize / Vector2.new(Width, Height)
-	local Canvascenter = Texture.AbsolutePosition - Surface.AbsolutePosition + Vector2.new(Meanx, Meany) * Pixelscale
+	return {
+		Mean = Vector2.new(Meanx, Meany),
+		Spread = math.sqrt(Variance),
+		Radius = Radius,
+		Amount = Weight / (Samples * 255),
+		Spot = Spotweight,
+	}
+end
+
+local function Scanstain(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: Vector2, Radiusscale: number): StainCluster?
+	local Editable = Overlayimages[Texture]
+	if not Editable then return nil end
+	local Canvaspoint = Surface.AbsolutePosition
+		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
+	local Scan = Scanpixels(Editable, (Canvaspoint - Texture.AbsolutePosition) / Texture.AbsoluteSize, Radiusscale)
+	if not Scan then return nil end
+	local Pixelscale = Texture.AbsoluteSize / Editable.Size
+	local Canvascenter = Texture.AbsolutePosition - Surface.AbsolutePosition + Scan.Mean * Pixelscale
 	return {
 		Surface = Surface,
 		Center = Canvascenter / Surface.AbsoluteSize,
-		Spread = math.sqrt(Variance),
-		Radius = Radius,
+		Spread = Scan.Spread,
+		Radius = Scan.Radius,
 		Scale = Pixelscale / Surface.AbsoluteSize,
-		Amount = Weight / (Samples * 255),
-		Spot = Spotweight,
+		Amount = Scan.Amount,
+		Spot = Scan.Spot,
+	}
+end
+
+local function Scandecal(Decal: Decal, Facepoint: Vector2, Radiusscale: number): StainCluster?
+	local Editable = Overlayimages[Decal]
+	if not Editable then return nil end
+	local Scan = Scanpixels(Editable, Facepoint, Radiusscale)
+	if not Scan then return nil end
+	return {
+		Decal = Decal,
+		Center = Scan.Mean / Editable.Size,
+		Spread = Scan.Spread,
+		Radius = Scan.Radius,
+		Scale = Vector2.one / Editable.Size,
+		Amount = Scan.Amount,
+		Spot = Scan.Spot,
 	}
 end
 
@@ -435,22 +440,27 @@ function Cleaningcontroller:FindStainAround(
 	Worldnormal: Vector3,
 	Radiusscale: number
 ): StainCluster?
+	local Best: StainCluster? = nil
 	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
 	local Facename = Getfacename(Localnormal)
 	local Surface = Part:FindFirstChild("Ui" .. Facename)
-	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled then return nil end
-	local Facepoint = Getfacepoint(Part, Worldposition, Facename)
-	local Candidates = {}
-	local Ink = Getinkimage(Surface, Facepoint)
-	if Ink then table.insert(Candidates, Ink) end
-	local Scratch = Getscratchimage(Surface, Facepoint)
-	if Scratch then table.insert(Candidates, Scratch) end
-	local Dirt = Getdirtimage(Surface, Facepoint)
-	if Dirt then table.insert(Candidates, Dirt) end
-	local Best: StainCluster? = nil
-	for _, Texture in ipairs(Candidates) do
-		local Cluster = Scanstain(Texture, Surface, Facepoint, Radiusscale)
-		if Cluster and (not Best or Cluster.Spot > Best.Spot) then Best = Cluster end
+	if Surface and Surface:IsA("SurfaceGui") and Surface.Enabled then
+		local Facepoint = Getfacepoint(Part, Worldposition, Facename)
+		local Candidates = {}
+		local Ink = Getinkimage(Surface, Facepoint)
+		if Ink then table.insert(Candidates, Ink) end
+		local Scratch = Getscratchimage(Surface, Facepoint)
+		if Scratch then table.insert(Candidates, Scratch) end
+		for _, Texture in ipairs(Candidates) do
+			local Cluster = Scanstain(Texture, Surface, Facepoint, Radiusscale)
+			if Cluster and (not Best or Cluster.Spot > Best.Spot) then Best = Cluster end
+		end
+	end
+	for _, Decal in ipairs(Getdirtdecals(Part, Worldnormal)) do
+		if Decal:GetAttribute("Cleaned") ~= true then
+			local Cluster = Scandecal(Decal, Getfacepoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
+			if Cluster and (not Best or Cluster.Spot > Best.Spot) then Best = Cluster end
+		end
 	end
 	return Best
 end
@@ -543,13 +553,7 @@ function Cleaningcontroller:TryCleanDirt(Object: Model | BasePart, Toolname: str
 	local Radiusscale = if Toolname == "CottonTip" then Cottonscale else Brushscale
 	self:EraseCleanedLeftovers(Result.Instance, Result.Position, Result.Normal, Radiusscale)
 	self:EraseDirtOverlay(Result.Instance, Result.Position, Result.Normal, Radiusscale)
-	if os.clock() - self.lastRequest < Cleaninterval then return end
-	local Image = self:GetDirtImage(Result.Instance, Result.Position, Result.Normal)
-	if not Image then return end
-	local Points = Takepoints(Image)
-	if not Points then return end
-	self.lastRequest = os.clock()
-	Remotemanager:FireServer("RestorationService", "CleanDirt", Image, Toolname, Points)
+	self:SendDirt(Toolname)
 end
 
 function Cleaningcontroller:TryCleanCotton(Object: Model | BasePart)
@@ -580,13 +584,7 @@ function Cleaningcontroller:TryCleanCotton(Object: Model | BasePart)
 	end
 
 	self:EraseDirtOverlay(Result.Instance, Result.Position, Result.Normal, Cottonscale)
-	if os.clock() - self.lastRequest < Cleaninterval then return end
-	local Dirt = self:GetDirtImage(Result.Instance, Result.Position, Result.Normal)
-	if not Dirt then return end
-	local Points = Takepoints(Dirt)
-	if not Points then return end
-	self.lastRequest = os.clock()
-	Remotemanager:FireServer("RestorationService", "CleanDirt", Dirt, "CottonTip", Points)
+	self:SendDirt("CottonTip")
 end
 
 function Cleaningcontroller:TryClean(Object: Model | BasePart, Toolname: string)

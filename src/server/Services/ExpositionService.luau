@@ -3,6 +3,7 @@ local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Mutationvfx = require(Replicatedstorage.Shared.Utils.MutationVfx)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
@@ -57,6 +58,7 @@ local Dirtsurfacenames = {
 	UiFront = true,
 	UiBack = true,
 }
+local Dirtdecalnames = Cleaningconfig.DirtDecals
 
 local function Getanchorpart(Object: DisplayObject): BasePart
 	if Object:IsA("BasePart") then
@@ -144,6 +146,8 @@ local function Cleandisplayobject(Object: DisplayObject)
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("SurfaceGui") and Dirtsurfacenames[Descendant.Name] then
 			Descendant.Enabled = false
+		elseif Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
+			Descendant:Destroy()
 		end
 	end
 end

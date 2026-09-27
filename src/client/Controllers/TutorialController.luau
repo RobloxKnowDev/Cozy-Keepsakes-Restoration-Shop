@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Uvtorch = require(script.Parent.RestorationController.UvTorch)
 
 local Tutorialcontroller = {
@@ -20,7 +21,7 @@ local Shadecolor = Color3.new(0, 0, 0)
 local Shadetransparency = 0.25
 local Ringcolor = Color3.new(1, 1, 1)
 local Categorytolerance = 0.97
-local Framenamebykind = { Dirt = "DirtFrame", Ink = "Ink", Scratch = "ScratchesFrame" }
+local Framenamebykind = { Ink = "Ink", Scratch = "ScratchesFrame" }
 local Holepadding = 14
 local Textwidth = 320
 local Textheight = 96
@@ -251,9 +252,14 @@ function Tutorialcontroller:Getsurfacerect(Target: GuiObject): (Vector2?, Vector
 	if Canvas.X <= 0 or Canvas.Y <= 0 then
 		return nil, nil
 	end
-	local Origin = Target.AbsolutePosition / Canvas
-	local Extent = Target.AbsoluteSize / Canvas
-	local Facename = Surface.Face.Name
+	return self:Getfacerect(Part, Surface.Face.Name, Target.AbsolutePosition / Canvas, Target.AbsoluteSize / Canvas)
+end
+
+function Tutorialcontroller:Getdecalrect(Target: Decal): (Vector2?, Vector2?)
+	return self:Getfacerect(Target.Parent :: BasePart, Target.Face.Name, Vector2.zero, Vector2.one)
+end
+
+function Tutorialcontroller:Getfacerect(Part: BasePart, Facename: string, Origin: Vector2, Extent: Vector2): (Vector2?, Vector2?)
 	local Points = {}
 	for X = 0, 1 do
 		for Y = 0, 1 do
@@ -328,6 +334,9 @@ function Tutorialcontroller:Resolvetarget(): (Vector2?, Vector2?, boolean?)
 			return self:Getsurfacerect(Target)
 		end
 		return self:Getguirect(Target)
+	end
+	if Target:IsA("Decal") then
+		return self:Getdecalrect(Target)
 	end
 	if Target:IsA("BasePart") then
 		local Position, Size = self:Getworldrect(Target)
@@ -445,6 +454,9 @@ function Tutorialcontroller:Resumeindex(Saved: number): number
 end
 
 function Tutorialcontroller:Showstep(Index: number)
+	while self.steps[Index] and self.steps[Index].Skip and self.steps[Index].Skip() do
+		Index += 1
+	end
 	self.index = Index
 	local Step = self.steps[Index]
 	if not Step then
@@ -543,6 +555,11 @@ local function Categorydone(Kind: string): boolean
 	return Total <= 0 or Cleaned >= Total * Categorytolerance
 end
 
+local function Categorymissing(Kind: string): boolean
+	local Object = Restoration():GetActiveObject()
+	return Object ~= nil and (tonumber(Object:GetAttribute("Total_" .. Kind)) or 0) <= 0
+end
+
 local function Categoryframe(Kind: string): GuiObject?
 	local Object = Restoration():GetActiveObject()
 	if not Object then
@@ -571,10 +588,30 @@ local function Categorytexture(Kind: string): ImageLabel?
 	return if Texture and Texture:IsA("ImageLabel") then Texture else nil
 end
 
+local function Categorydecal(): Decal?
+	local Object = Restoration():GetActiveObject()
+	if not Object then
+		return nil
+	end
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if
+			Descendant:IsA("Decal")
+			and Cleaningconfig.DirtDecals[Descendant.Name]
+			and Descendant:GetAttribute("Cleaned") ~= true
+		then
+			return Descendant
+		end
+	end
+	return nil
+end
+
 local function Categoryspot(Kind: string): Instance?
 	local Object = Restoration():GetActiveObject()
 	if not Object then
 		return nil
+	end
+	if Kind == "Dirt" then
+		return Categorydecal() or Object
 	end
 	if Kind == "Sticker" then
 		local Spots = Object:FindFirstChild("RestorationSpots")
@@ -723,6 +760,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Take the tweezers.",
+			Skip = function()
+				return Categorymissing("Sticker")
+			end,
 			Target = function()
 				return Toolbutton("Tweezers")
 			end,
@@ -732,6 +772,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Pull the sticker off!",
+			Skip = function()
+				return Categorymissing("Sticker")
+			end,
 			Gesture = "Tweezers",
 			Target = function()
 				return Categoryspot("Sticker")
@@ -742,6 +785,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Take the solvent.",
+			Skip = function()
+				return Categorymissing("Ink")
+			end,
 			Target = function()
 				return Toolbutton("Solvent")
 			end,
@@ -751,6 +797,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Pour it on the ink!",
+			Skip = function()
+				return Categorymissing("Ink")
+			end,
 			Gesture = "Solvent",
 			HoldSeconds = 2.5,
 			Target = function()
@@ -762,6 +811,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Take the cotton.",
+			Skip = function()
+				return Categorymissing("Ink")
+			end,
 			Target = function()
 				return Toolbutton("CottonTip")
 			end,
@@ -771,6 +823,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Rub the ink away!",
+			Skip = function()
+				return Categorymissing("Ink")
+			end,
 			Gesture = "CottonTip",
 			Target = function()
 				return Categoryspot("Ink")
@@ -781,6 +836,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Take the heat gun.",
+			Skip = function()
+				return Categorymissing("Ink")
+			end,
 			Target = function()
 				return Toolbutton("HeatGun")
 			end,
@@ -790,6 +848,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Dry the leftover solvent!",
+			Skip = function()
+				return Categorymissing("Ink")
+			end,
 			Gesture = "HeatGun",
 			HoldSeconds = 2,
 			Target = function()
@@ -801,6 +862,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Take the polish.",
+			Skip = function()
+				return Categorymissing("Scratch")
+			end,
 			Target = function()
 				return Toolbutton("Polish")
 			end,
@@ -810,6 +874,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Rub it on the scratches!",
+			Skip = function()
+				return Categorymissing("Scratch")
+			end,
 			Gesture = "Polish",
 			HoldSeconds = 2.5,
 			Target = function()
@@ -821,6 +888,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Take the cotton again.",
+			Skip = function()
+				return Categorymissing("Scratch")
+			end,
 			Target = function()
 				return Toolbutton("CottonTip")
 			end,
@@ -830,6 +900,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Text = "Rub the scratches away!",
+			Skip = function()
+				return Categorymissing("Scratch")
+			end,
 			Gesture = "CottonTip",
 			Target = function()
 				return Categoryspot("Scratch")
