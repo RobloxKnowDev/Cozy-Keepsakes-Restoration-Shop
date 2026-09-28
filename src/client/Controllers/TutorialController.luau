@@ -994,7 +994,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Text = "Tap the arrow to go back.",
 			Target = function()
-				return Core:GetController("ComputerController").exitButton
+				return Core:GetController("ComputerController").closeButton
 			end,
 			Done = function()
 				return not Core:GetController("ComputerController"):IsOpen()

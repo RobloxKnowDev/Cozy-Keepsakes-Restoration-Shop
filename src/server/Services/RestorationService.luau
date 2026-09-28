@@ -802,6 +802,7 @@ function Restorationservice:Init()
 			error(Object, 0)
 		end
 		Object:SetAttribute("PurchasePrice", Item.PurchasePrice)
+		Object:SetAttribute("StartPercent", Item.RestorationPercent)
 		Sessions[Player] = Object
 		return Object
 	end)
@@ -836,6 +837,7 @@ function Restorationservice:Init()
 		local Salevalue = Roundtwodecimals(Maxvalue * Completionratio)
 		local Reputation = Roundtwodecimals(Maxreputation * Completionratio)
 		local Purchaseprice = tonumber(Sessionobject:GetAttribute("PurchasePrice")) or 0
+		local Startpercent = tonumber(Sessionobject:GetAttribute("StartPercent")) or 0
 		local Objectkey = tostring(Sessionobject:GetAttribute("ObjectKey") or Sessionobject.Name)
 		local Itemdata = {
 			Id = 0,
@@ -882,6 +884,9 @@ function Restorationservice:Init()
 			Restoreditem = Inventoryservice:AddRestoredItem(Player, Itemdata)
 		end
 		Core:GetService("TutorialService"):MarkObjectDone(Player)
+		if Itemdata.RestorationPercent >= 100 and Startpercent < 100 then
+			Core:GetService("DailyTaskService"):AddProgress(Player, "RestoreItems", 1)
+		end
 		if Completionratio >= 0.5 and Player.Parent then
 			Inventoryservice:UnlockIndexEntry(Player, Objectkey, Itemdata.Mutation)
 		end

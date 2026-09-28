@@ -12,7 +12,7 @@ local Usedatastore = true
 local Verboselogs = false
 local Autosaveinterval = 20
 local Sectionorder =
-	{ "Cash", "Stats", "Upgrades", "Inventory", "Restoration", "Exposition", "Monetization", "Settings", "Leaderboard", "Codes" }
+	{ "Cash", "Stats", "Upgrades", "Inventory", "Restoration", "Exposition", "Monetization", "Settings", "Leaderboard", "Codes", "DailyTasks" }
 
 type Section = { Load: (Player, any) -> (), Save: (Player) -> any, Clear: (Player) -> () }
 

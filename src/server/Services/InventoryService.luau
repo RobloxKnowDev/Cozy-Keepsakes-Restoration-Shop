@@ -262,6 +262,10 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	local SaleValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 	Core:GetService("CashService"):AddCash(Player, SaleValue)
 	Core:GetService("StatsService"):AddItemsSold(Player, 1)
+	if SaleValue > 0 then
+		Core:GetService("DailyTaskService"):AddProgress(Player, "SellItems", 1)
+		Core:GetService("DailyTaskService"):AddProgress(Player, "EarnCash", SaleValue)
+	end
 	self:PushItems(Player)
 	local SoldItem = CloneItem(Item)
 	SoldItem.CurrentValue = SaleValue
@@ -274,16 +278,25 @@ function Inventoryservice:SellAllRestoredItems(Player: Player)
 	local Items = self:EnsurePlayer(Player)
 	local SoldItems = {}
 	local TotalValue = 0
+	local PaidCount = 0
 
 	for Index = #Items, 1, -1 do
 		local Item = table.remove(Items, Index)
 		table.insert(SoldItems, 1, CloneItem(Item))
-		TotalValue += ApplySaleMultiplier(Item.CurrentValue, Multiplier)
+		local SaleValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
+		TotalValue += SaleValue
+		if SaleValue > 0 then
+			PaidCount += 1
+		end
 	end
 
 	if #SoldItems > 0 then
 		Core:GetService("CashService"):AddCash(Player, TotalValue)
 		Core:GetService("StatsService"):AddItemsSold(Player, #SoldItems)
+	end
+	if PaidCount > 0 then
+		Core:GetService("DailyTaskService"):AddProgress(Player, "SellItems", PaidCount)
+		Core:GetService("DailyTaskService"):AddProgress(Player, "EarnCash", TotalValue)
 	end
 
 	self:PushItems(Player)

@@ -917,6 +917,9 @@ function Customerservice:Init()
 				Mutation = PendingOffer.Mutation,
 			}, PendingOffer.Price)
 			Core:GetService("TutorialService"):MarkObjectBought(Player)
+			if not PendingOffer.Emergency then
+				Core:GetService("DailyTaskService"):AddProgress(Player, "BuyItems", 1)
+			end
 			local ExitAttachment = AttachmentsByIndex[0]
 			OccupiedSlots[1] = nil
 			FrontCustomer:SetAttribute("IsFrontCustomer", false)

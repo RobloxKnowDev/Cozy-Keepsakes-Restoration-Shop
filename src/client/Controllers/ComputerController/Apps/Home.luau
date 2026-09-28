@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
@@ -12,16 +13,20 @@ function Home.ApplyReputationBoost(Controller, State)
 	Controller.reputationText.TextColor3 = if (tonumber(State.ReputationMultiplier) or 1) > 1
 		then ReputationBoostColor
 		else Controller.baseReputationTextColor
+	local BoostController = Core:GetController("BoostController")
+	BoostController:SetBoost("StarterReputation", State.PersonalReputationBoostEndsAt, 1)
+	BoostController:SetBoost("ServerReputationLuck", State.ServerLuckEndsAt, 2, State.ServerLuckMultiplier)
 end
 
 function Home.Init(Controller)
-	Controller.statsFrame = Controller.homeFrame:WaitForChild("StatsFrame")
-	Controller.itemsText = Controller.statsFrame:WaitForChild("ItemsText")
-	Controller.reputationText = Controller.statsFrame:WaitForChild("ReputationText")
-	Controller.dailyProfitText = Controller.statsFrame:WaitForChild("DailyText")
+	Controller.statsFrame = Controller.homePage:WaitForChild("StatsFrame")
+	Controller.itemsText = Controller.statsFrame:WaitForChild("SoldFrame"):WaitForChild("NumberText")
+	Controller.reputationText = Controller.statsFrame:WaitForChild("ReputationFrame"):WaitForChild("NumberText")
+	Controller.dailyProfitText = Controller.statsFrame:WaitForChild("DailyFrame"):WaitForChild("NumberText")
 	Controller.baseReputationTextColor = Controller.reputationText.TextColor3
 	Controller.baseDailyProfitTextColor = Controller.dailyProfitText.TextColor3
 	Home.ApplyStats(Controller, RemoteManager:InvokeServer("StatsService", "GetStats"))
+	Home.ApplyReputationBoost(Controller, RemoteManager:InvokeServer("MonetizationService", "GetShopState"))
 end
 
 function Home.ApplyStats(Controller, Stats)
@@ -33,7 +38,6 @@ function Home.ApplyStats(Controller, Stats)
 end
 
 function Home.Start(Controller)
-	Home.ApplyReputationBoost(Controller, Controller.shopState)
 	RemoteManager:OnClientEvent("StatsService", "StatsUpdated", function(Stats)
 		Home.ApplyStats(Controller, Stats)
 	end)

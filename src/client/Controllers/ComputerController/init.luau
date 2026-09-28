@@ -8,25 +8,19 @@ local Workspace = game:GetService("Workspace")
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local UiFade = require(ReplicatedStorage.Shared.Utils.UiFade)
+local DailyTasks = require(script.Apps.DailyTasks)
 local Home = require(script.Apps.Home)
-local Index = require(script.Apps.Index)
-local Inventory = require(script.Apps.Inventory)
-local Leaderboard = require(script.Apps.Leaderboard)
-local Shop = require(script.Apps.Shop)
 local Shared = require(script.Apps.Shared)
-local Upgrades = require(script.Apps.Upgrades)
 
 local ComputerController = {
 	Name = "ComputerController",
 	Priority = 3,
 }
 
-local Applications = { Home, Leaderboard, Index, Inventory, Upgrades, Shop }
+local Applications = { Home, DailyTasks }
 local HighlightFillColor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
 local ButtonTweenInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local ActiveButtonColor = Color3.fromRGB(231, 248, 222)
-local ActiveContentColor = Color3.fromRGB(0, 0, 0)
 local ActiveButtonScale = 1.03
 local CountDuration = 0.65
 local PulseInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -53,8 +47,7 @@ local function IsGamepad(InputType: Enum.UserInputType): boolean
 	return Core:GetController("GamepadController"):IsGamepad(InputType)
 end
 
-local PageOrder = { "Home", "Index", "Inventory", "Upgrades", "Shop" }
-
+local PageOrder = { "Home" }
 
 function ComputerController:IsOpen(): boolean
 	return self.isOpen == true
@@ -121,18 +114,7 @@ function ComputerController:SetHudVisible(IsVisible: boolean)
 end
 
 function ComputerController:SetSellLocked(Locked: boolean)
-	local Copies = 0
-	for _, Child in ipairs(script.Apps:GetChildren()) do
-		if Child.Name == "Inventory" then Copies += 1 end
-	end
-	assert(
-		Inventory.SetSellLocked,
-		string.format(
-			"ComputerController: outdated Inventory module (%d copies in ComputerController.Apps, reconnect Rojo and delete the duplicates in Studio)",
-			Copies
-		)
-	)
-	Inventory.SetSellLocked(self, Locked)
+	self.sellLocked = Locked
 end
 
 function ComputerController:SyncHeader()
@@ -199,44 +181,13 @@ function ComputerController:AnimateComputerCashTo(TargetValue: number)
 end
 
 function ComputerController:ApplyNavButtonStyle(Button: GuiButton, IsActive: boolean)
-	local Defaults = self.navButtonDefaults[Button]
 	local Scale = Shared.EnsureScale(Button)
 	TweenService:Create(Scale, ButtonTweenInfo, { Scale = if IsActive then ActiveButtonScale else 1 }):Play()
-	TweenService:Create(
-		Button,
-		ButtonTweenInfo,
-		{ BackgroundColor3 = if IsActive then ActiveButtonColor else Defaults.BackgroundColor3 }
-	):Play()
-	if Defaults.Stroke then
-		TweenService:Create(
-			Defaults.Stroke,
-			ButtonTweenInfo,
-			{ Transparency = if IsActive then 1 else Defaults.StrokeTransparency }
-		):Play()
-	end
-	for _, Object in ipairs(Defaults.Texts) do
-		TweenService:Create(
-			Object,
-			ButtonTweenInfo,
-			{ TextColor3 = if IsActive then ActiveContentColor else Defaults.TextColors[Object] }
-		):Play()
-	end
-	for _, Object in ipairs(Defaults.Images) do
-		TweenService:Create(
-			Object,
-			ButtonTweenInfo,
-			{ ImageColor3 = if IsActive then ActiveContentColor else Defaults.ImageColors[Object] }
-		):Play()
-	end
 end
 
 function ComputerController:SetPage(PageName: string)
 	self.activePage = PageName
-	self.homeFrame.Visible = PageName == "Home"
-	self.indexFrame.Visible = PageName == "Index"
-	self.inventoryFrame.Visible = PageName == "Inventory"
-	self.upgradesFrame.Visible = PageName == "Upgrades"
-	self.shopFrame.Visible = PageName == "Shop"
+	self.homePage.Visible = PageName == "Home"
 	self:ApplyNavButtonStyle(self.homeButton, PageName == "Home")
 	self:ApplyNavButtonStyle(self.indexButton, PageName == "Index")
 	self:ApplyNavButtonStyle(self.inventoryNavButton, PageName == "Inventory")
@@ -287,29 +238,6 @@ function ComputerController:Close()
 	self:UpdateHoveredComputer()
 end
 
-local function CaptureNavigationDefaults(Controller, Button: GuiButton)
-	local Texts, TextColors, Images, ImageColors = {}, {}, {}, {}
-	for _, Descendant in ipairs(Button:GetDescendants()) do
-		if Descendant:IsA("TextLabel") or Descendant:IsA("TextButton") or Descendant:IsA("TextBox") then
-			table.insert(Texts, Descendant)
-			TextColors[Descendant] = Descendant.TextColor3
-		elseif Descendant:IsA("ImageLabel") or Descendant:IsA("ImageButton") then
-			table.insert(Images, Descendant)
-			ImageColors[Descendant] = Descendant.ImageColor3
-		end
-	end
-	local Stroke = Button:FindFirstChildOfClass("UIStroke")
-	Controller.navButtonDefaults[Button] = {
-		BackgroundColor3 = Button.BackgroundColor3,
-		Stroke = Stroke,
-		StrokeTransparency = if Stroke then Stroke.Transparency else 0,
-		Texts = Texts,
-		TextColors = TextColors,
-		Images = Images,
-		ImageColors = ImageColors,
-	}
-end
-
 function ComputerController:Init()
 	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.computer = Workspace:WaitForChild("Map")
@@ -341,23 +269,19 @@ function ComputerController:Init()
 	self.inputBlocker:SetAttribute("SilentClick", true)
 	self.inputBlocker.Parent = self.surfaceGui
 	self.frame = self.surfaceGui:WaitForChild("Frame") :: Frame
-	self.header = self.frame:WaitForChild("Header") :: Frame
-	self.pageFrame = self.frame:WaitForChild("PageFrame")
-	self.homeFrame = self.pageFrame:WaitForChild("HomeFrame")
-	self.indexFrame = self.pageFrame:WaitForChild("IndexFrame")
-	self.inventoryFrame = self.pageFrame:WaitForChild("InventoryFrame")
-	self.upgradesFrame = self.pageFrame:WaitForChild("UpgradeFrame")
-	self.shopFrame = self.pageFrame:WaitForChild("ShopFrame")
+	self.header = self.frame:WaitForChild("Header")
+	self.pages = self.frame:WaitForChild("Pages")
+	self.homePage = self.pages:WaitForChild("HomePage")
 	self.LeftFrame = self.frame:WaitForChild("Left")
-	self.exitButton = self.header:WaitForChild("ExitButton")
+	self.closeButton = self.header:WaitForChild("CloseButton")
 	self.homeButton = self.LeftFrame:WaitForChild("HomeButton")
 	self.indexButton = self.LeftFrame:WaitForChild("IndexButton")
 	self.inventoryNavButton = self.LeftFrame:WaitForChild("InventoryButton")
 	self.upgradesButton = self.LeftFrame:WaitForChild("UpgradeButton")
 	self.shopButton = self.LeftFrame:WaitForChild("ShopButton")
-	self.cashText = self.header:WaitForChild("CashFrame").CashText
-	self.dayText = self.header:WaitForChild("DayFrame").DayText
-	self.timeText = self.header:WaitForChild("DayFrame").TimeText
+	self.cashText = self.header:WaitForChild("CashFrame"):WaitForChild("CashText")
+	self.dayText = self.header:WaitForChild("DayFrame"):WaitForChild("DayText")
+	self.timeText = self.header:WaitForChild("DayFrame"):WaitForChild("TimeText")
 	self.hud = PlayerGui:WaitForChild("HUD")
 	self.hudCashFrame = self.hud:WaitForChild("CashFrame") :: GuiObject
 	self.hudDayFrame = self.hud:WaitForChild("DayFrame") :: GuiObject
@@ -368,7 +292,6 @@ function ComputerController:Init()
 	self.activePage = "Home"
 	self.isOpen = false
 
-	self.navButtonDefaults = {}
 	self.computerCashAnimationId = 0
 	self.hoverHighlight = Instance.new("Highlight")
 	self.hoverHighlight.Name = "ComputerHoverHighlight"
@@ -384,21 +307,8 @@ function ComputerController:Init()
 
 	self.surfaceGui.Enabled = true
 	self.frame.Visible = true
-	self.homeFrame.Visible = false
-	self.indexFrame.Visible = false
-	self.inventoryFrame.Visible = false
-	self.upgradesFrame.Visible = false
-	self.shopFrame.Visible = false
-	for _, Button in ipairs({
-		self.homeButton,
-		self.indexButton,
-		self.inventoryNavButton,
-		self.upgradesButton,
-		self.shopButton,
-	}) do
-		CaptureNavigationDefaults(self, Button)
-	end
-	Shared.AnimateButton(self.exitButton, function()
+	self.homePage.Visible = false
+	Shared.AnimateButton(self.closeButton, function()
 		return false
 	end)
 	Shared.AnimateButton(self.homeButton, function()
@@ -490,23 +400,11 @@ function ComputerController:Start()
 		if Processed then return end
 		TryWorldInteraction(Position, true)
 	end)
-	Core:GetController("GamepadController"):OnActivated(self.exitButton, function()
+	Core:GetController("GamepadController"):OnActivated(self.closeButton, function()
 		self:Close()
 	end)
 	Core:GetController("GamepadController"):OnActivated(self.homeButton, function()
 		self:SetPage("Home")
-	end)
-	Core:GetController("GamepadController"):OnActivated(self.indexButton, function()
-		self:SetPage("Index")
-	end)
-	Core:GetController("GamepadController"):OnActivated(self.inventoryNavButton, function()
-		self:SetPage("Inventory")
-	end)
-	Core:GetController("GamepadController"):OnActivated(self.upgradesButton, function()
-		self:SetPage("Upgrades")
-	end)
-	Core:GetController("GamepadController"):OnActivated(self.shopButton, function()
-		self:SetPage("Shop")
 	end)
 end
 

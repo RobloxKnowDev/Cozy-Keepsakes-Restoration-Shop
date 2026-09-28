@@ -60,9 +60,6 @@ end
 
 function Shop.ApplyState(Controller, State)
 	Controller.shopState = State
-	local BoostController = Core:GetController("BoostController")
-	BoostController:SetBoost("StarterReputation", State.PersonalReputationBoostEndsAt, 1)
-	BoostController:SetBoost("ServerReputationLuck", State.ServerLuckEndsAt, 2, State.ServerLuckMultiplier)
 
 	if State.OwnsVIP then
 		SetPrice(Controller.vipButton, "OWNED")
