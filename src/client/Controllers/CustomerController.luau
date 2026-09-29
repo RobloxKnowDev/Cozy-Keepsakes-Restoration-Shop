@@ -25,7 +25,7 @@ local Buttontweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDi
 local Estimationtweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local HighlightFillcolor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlinecolor = Color3.fromRGB(255, 255, 255)
-local ErrorMessageColor = Color3.fromRGB(255, 0, 4)
+local ErrorMessageGradient = Rarityconfig.Mythic.Gradient
 local DisabledEstimateColor = Color3.fromRGB(115, 115, 115)
 local PointerRayOffsets = { Vector2.zero }
 local TouchRayOffsets = {
@@ -281,7 +281,7 @@ function Customercontroller:RequestPriceEstimate()
 		return
 	end
 	if (self.estimatesRemaining or 0) <= 0 then
-		Core:GetController("MessageController"):Show("Upgrade Price Estimation to get more estimates", ErrorMessageColor)
+		Core:GetController("MessageController"):Show("Upgrade Price Estimation to get more estimates", ErrorMessageGradient)
 		return
 	end
 	local Offerid = self.activeOfferId
@@ -300,7 +300,7 @@ function Customercontroller:RequestPriceEstimate()
 		return
 	end
 	if type(Response) == "table" and Response.Reason == "NoEstimatesRemaining" then
-		Core:GetController("MessageController"):Show("No price estimates remaining today", ErrorMessageColor)
+		Core:GetController("MessageController"):Show("No price estimates remaining today", ErrorMessageGradient)
 	end
 end
 
@@ -375,9 +375,9 @@ function Customercontroller:Respond(Decision: string)
 			self:ShowOffer(self.pendingOffer)
 		end
 		if Reason == "NotEnoughCash" then
-			Core:GetController("MessageController"):Show("Not enough money", ErrorMessageColor)
+			Core:GetController("MessageController"):Show("Not enough money", ErrorMessageGradient)
 		elseif Reason == "EmergencyOfferPresented" then
-			Core:GetController("MessageController"):Show("You cannot afford this item. Restore this free skateboard to recover.", ErrorMessageColor)
+			Core:GetController("MessageController"):Show("You cannot afford this item. Restore this free skateboard to recover.", ErrorMessageGradient)
 		end
 		return
 	end
@@ -385,11 +385,10 @@ function Customercontroller:Respond(Decision: string)
 	self.pendingOffer = nil
 	self:HideInstant()
 	if Decision == "Accept" then
-		local Definition = Objectconfig.Object[tostring(Offer.ObjectKey)]
 		Core:GetController("FeedbackController"):Purchase(
 			tostring(Offer.ObjectName),
 			tostring(Offer.ImageId or ""),
-			Rarityconfig[tostring(Definition.Rarity or "Common")].Gradient
+			self.rarityGradient
 		)
 		Core:GetController("RestorationController"):Enter()
 	end

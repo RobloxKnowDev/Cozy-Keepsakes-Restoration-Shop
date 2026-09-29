@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
@@ -26,8 +27,8 @@ local SliderStickSpeed = 0.6
 local SliderStickDeadzone = 0.2
 local OnGradientColor = Color3.fromRGB(21, 255, 0)
 local OffGradientColor = Color3.fromRGB(255, 0, 4)
-local ErrorColor = Color3.fromRGB(255, 0, 4)
-local SuccessColor = Color3.fromRGB(21, 255, 0)
+local ErrorGradient = Rarityconfig.Mythic.Gradient
+local SuccessGradient = Rarityconfig.Common.Gradient
 local HeavyEffects = {
 	BlurEffect = true,
 	BloomEffect = true,
@@ -316,13 +317,13 @@ function SettingController:RedeemCode()
 	local Message = Core:GetController("MessageController")
 	if Result.Success then
 		self.codesBox.Text = ""
-		Message:Show("Code redeemed: " .. tostring(Result.ValueText), SuccessColor)
+		Message:Show("Code redeemed: " .. tostring(Result.ValueText), SuccessGradient)
 	elseif Result.Reason == "AlreadyClaimed" then
-		Message:Show("You already claimed this code", ErrorColor)
+		Message:Show("You already claimed this code", ErrorGradient)
 	elseif Result.Reason == "RewardFailed" then
-		Message:Show("This code reward could not be granted", ErrorColor)
+		Message:Show("This code reward could not be granted", ErrorGradient)
 	else
-		Message:Show("This code does not exist", ErrorColor)
+		Message:Show("This code does not exist", ErrorGradient)
 	end
 end
 

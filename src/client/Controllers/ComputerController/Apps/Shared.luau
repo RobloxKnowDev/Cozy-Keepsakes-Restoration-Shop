@@ -58,4 +58,26 @@ function Shared.AnimateButton(Button: GuiButton, IsActive: () -> boolean)
 	end)
 end
 
+function Shared.AnimateNavButton(Button: GuiButton, IsSelected: () -> boolean): () -> ()
+	local Scale = Shared.EnsureScale(Button)
+	local IsHovering = false
+	local function Refresh()
+		local Target = if IsHovering then 1.06 elseif IsSelected() then ActiveButtonScale else 1
+		TweenService:Create(Scale, ButtonTween, { Scale = Target }):Play()
+	end
+	Button.MouseEnter:Connect(function()
+		IsHovering = true
+		Refresh()
+	end)
+	Button.MouseLeave:Connect(function()
+		IsHovering = false
+		Refresh()
+	end)
+	Button.MouseButton1Down:Connect(function()
+		TweenService:Create(Scale, ButtonTween, { Scale = 0.96 }):Play()
+	end)
+	Button.MouseButton1Up:Connect(Refresh)
+	return Refresh
+end
+
 return Shared

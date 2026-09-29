@@ -5,11 +5,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Customerconfig = require(ReplicatedStorage.Shared.Config.Customer)
 local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
+local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
 local Upgrades = {}
-local ErrorColor = Color3.fromRGB(255, 0, 4)
+local ErrorGradient = Rarityconfig.Mythic.Gradient
 local RobuxIcon = ""
 
 local function FormatValue(UpgradeName: string, Value: number?): string
@@ -109,7 +110,7 @@ local function BindCard(Controller, UpgradeName: string)
 		end
 		local Reason = type(Response) == "table" and Response.Reason or "UpgradeFailed"
 		local Message = if Reason == "NotEnoughCash" then "Not enough money" elseif Reason == "MaxLevel" then "Maximum level reached" else "Upgrade purchase failed"
-		Core:GetController("MessageController"):Show(Message, ErrorColor)
+		Core:GetController("MessageController"):Show(Message, ErrorGradient)
 	end)
 	Core:GetController("GamepadController"):OnActivated(RobuxButton, function()
 		if RobuxButton.Active and CardData.ProductId > 0 then

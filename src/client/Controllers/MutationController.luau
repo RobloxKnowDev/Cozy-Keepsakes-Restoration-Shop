@@ -49,14 +49,11 @@ function Mutationcontroller:GetGradient(Mutation: string): ColorSequence?
 end
 
 function Mutationcontroller:Paint(Hue: number)
-	local Color = Color3.fromHSV(Hue, 1, 1)
-	local Sequence = ColorSequence.new(Color)
+	local Sequence = ColorSequence.new(Color3.fromHSV(Hue, 1, 1))
 	for _, Attachment in ipairs(Collectionservice:GetTagged(Mutationconfig.RainbowTag)) do
 		for _, Child in ipairs(Attachment:GetChildren()) do
 			if Child:IsA("ParticleEmitter") then
 				Child.Color = Sequence
-			elseif Child:IsA("Light") then
-				Child.Color = Color
 			end
 		end
 	end

@@ -12,15 +12,13 @@ local function Getanchorpart(Object: Instance): BasePart
 	return (Object :: Model).PrimaryPart or Object:FindFirstChildWhichIsA("BasePart", true)
 end
 
-function MutationVfx.Attach(Object: Instance, Mutation: string, Withlight: boolean)
+function MutationVfx.Attach(Object: Instance, Mutation: string)
 	if Mutation == "Normal" then
 		return
 	end
 	local Attachment = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Vfx"):WaitForChild(Mutation):Clone() :: Attachment
 	Attachment.Name = Mutationconfig.VfxName
-	if not Withlight then
-		Attachment.Light:Destroy()
-	end
+	Attachment.Light:Destroy()
 	if Mutation == "Rainbow" then
 		Collectionservice:AddTag(Attachment, Mutationconfig.RainbowTag)
 	end

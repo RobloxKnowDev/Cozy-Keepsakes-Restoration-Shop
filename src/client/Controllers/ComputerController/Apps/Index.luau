@@ -13,7 +13,7 @@ local Rarityrank = {}
 for Rank, Rarity in ipairs(Rarityconfig.Order) do
 	Rarityrank[Rarity] = Rank
 end
-local GainColor = Color3.fromRGB(21, 255, 0)
+local GainGradient = Rarityconfig.Common.Gradient
 local LockedIconColor = Color3.fromRGB(160, 160, 160)
 local LockedIconTransparency = 0.35
 
@@ -92,7 +92,7 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 		local Label = if Unlockedmutation == "Normal"
 			then Unlockedname
 			else Mutationconfig[tostring(Unlockedmutation)].Name .. " " .. Unlockedname
-		Core:GetController("MessageController"):Show(string.format("New index entry unlocked: %s", Label), GainColor)
+		Core:GetController("MessageController"):Show(string.format("New index entry unlocked: %s", Label), GainGradient)
 	end
 	UpdateCount(Controller)
 	task.defer(function()

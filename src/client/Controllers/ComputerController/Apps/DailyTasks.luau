@@ -4,11 +4,12 @@ local Workspace = game:GetService("Workspace")
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Config = require(ReplicatedStorage.Shared.Config.DailyTasks)
 local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
+local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
 local DailyTasks = {}
-local CompletedColor = Color3.fromRGB(126, 255, 145)
+local CompletedGradient = Rarityconfig.Common.Gradient
 
 local function FormatAmount(Definition, Value: number): string
 	if Definition.Currency then
@@ -66,8 +67,9 @@ function DailyTasks.Start(Controller)
 		local Definition = Config.Tasks[Id]
 		Core:GetController("MessageController"):Show(
 			"Task completed: " .. TaskText(Definition) .. " +" .. Shared.FormatCurrency(Definition.Reward),
-			CompletedColor
+			CompletedGradient
 		)
+		Core:GetController("FeedbackController"):DailyTaskReward(Definition.Reward)
 	end)
 	task.spawn(function()
 		while true do

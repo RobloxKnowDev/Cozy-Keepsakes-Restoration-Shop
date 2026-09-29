@@ -1,5 +1,6 @@
 local Assetservice = game:GetService("AssetService")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
+local Tweenservice = game:GetService("TweenService")
 local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
@@ -37,6 +38,7 @@ local Maxdirtstrokes = 8
 local Minimumfacedot = 0.01
 local Dirtdecalnames = Cleaningconfig.DirtDecals
 local Getfacepoint = Facemapping.GetPoint
+local Cleanedfadeinfo = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local function Getfacename(Localnormal: Vector3): string
 	local Absolutex = math.abs(Localnormal.X)
@@ -114,6 +116,7 @@ local Dirtfadestep = math.ceil(255 / Cleaningconfig.DirtPasses)
 local Stainsamplestep = 2
 local Stainspotratio = 0.2
 local Tickmarks: { [Instance]: buffer } = {}
+local Lastfades: { [Instance]: { Tick: number, X: number, Y: number } } = {}
 
 export type StainCluster = {
 	Surface: SurfaceGui?,
@@ -176,6 +179,7 @@ local function Getoverlayimage(Test: ImageLabel | Decal): EditableImage?
 			Overlayimages[Test] = nil
 			Overlaypending[Test] = nil
 			Tickmarks[Test] = nil
+			Lastfades[Test] = nil
 			Created:Destroy()
 		end)
 	end)
@@ -224,6 +228,10 @@ local function Fadedecal(Decal: Decal, Localpoint: Vector2, Radiusscale: number)
 	local Width, Height = Size.X, Size.Y
 	local Centerx = math.round(Localpoint.X * Width)
 	local Centery = math.round(Localpoint.Y * Height)
+	local Tick = math.floor(os.clock() / Cleaninterval) % 65535 + 1
+	local Last = Lastfades[Decal]
+	if Last and Last.Tick == Tick and Last.X == Centerx and Last.Y == Centery then return end
+	Lastfades[Decal] = { Tick = Tick, X = Centerx, Y = Centery }
 	local Radius = math.max(math.round(math.min(Width, Height) * Overlayradiusratio * Radiusscale), 2)
 	local Minx = math.max(Centerx - Radius, 0)
 	local Miny = math.max(Centery - Radius, 0)
@@ -238,8 +246,8 @@ local function Fadedecal(Decal: Decal, Localpoint: Vector2, Radiusscale: number)
 		Marks = buffer.create(Width * Height * 2)
 		Tickmarks[Decal] = Marks
 	end
-	local Tick = math.floor(os.clock() / Cleaninterval) % 65535 + 1
 	local Radiussquared = Radius * Radius
+	local Changed = false
 	for Y = Miny, Maxy do
 		local Dy = Y - Centery
 		for X = Minx, Maxx do
@@ -252,12 +260,15 @@ local function Fadedecal(Decal: Decal, Localpoint: Vector2, Radiusscale: number)
 					local Alpha = buffer.readu8(Pixels, Alphaoffset)
 					if Alpha > 0 then
 						buffer.writeu8(Pixels, Alphaoffset, math.max(Alpha - Dirtfadestep, 0))
+						Changed = true
 					end
 				end
 			end
 		end
 	end
-	Editable:WritePixelsBuffer(Vector2.new(Minx, Miny), Vector2.new(Regionwidth, Regionheight), Pixels)
+	if Changed then
+		Editable:WritePixelsBuffer(Vector2.new(Minx, Miny), Vector2.new(Regionwidth, Regionheight), Pixels)
+	end
 end
 
 local Overlayframenames = { Ink = true, ScratchesFrame = true }
@@ -276,13 +287,20 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 			Getoverlayimage(Descendant)
 		elseif Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
 			Getoverlayimage(Descendant)
+			Descendant:GetAttributeChangedSignal("Cleaned"):Connect(function()
+				if Descendant:GetAttribute("Cleaned") == true then
+					Tweenservice:Create(Descendant, Cleanedfadeinfo, { Transparency = 1 }):Play()
+				end
+			end)
 		end
 	end
 end
 
 function Cleaningcontroller:EraseDirtOverlay(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3, Radiusscale: number)
 	for _, Decal in ipairs(Getdirtdecals(Part, Worldnormal)) do
-		Fadedecal(Decal, Getfacepoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
+		if Decal:GetAttribute("Cleaned") ~= true then
+			Fadedecal(Decal, Getfacepoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
+		end
 	end
 end
 

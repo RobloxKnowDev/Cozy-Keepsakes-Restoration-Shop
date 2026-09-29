@@ -12,8 +12,6 @@ local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Uigradient = require(Replicatedstorage.Shared.Utils.UiGradient)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 
-local MutationAmbientBlend = 0.65
-local MutationLightBlend = 0.45
 local UnknownText = "???"
 local CheerFadeInSeconds = 0.7
 local CrossfadeSeconds = 1.4
@@ -22,6 +20,7 @@ local ClapFadeSeconds = 0.9
 local ClapVolumeScale = 0.6
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
+local Restorationpercent = require(Replicatedstorage.Shared.Utils.RestorationPercent)
 
 type RestorationObject = Model | BasePart
 
@@ -101,17 +100,19 @@ function Completioncontroller:Init()
 	self.preview = self.frame:WaitForChild("ObjectPreview")
 	self.viewport = if self.preview:IsA("ViewportFrame") then self.preview else nil
 	self.nextButton = self.frame:WaitForChild("NextButton") :: GuiButton
-	self.objectNameText = self.frame:WaitForChild("ObjectName")
-	self.rarityFrame = self.frame:WaitForChild("RarityFrame") :: GuiObject
-	self.rarityGradient = Uigradient.Ensure(self.rarityFrame)
-	self.rarityText = self.rarityFrame:WaitForChild("Rarity")
-	self.totalProgressText = self.frame:WaitForChild("TotalProgress")
-	self.valueText = self.frame:WaitForChild("Value")
-	self.reputationText = self.frame:WaitForChild("ReputationText")
-	self.mutationText = self.frame:WaitForChild("MutationText")
+	local Statsframe = self.frame:WaitForChild("StatsFrame")
+	local Mutationframe = Statsframe:WaitForChild("MutationFrame")
+	self.objectNameText = self.frame:WaitForChild("ObjectNameText")
+	self.rarityText = self.frame:WaitForChild("RarityText")
+	self.rarityGradient = self.rarityText:WaitForChild("UIGradient")
+	self.totalProgressText = Statsframe:WaitForChild("ProgressFrame"):WaitForChild("ProgressText")
+	self.valueText = Statsframe:WaitForChild("ValueFrame"):WaitForChild("ValueText")
+	self.reputationText = Statsframe:WaitForChild("ReputationFrame"):WaitForChild("ReputationText")
+	self.mutationText = Mutationframe:WaitForChild("MutationText")
 	self.mutationGradient = Uigradient.Ensure(self.mutationText)
+	self.mutationFrameGradient = Mutationframe:WaitForChild("UIGradient")
 	self.baseMutationGradient = self.mutationGradient.Color
-	self.maxValueText = self.frame:WaitForChild("MaxValue")
+	self.baseMutationFrameGradient = self.mutationFrameGradient.Color
 	self.frameShownPosition = self.frame.Position
 	self.transition = self.gui:FindFirstChild("CompletionTransition")
 	if not self.transition then
@@ -161,24 +162,20 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 	local Rarity = Rarityconfig[tostring(Object:GetAttribute("Rarity") or "Common")]
 
 	local Mutationname = Object:GetAttribute("Mutation")
+	local Mutation = if Mutationname == nil then nil else Mutationconfig[tostring(Mutationname)]
+	local Hasmutation = Mutation ~= nil and Mutation ~= Mutationconfig.Normal
 	self.objectNameText.Text = Object:GetAttribute("DisplayName") or Object.Name
-	if Mutationname == nil then
-		self.mutationText.Text = UnknownText
-		self.mutationGradient.Color = self.baseMutationGradient
-	else
-		local Mutation = Mutationconfig[tostring(Mutationname)]
-		self.mutationText.Text = Mutation.Name
-		self.mutationGradient.Color = Mutation.Gradient
-	end
-	self.rainbowGradients = if Mutationname == "Rainbow"
-		then { self.mutationGradient }
+	self.mutationText.Text = if Mutation then Mutation.Name else UnknownText
+	self.mutationGradient.Color = if Hasmutation then Mutation.Gradient else self.baseMutationGradient
+	self.mutationFrameGradient.Color = if Hasmutation then Mutation.BackgroundGradient else self.baseMutationFrameGradient
+	self.rainbowGradients = if Hasmutation and Mutationname == "Rainbow"
+		then { self.mutationGradient, self.mutationFrameGradient }
 		else nil
 	self.rarityText.Text = Rarity.Name
 	self.rarityGradient.Color = Rarity.Gradient
-	self.totalProgressText.Text = string.format("%d%%", math.floor(Overallratio * 100 + 0.5))
+	self.totalProgressText.Text = string.format("%d%%", Restorationpercent(Overallratio))
 	self.valueText.Text = Formatcurrency(Currentvalue)
 	self.reputationText.Text = Formatreputation(Reputation)
-	self.maxValueText.Text = Formatcurrency(Maxvalue)
 
 	table.clear(self.emptyRows)
 	for _, Kind in ipairs(Completionkinds) do
@@ -187,7 +184,7 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 		if (Object:GetAttribute("Total_" .. Kind) or 0) <= 0 then
 			self.emptyRows[Row] = true
 		end
-		Row:WaitForChild("PercentText").Text = string.format("%d%%", math.floor(Ratio * 100 + 0.5))
+		Row:WaitForChild("PercentText").Text = string.format("%d%%", Restorationpercent(Ratio))
 		Row:WaitForChild("FrameBar"):WaitForChild("Bar").Size = UDim2.fromScale(Ratio, 1)
 	end
 end
@@ -538,7 +535,6 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 			Clone.CanTouch = false
 		end
 
-		self.mutation = tostring(Object:GetAttribute("Mutation") or "Normal")
 		local Objectkey = tostring(Object:GetAttribute("ObjectKey"))
 		Pivotto(Clone, CFrame.Angles(math.rad(90), math.rad(-90), math.rad(90)) * Getobjectrotation(Objectkey))
 		Clone.Parent = self.world
@@ -664,25 +660,6 @@ function Completioncontroller:Update(Deltatime: number)
 			Gradient.Color = Sequence
 		end
 	end
-	self:Tintpreview()
-end
-
-function Completioncontroller:Tintpreview()
-	if not self.viewport then
-		return
-	end
-	if not self.baseAmbient then
-		self.baseAmbient = self.viewport.Ambient
-		self.baseLightColor = self.viewport.LightColor
-	end
-	local Color = Core:GetController("MutationController"):GetColor(self.mutation)
-	if not Color then
-		self.viewport.Ambient = self.baseAmbient
-		self.viewport.LightColor = self.baseLightColor
-		return
-	end
-	self.viewport.Ambient = self.baseAmbient:Lerp(Color, MutationAmbientBlend)
-	self.viewport.LightColor = self.baseLightColor:Lerp(Color, MutationLightBlend)
 end
 
 function Completioncontroller:Start()

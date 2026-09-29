@@ -25,9 +25,9 @@ local Selectframeshowtweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum
 local Selectframehidetweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local Fastselectframehidetweeninfo = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local Detailstweeninfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local ErrorMessageColor = Color3.fromRGB(255, 0, 4)
+local ErrorMessageGradient = Rarityconfig.Mythic.Gradient
 local UnknownText = "???"
-local ReputationMessageColor = Color3.fromRGB(21, 255, 0)
+local ReputationMessageGradient = Rarityconfig.Common.Gradient
 
 local function FormatReputation(Value: number): string
 	local Rounded = math.round(Value * 100) / 100
@@ -249,6 +249,7 @@ function Controller:SetSelectionControlsEnabled(Enabled: boolean)
 		for _, Button in ipairs({ Card.Button, Card.ButtonOpen, Card.InfoButton, Card.EquipButton }) do
 			Button.Active = Cardsenabled
 			Button.Interactable = Cardsenabled
+			if not Cardsenabled then Shared.ApplyActiveScale(Button, false) end
 		end
 	end
 end
@@ -383,6 +384,7 @@ function Controller:ApplySelectionItems(Items)
 		Card.ZIndex = if Isopen then 10 else 1
 		if Isopen then self.openCard = Carddata end
 		Shared.AnimateButton(Button, function() return not Button.Active end)
+		Shared.AnimateButton(Buttonopen, function() return not Buttonopen.Active end)
 		Shared.AnimateButton(Infobutton, function() return not Infobutton.Active end)
 		Shared.AnimateButton(Equipbutton, function() return not Equipbutton.Active end)
 		Core:GetController("GamepadController"):OnActivated(Button, function() self:SetCardOpen(Carddata, Item, true) end)
@@ -513,7 +515,7 @@ function Controller:PlaceDisplayItem(ItemId: number)
 	if not Iscurrentrequest or not self.selectFrameOpen or self.selectedSlotIndex ~= Slotindex then return end
 	if not Success then
 		self:SetSelectionControlsEnabled(true)
-		Core:GetController("MessageController"):Show("Unable to display this item", ErrorMessageColor)
+		Core:GetController("MessageController"):Show("Unable to display this item", ErrorMessageGradient)
 		return
 	end
 	if type(Response) == "table" and Response.Success == true then
@@ -523,7 +525,7 @@ function Controller:PlaceDisplayItem(ItemId: number)
 			then "+" .. FormatReputation(Grantedreputation) .. " Reputation"
 			else "Item added to display"
 		Core:GetController("FeedbackController"):PlaySound("SlotItem", 0.15)
-		Core:GetController("MessageController"):Show(Message, ReputationMessageColor)
+		Core:GetController("MessageController"):Show(Message, ReputationMessageGradient)
 		self:CloseSelectionFrame(false)
 		return
 	end
@@ -537,14 +539,14 @@ function Controller:PlaceDisplayItem(ItemId: number)
 		elseif Reason == "ItemUnavailable"
 		then "This item is no longer available"
 		else "Unable to display this item"
-	Core:GetController("MessageController"):Show(Message, ErrorMessageColor)
+	Core:GetController("MessageController"):Show(Message, ErrorMessageGradient)
 end
 
 function Controller:RemoveDisplayItem(Slotindex: number)
 	if self.displayActionPending then return end
 	local Slot = self.slotButtons[Slotindex]
 	if not Slot.Owned then
-		Core:GetController("MessageController"):Show("This display item belongs to another player", ErrorMessageColor)
+		Core:GetController("MessageController"):Show("This display item belongs to another player", ErrorMessageGradient)
 		return
 	end
 
@@ -562,8 +564,8 @@ function Controller:RemoveDisplayItem(Slotindex: number)
 		local Message = if Removedreputation > 0
 			then "-" .. FormatReputation(Removedreputation) .. " Reputation"
 			else "Item returned to inventory"
-		local Color = if Removedreputation > 0 then ErrorMessageColor else ReputationMessageColor
-		Core:GetController("MessageController"):Show(Message, Color)
+		local Gradient = if Removedreputation > 0 then ErrorMessageGradient else ReputationMessageGradient
+		Core:GetController("MessageController"):Show(Message, Gradient)
 		return
 	end
 
@@ -576,7 +578,7 @@ function Controller:RemoveDisplayItem(Slotindex: number)
 		elseif Reason == "Busy"
 		then "Please wait before changing this display slot"
 		else "Unable to return this item to inventory"
-	Core:GetController("MessageController"):Show(Message, ErrorMessageColor)
+	Core:GetController("MessageController"):Show(Message, ErrorMessageGradient)
 end
 
 function Controller:BindButtonAnimation(Button: GuiButton)
@@ -887,7 +889,7 @@ function Controller:Start()
 				return
 			end
 			if not Slot.Unlocked and not Slot.Owned then
-				Core:GetController("MessageController"):Show("Upgrade Display Space to unlock more slots", ErrorMessageColor)
+				Core:GetController("MessageController"):Show("Upgrade Display Space to unlock more slots", ErrorMessageGradient)
 				return
 			end
 			if Slot.Occupied then

@@ -697,16 +697,26 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Text = "Tap your frame.",
 			Target = function()
-				return Core:GetController("ComputerController").inventoryScrollingFrame
+				local Computer = Core:GetController("ComputerController")
+				if not Computer:IsOpen() then return Computer.computer end
+				if Computer.activePage ~= "Inventory" then return Computer.inventoryNavButton end
+				local Card = Computer.inventoryCards[1]
+				return if Card then Card.Button else Computer.inventoryScrollingFrame
 			end,
 			Done = function()
-				return Core:GetController("ComputerController").selectedInventoryItemId ~= nil
+				return Core:GetController("ComputerController").inventoryOpenCard ~= nil
 			end,
 		},
 		{
 			Text = "Now clean it!",
 			Target = function()
-				return Core:GetController("ComputerController").inventoryCleanButton
+				local Computer = Core:GetController("ComputerController")
+				if not Computer:IsOpen() then return Computer.computer end
+				if Computer.activePage ~= "Inventory" then return Computer.inventoryNavButton end
+				if Computer.inventoryInfoFrame.Visible then return Computer.inventoryInfoCloseButton end
+				local Card = Computer.inventoryOpenCard or Computer.inventoryCards[1]
+				if not Card then return Computer.inventoryScrollingFrame end
+				return if Card.ButtonOpen.Visible then Card.ActionButton else Card.Button
 			end,
 			Done = function()
 				return Restoration():GetActiveObject() ~= nil

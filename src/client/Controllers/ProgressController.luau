@@ -4,20 +4,21 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local Percent = require(ReplicatedStorage.Shared.Utils.RestorationPercent)
 
 local ProgressController = { Name = "ProgressController", Priority = 9 }
 local Kinds = { "Dirt", "Sticker", "Ink", "Scratch" }
 local RowNames = { Dirt = "DirtFrame", Sticker = "StickersFrame", Ink = "InkFrame", Scratch = "ScratchesFrame" }
-local Messages = { Dirt = "DIRT CLEANED", Sticker = "STICKERS REMOVED", Ink = "INK REMOVED", Scratch = "SCRATCHES POLISHED" }
+local Messages = { Dirt = "Dirt Cleaned", Sticker = "Stickers Removed", Ink = "Ink Removed", Scratch = "Scratches Polished" }
 local Colors = {
 	Dirt = Color3.fromRGB(218, 164, 96), Sticker = Color3.fromRGB(255, 196, 92),
 	Ink = Color3.fromRGB(106, 167, 255), Scratch = Color3.fromRGB(255, 230, 164),
 }
-local Thresholds = { 0.25, 0.5, 0.75 }
-
-local function Percent(Ratio: number): number
-	return math.floor(Ratio * 100 + 0.5)
+local Gradients = {}
+for Kind, Color in pairs(Colors) do
+	Gradients[Kind] = ColorSequence.new(Color, Color:Lerp(Color3.fromRGB(255, 255, 255), 0.5))
 end
+local Thresholds = { 0.25, 0.5, 0.75 }
 
 local function GetRatio(Object: Model | BasePart, Kind: string?): (number, number)
 	local Total = Object:GetAttribute(if Kind then "Total_" .. Kind else "TotalSpots") or 0
@@ -98,7 +99,7 @@ function ProgressController:CompleteCategory(Kind: string)
 	self.feedback:Pulse(Row, 1.11)
 	self.feedback:Flash(self.bars[Kind], Colors[Kind])
 	self.feedback:Burst(Row, Colors[Kind], 24)
-	self.feedback:FloatingText(self.progressFrame, Messages[Kind], Colors[Kind])
+	self.feedback:FloatingText(self.progressFrame, Messages[Kind], Gradients[Kind])
 	self.feedback:PlaySound("CategoryComplete", 0.08, 1 + table.find(Kinds, Kind) * 0.025)
 	self.feedback:Tween(self.texts[Kind], self.texts[Kind], TweenInfo.new(0.2), { TextColor3 = Color3.fromRGB(144, 255, 155) })
 end
@@ -127,7 +128,7 @@ function ProgressController:Update(Object: Model | BasePart, InteractionPosition
 			self.feedback:Pulse(self.globalText, 1.07)
 			local Threshold = self:Crossed(Previous, GlobalRatio)
 			if Threshold then
-				self.feedback:CenterText(string.format("%d%% RESTORED", Threshold * 100), Colors.Scratch)
+				self.feedback:CenterText(string.format("%d%% Restored", Threshold * 100), Gradients.Scratch)
 				self.feedback:Burst(self.percentFrame, Colors.Scratch, 12)
 				self.feedback:PlaySound("Pourcentage", 0.1, 0.96 + Threshold * 0.18)
 			else

@@ -8,8 +8,9 @@ local Messagecontroller = {
 
 local Messagetweeninfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Messagelifetime = 3
+local White = Color3.fromRGB(255, 255, 255)
 
-function Messagecontroller:Show(Text: string, Color: Color3?)
+function Messagecontroller:Show(Text: string, Gradient: ColorSequence?)
 	if not self.template then
 		return
 	end
@@ -22,7 +23,13 @@ function Messagecontroller:Show(Text: string, Color: Color3?)
 	Label.Visible = true
 	Label.Text = tostring(Text)
 	Label.TextTransparency = 1
-	Label.TextColor3 = Color or self.baseTextColor
+	Label.TextColor3 = if Gradient then White else self.baseTextColor
+	if Gradient then
+		local Labelgradient = Instance.new("UIGradient")
+		Labelgradient.Color = Gradient
+		Labelgradient.Rotation = 90
+		Labelgradient.Parent = Label
+	end
 	Stroke.Transparency = 1
 	Label.Parent = self.frame
 

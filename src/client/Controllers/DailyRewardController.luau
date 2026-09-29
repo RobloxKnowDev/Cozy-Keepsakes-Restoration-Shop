@@ -7,6 +7,7 @@ local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild
 local Config = require(ReplicatedStorage.Shared.Config.DailyRewards)
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
+local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
@@ -16,8 +17,8 @@ local DailyRewardController = {
 }
 
 local Player = Players.LocalPlayer
-local ErrorColor = Color3.fromRGB(255, 0, 4)
-local ClaimColor = Color3.fromRGB(255, 214, 122)
+local ErrorGradient = Rarityconfig.Mythic.Gradient
+local ClaimGradient = ColorSequence.new(Color3.fromRGB(255, 214, 122), Color3.fromRGB(255, 235, 189))
 local OpenTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local CloseTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 local FastCloseTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
@@ -291,7 +292,7 @@ function DailyRewardController:Claim()
 	end)
 	self.processing = false
 	if not Success then
-		Core:GetController("MessageController"):Show("Unable to claim daily reward", ErrorColor)
+		Core:GetController("MessageController"):Show("Unable to claim daily reward", ErrorGradient)
 		return
 	end
 	if Result and Result.State then
@@ -301,7 +302,7 @@ function DailyRewardController:Claim()
 		local Card = self.days[Result.Day]
 		local FeedbackController = Core:GetController("FeedbackController")
 		FeedbackController:Success(Card.Claimed, Result.RewardType == "Item")
-		FeedbackController:FloatingText(self.frame, "REWARD CLAIMED", ClaimColor)
+		FeedbackController:FloatingText(self.frame, "Reward Claimed", ClaimGradient)
 		FeedbackController:PlaySound("DailyReward", 0.2)
 		if Result.RewardType == "Item" then
 			print("DailyRewardController: " .. Result.RewardText .. " received for day " .. Result.Day)
@@ -312,7 +313,7 @@ end
 function DailyRewardController:Skip()
 	local ProductId = tonumber(self.state.SkipProductId) or 0
 	if ProductId <= 0 then
-		Core:GetController("MessageController"):Show("Daily reward skip product is not configured", ErrorColor)
+		Core:GetController("MessageController"):Show("Daily reward skip product is not configured", ErrorGradient)
 		return
 	end
 	MarketplaceService:PromptProductPurchase(Player, ProductId)

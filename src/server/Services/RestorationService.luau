@@ -12,6 +12,7 @@ local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
 local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
+local Restorationpercent = require(Replicatedstorage.Shared.Utils.RestorationPercent)
 
 local Restorationservice = {
 	Name = "RestorationService",
@@ -33,7 +34,7 @@ local Restorationservice = {
 	},
 }
 
-local Dirtcleaninterval = 0.07
+local Dirtcleaninterval = 0.05
 local Scratchcleaninterval = Dirtcleaninterval
 local Inkcleaninterval = Scratchcleaninterval
 local Coveragegridwidth = 32
@@ -41,6 +42,7 @@ local Coveragecellcount = Coveragegridwidth * Coveragegridwidth
 local Brushradii = { CottonTip = 1 / 12, ToothBrush = 3 / 32 }
 local Maxcleanpoints = 32
 local Maxdirtstrokes = 8
+local Dirtsnapratio = 0.995
 local Dirtsurfacenames = {
 	UiTop = true,
 	UiBottom = true,
@@ -284,12 +286,12 @@ local function Revealmutation(Object: RestorationObject, Immediate: boolean?)
 	end
 	Object:SetAttribute("Mutation", Mutation)
 	if Immediate then
-		Mutationvfx.Attach(Object, Mutation, false)
+		Mutationvfx.Attach(Object, Mutation)
 		return
 	end
 	task.delay(Mutationconfig.RevealDelaySeconds + Mutationbuildupseconds, function()
 		if Object.Parent then
-			Mutationvfx.Attach(Object, Mutation, false)
+			Mutationvfx.Attach(Object, Mutation)
 		end
 	end)
 end
@@ -365,7 +367,8 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 	for _, Kind in ipairs(Progresskinds) do
 		Object:SetAttribute("Cleaned_" .. Kind, Cleanedbykind[Kind])
 	end
-	Object:SetAttribute("CleanedSpots", math.max(Cleaned, Target))
+	local Restored = Cleanedbykind.Dirt * Dirtweight + Cleanedbykind.Ink + Cleanedbykind.Scratch + Cleanedbykind.Sticker
+	Object:SetAttribute("CleanedSpots", if Progress then math.min(Restored, Totalspots) else math.max(Cleaned, Target))
 	Revealmutation(Object, true)
 end
 
@@ -378,7 +381,7 @@ local function Applyratiotoitem(Item: any, Ratio: number, Object: RestorationObj
 	if Object then
 		Item.Progress = Captureprogress(Object)
 	end
-	Item.RestorationPercent = math.floor(Ratio * 100 + 0.5)
+	Item.RestorationPercent = Restorationpercent(Ratio)
 	Item.CurrentValue = Roundtwodecimals(Item.MaxValue * Ratio)
 	Item.Reputation = Roundtwodecimals(Item.MaxReputation * Ratio)
 	Item.NetProfit = Roundtwodecimals(Item.CurrentValue - Item.PurchasePrice)
@@ -846,7 +849,7 @@ function Restorationservice:Init()
 			ImageId = tostring(Sessionobject:GetAttribute("ImageId") or ""),
 			Rarity = tostring(Sessionobject:GetAttribute("Rarity") or "Common"),
 			Mutation = Mutationbyobject[Sessionobject] or "Normal",
-			RestorationPercent = math.floor(Completionratio * 100 + 0.5),
+			RestorationPercent = Restorationpercent(Completionratio),
 			PurchasePrice = Purchaseprice,
 			CurrentValue = Salevalue,
 			MaxValue = Maxvalue,
@@ -1016,9 +1019,17 @@ function Restorationservice:Init()
 				and Validpoints(Stroke.Points)
 			then
 				Seen[Target] = true
+				local Opaquepasses = (Coveragecellcount - Entry.Premarked) * Entry.Passes
 				local Newlycovered = Stampcells(Entry, Stroke.Points, Brushradii[Toolname])
+				if not Iscovered(Entry) and Entry.Hits - Entry.Premarked * Entry.Passes >= Opaquepasses * Dirtsnapratio then
+					Newlycovered += Coveragecellcount * Entry.Passes - Entry.Hits
+					for Index = 1, Coveragecellcount do
+						Entry.Cells[Index] = Entry.Passes
+					end
+					Entry.Hits = Coveragecellcount * Entry.Passes
+				end
 				if Iscovered(Entry) then Target:SetAttribute("Cleaned", true) end
-				Removeddirt += Newlycovered * 16 / ((Coveragecellcount - Entry.Premarked) * Entry.Passes)
+				Removeddirt += Newlycovered * 16 / Opaquepasses
 			end
 		end
 		if Removeddirt <= 0 then return end

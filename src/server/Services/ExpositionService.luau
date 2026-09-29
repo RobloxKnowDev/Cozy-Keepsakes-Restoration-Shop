@@ -71,7 +71,7 @@ local function Attachmutationvfx(Object: DisplayObject, Item: any)
 	if (tonumber(Item.RestorationPercent) or 0) / 100 < Mutationconfig.RevealRatio then
 		return
 	end
-	Mutationvfx.Attach(Object, tostring(Item.Mutation or "Normal"), true)
+	Mutationvfx.Attach(Object, tostring(Item.Mutation or "Normal"))
 end
 
 local function Playplacementvfx(Object: DisplayObject)

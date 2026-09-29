@@ -10,6 +10,7 @@ local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local UiFade = require(ReplicatedStorage.Shared.Utils.UiFade)
 local DailyTasks = require(script.Apps.DailyTasks)
 local Home = require(script.Apps.Home)
+local Inventory = require(script.Apps.Inventory)
 local Shared = require(script.Apps.Shared)
 
 local ComputerController = {
@@ -17,11 +18,9 @@ local ComputerController = {
 	Priority = 3,
 }
 
-local Applications = { Home, DailyTasks }
+local Applications = { Home, DailyTasks, Inventory }
 local HighlightFillColor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
-local ButtonTweenInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local ActiveButtonScale = 1.03
 local CountDuration = 0.65
 local PulseInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local GainColor = Color3.fromRGB(126, 255, 145)
@@ -47,7 +46,7 @@ local function IsGamepad(InputType: Enum.UserInputType): boolean
 	return Core:GetController("GamepadController"):IsGamepad(InputType)
 end
 
-local PageOrder = { "Home" }
+local PageOrder = { "Home", "Inventory" }
 
 function ComputerController:IsOpen(): boolean
 	return self.isOpen == true
@@ -115,6 +114,7 @@ end
 
 function ComputerController:SetSellLocked(Locked: boolean)
 	self.sellLocked = Locked
+	Inventory.RefreshControls(self)
 end
 
 function ComputerController:SyncHeader()
@@ -180,19 +180,13 @@ function ComputerController:AnimateComputerCashTo(TargetValue: number)
 	end)
 end
 
-function ComputerController:ApplyNavButtonStyle(Button: GuiButton, IsActive: boolean)
-	local Scale = Shared.EnsureScale(Button)
-	TweenService:Create(Scale, ButtonTweenInfo, { Scale = if IsActive then ActiveButtonScale else 1 }):Play()
-end
-
 function ComputerController:SetPage(PageName: string)
 	self.activePage = PageName
 	self.homePage.Visible = PageName == "Home"
-	self:ApplyNavButtonStyle(self.homeButton, PageName == "Home")
-	self:ApplyNavButtonStyle(self.indexButton, PageName == "Index")
-	self:ApplyNavButtonStyle(self.inventoryNavButton, PageName == "Inventory")
-	self:ApplyNavButtonStyle(self.upgradesButton, PageName == "Upgrades")
-	self:ApplyNavButtonStyle(self.shopButton, PageName == "Shop")
+	self.inventoryPage.Visible = PageName == "Inventory"
+	for _, Refresh in ipairs(self.navButtonRefreshes) do
+		Refresh()
+	end
 end
 
 function ComputerController:CyclePage(Direction: number)
@@ -272,6 +266,7 @@ function ComputerController:Init()
 	self.header = self.frame:WaitForChild("Header")
 	self.pages = self.frame:WaitForChild("Pages")
 	self.homePage = self.pages:WaitForChild("HomePage")
+	self.inventoryPage = self.pages:WaitForChild("InventoryPage")
 	self.LeftFrame = self.frame:WaitForChild("Left")
 	self.closeButton = self.header:WaitForChild("CloseButton")
 	self.homeButton = self.LeftFrame:WaitForChild("HomeButton")
@@ -291,6 +286,7 @@ function ComputerController:Init()
 	self.hudHourText = self.hudDayFrame:WaitForChild("HourText")
 	self.activePage = "Home"
 	self.isOpen = false
+	self.sellLocked = false
 
 	self.computerCashAnimationId = 0
 	self.hoverHighlight = Instance.new("Highlight")
@@ -308,24 +304,27 @@ function ComputerController:Init()
 	self.surfaceGui.Enabled = true
 	self.frame.Visible = true
 	self.homePage.Visible = false
+	self.inventoryPage.Visible = false
 	Shared.AnimateButton(self.closeButton, function()
 		return false
 	end)
-	Shared.AnimateButton(self.homeButton, function()
-		return self.activePage == "Home"
-	end)
-	Shared.AnimateButton(self.indexButton, function()
-		return self.activePage == "Index"
-	end)
-	Shared.AnimateButton(self.inventoryNavButton, function()
-		return self.activePage == "Inventory"
-	end)
-	Shared.AnimateButton(self.upgradesButton, function()
-		return self.activePage == "Upgrades"
-	end)
-	Shared.AnimateButton(self.shopButton, function()
-		return self.activePage == "Shop"
-	end)
+	self.navButtonRefreshes = {
+		Shared.AnimateNavButton(self.homeButton, function()
+			return self.activePage == "Home"
+		end),
+		Shared.AnimateNavButton(self.indexButton, function()
+			return self.activePage == "Index"
+		end),
+		Shared.AnimateNavButton(self.inventoryNavButton, function()
+			return self.activePage == "Inventory"
+		end),
+		Shared.AnimateNavButton(self.upgradesButton, function()
+			return self.activePage == "Upgrades"
+		end),
+		Shared.AnimateNavButton(self.shopButton, function()
+			return self.activePage == "Shop"
+		end),
+	}
 	for _, Application in ipairs(Applications) do
 		Application.Init(self)
 	end
@@ -405,6 +404,9 @@ function ComputerController:Start()
 	end)
 	Core:GetController("GamepadController"):OnActivated(self.homeButton, function()
 		self:SetPage("Home")
+	end)
+	Core:GetController("GamepadController"):OnActivated(self.inventoryNavButton, function()
+		self:SetPage("Inventory")
 	end)
 end
 

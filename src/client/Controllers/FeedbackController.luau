@@ -19,6 +19,7 @@ local FeedbackController = {
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local FormatCurrency = require(ReplicatedStorage.Shared.Utils.CurrencyFormatter)
+local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local MicroTween = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ReturnTween = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local SuccessColor = Color3.fromRGB(255, 211, 105)
@@ -30,6 +31,12 @@ local MusicLoopFadeTween = TweenInfo.new(1.2, Enum.EasingStyle.Linear)
 local UiClickCooldown = 0.08
 local ConfirmCooldown = 0.15
 local DonationColor = Color3.fromRGB(126, 255, 145)
+local GainGradient = Rarityconfig.Common.Gradient
+local DailyTaskRewardLifetime = 2.4
+local DailyTaskTitleGradient = ColorSequence.new(Color3.fromRGB(255, 196, 45), Color3.fromRGB(255, 243, 176))
+local PurchaseLifetime = 2.3
+local PurchaseRaysImage = "rbxassetid://126271042027223"
+local White = Color3.fromRGB(255, 255, 255)
 local TextFont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
 local RayCount = 14
 local ChargeRingCount = 5
@@ -159,7 +166,7 @@ function FeedbackController:Burst(Target: GuiObject, Color: Color3, Count: numbe
 	end
 end
 
-function FeedbackController:FloatingText(Parent: GuiObject, Text: string, Color: Color3)
+function FeedbackController:FloatingText(Parent: GuiObject, Text: string, Gradient: ColorSequence)
 	local Label = Instance.new("TextLabel")
 	Label.Name = "FeedbackText"
 	Label.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -168,11 +175,15 @@ function FeedbackController:FloatingText(Parent: GuiObject, Text: string, Color:
 	Label.BackgroundTransparency = 1
 	Label.FontFace = TextFont
 	Label.Text = Text
-	Label.TextColor3 = Color
+	Label.TextColor3 = White
 	Label.TextScaled = true
 	Label.TextStrokeTransparency = 0.55
 	Label.ZIndex = Parent.ZIndex + 10
 	Label.Parent = Parent
+	local Labelgradient = Instance.new("UIGradient")
+	Labelgradient.Color = Gradient
+	Labelgradient.Rotation = 90
+	Labelgradient.Parent = Label
 	local Scale = GetScale(Label)
 	Scale.Scale = if self:IsMotionEnabled() then 0.65 else 1
 	TweenService:Create(Scale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
@@ -184,7 +195,7 @@ function FeedbackController:FloatingText(Parent: GuiObject, Text: string, Color:
 	Debris:AddItem(Label, 1.05)
 end
 
-function FeedbackController:CenterText(Text: string, Color: Color3, Major: boolean?)
+function FeedbackController:CenterText(Text: string, Gradient: ColorSequence, Major: boolean?)
 	if not self:IsDecorativeEnabled() then return end
 	local Label = Instance.new("TextLabel")
 	Label.Name = "CenterFeedbackText"
@@ -194,12 +205,16 @@ function FeedbackController:CenterText(Text: string, Color: Color3, Major: boole
 	Label.BackgroundTransparency = 1
 	Label.FontFace = TextFont
 	Label.Text = Text
-	Label.TextColor3 = Color
+	Label.TextColor3 = White
 	Label.TextScaled = true
 	Label.TextStrokeColor3 = Color3.fromRGB(49, 35, 24)
 	Label.TextStrokeTransparency = 0.25
 	Label.ZIndex = 20
 	Label.Parent = self.overlay
+	local Labelgradient = Instance.new("UIGradient")
+	Labelgradient.Color = Gradient
+	Labelgradient.Rotation = 90
+	Labelgradient.Parent = Label
 	local Scale = GetScale(Label)
 	Scale.Scale = if self:IsMotionEnabled() then 0.35 else 1
 	TweenService:Create(Scale, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
@@ -208,7 +223,7 @@ function FeedbackController:CenterText(Text: string, Color: Color3, Major: boole
 		TextTransparency = 1,
 		TextStrokeTransparency = 1,
 	}):Play()
-	self:Burst(self.overlay, Color, if Major then 32 else 14)
+	self:Burst(self.overlay, Gradient.Keypoints[1].Value, if Major then 32 else 14)
 	Debris:AddItem(Label, 1.05)
 end
 
@@ -287,7 +302,7 @@ function FeedbackController:RestorationCompleteText()
 	Glow.Size = UDim2.fromScale(1.08, 0.68)
 	Glow.BackgroundTransparency = 1
 	Glow.FontFace = TextFont
-	Glow.Text = "RESTORATION COMPLETE!"
+	Glow.Text = "Restoration Complete!"
 	Glow.TextColor3 = Color3.fromRGB(255, 177, 59)
 	Glow.TextScaled = true
 	Glow.TextTransparency = 0.48
@@ -300,7 +315,7 @@ function FeedbackController:RestorationCompleteText()
 	Title.Size = UDim2.fromScale(1, 0.62)
 	Title.BackgroundTransparency = 1
 	Title.FontFace = TextFont
-	Title.Text = "RESTORATION COMPLETE!"
+	Title.Text = "Restoration Complete!"
 	Title.TextColor3 = Color3.fromRGB(255, 244, 196)
 	Title.TextScaled = true
 	Title.TextStrokeColor3 = Color3.fromRGB(83, 48, 21)
@@ -323,7 +338,7 @@ function FeedbackController:RestorationCompleteText()
 	Subtitle.Size = UDim2.fromScale(0.58, 0.25)
 	Subtitle.BackgroundTransparency = 1
 	Subtitle.FontFace = TextFont
-	Subtitle.Text = "100%  •  PERFECT CLEAN"
+	Subtitle.Text = "100%  •  Perfect Clean"
 	Subtitle.TextColor3 = Color3.fromRGB(255, 219, 127)
 	Subtitle.TextScaled = true
 	Subtitle.TextStrokeColor3 = Color3.fromRGB(73, 43, 24)
@@ -602,7 +617,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 		Glow.Size = UDim2.fromScale(1.14, 0.78)
 		Glow.BackgroundTransparency = 1
 		Glow.FontFace = TextFont
-		Glow.Text = string.upper(Name)
+		Glow.Text = Name
 		Glow.TextColor3 = Color
 		Glow.TextScaled = true
 		Glow.TextTransparency = 0.55
@@ -617,7 +632,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 		Label.Size = UDim2.fromScale(1, 0.7)
 		Label.BackgroundTransparency = 1
 		Label.FontFace = TextFont
-		Label.Text = string.upper(Name)
+		Label.Text = Name
 		Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 		Label.TextScaled = true
 		Label.TextStrokeColor3 = Color3.fromRGB(18, 14, 10)
@@ -635,7 +650,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 		Shinelabel.Size = UDim2.fromScale(1, 0.7)
 		Shinelabel.BackgroundTransparency = 1
 		Shinelabel.FontFace = TextFont
-		Shinelabel.Text = string.upper(Name)
+		Shinelabel.Text = Name
 		Shinelabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		Shinelabel.TextScaled = true
 		Shinelabel.ZIndex = 35
@@ -652,7 +667,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 		Subtitle.Size = UDim2.fromScale(0.62, 0.24)
 		Subtitle.BackgroundTransparency = 1
 		Subtitle.FontFace = TextFont
-		Subtitle.Text = "MUTATION FOUND"
+		Subtitle.Text = "Mutation Found!"
 		Subtitle.TextColor3 = Color
 		Subtitle.TextScaled = true
 		Subtitle.TextStrokeColor3 = Color3.fromRGB(18, 14, 10)
@@ -731,12 +746,16 @@ function FeedbackController:DonationThanks(AmountText: string)
 	Glow.Size = UDim2.fromScale(1.12, 0.74)
 	Glow.BackgroundTransparency = 1
 	Glow.FontFace = TextFont
-	Glow.Text = "THANK YOU!"
-	Glow.TextColor3 = DonationColor
+	Glow.Text = "Thank You!"
+	Glow.TextColor3 = White
 	Glow.TextScaled = true
 	Glow.TextTransparency = 0.5
 	Glow.ZIndex = 30
 	Glow.Parent = Container
+	local Glowgradient = Instance.new("UIGradient")
+	Glowgradient.Color = GainGradient
+	Glowgradient.Rotation = 90
+	Glowgradient.Parent = Glow
 
 	local Label = Instance.new("TextLabel")
 	Label.Name = "Label"
@@ -745,7 +764,7 @@ function FeedbackController:DonationThanks(AmountText: string)
 	Label.Size = UDim2.fromScale(1, 0.66)
 	Label.BackgroundTransparency = 1
 	Label.FontFace = TextFont
-	Label.Text = "THANK YOU!"
+	Label.Text = "Thank You!"
 	Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	Label.TextScaled = true
 	Label.TextStrokeColor3 = Color3.fromRGB(16, 40, 22)
@@ -765,13 +784,17 @@ function FeedbackController:DonationThanks(AmountText: string)
 	Subtitle.Size = UDim2.fromScale(0.7, 0.26)
 	Subtitle.BackgroundTransparency = 1
 	Subtitle.FontFace = TextFont
-	Subtitle.Text = AmountText .. " DONATED"
-	Subtitle.TextColor3 = DonationColor
+	Subtitle.Text = AmountText .. " Donated"
+	Subtitle.TextColor3 = White
 	Subtitle.TextScaled = true
 	Subtitle.TextStrokeColor3 = Color3.fromRGB(16, 40, 22)
 	Subtitle.TextStrokeTransparency = 0.32
 	Subtitle.ZIndex = 32
 	Subtitle.Parent = Container
+	local Subtitlegradient = Instance.new("UIGradient")
+	Subtitlegradient.Color = GainGradient
+	Subtitlegradient.Rotation = 90
+	Subtitlegradient.Parent = Subtitle
 
 	local Scale = GetScale(Container)
 	Scale.Scale = if self:IsMotionEnabled() then 0.2 else 1
@@ -796,9 +819,9 @@ function FeedbackController:DonationThanks(AmountText: string)
 	Debris:AddItem(Container, 2)
 end
 
-function FeedbackController:Purchase(Name: string, ImageId: string, Gradient: ColorSequence)
+function FeedbackController:Purchase(Name: string, ImageId: string, RarityGradient: UIGradient)
 	if not self:IsDecorativeEnabled() then return end
-	local Color = Gradient.Keypoints[1].Value
+	local Color = RarityGradient.Color.Keypoints[1].Value
 	local Container = Instance.new("Frame")
 	Container.Name = "PurchaseFeedback"
 	Container.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -808,22 +831,17 @@ function FeedbackController:Purchase(Name: string, ImageId: string, Gradient: Co
 	Container.ZIndex = 28
 	Container.Parent = self.overlay
 
-	local Halo = Instance.new("Frame")
-	Halo.Name = "Halo"
-	Halo.AnchorPoint = Vector2.new(0.5, 0.5)
-	Halo.Position = UDim2.fromScale(0.5, 0.4)
-	Halo.Size = UDim2.fromOffset(150, 150)
-	Halo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	Halo.BackgroundTransparency = 0.7
-	Halo.BorderSizePixel = 0
-	Halo.ZIndex = 28
-	Halo.Parent = Container
-	local Halocorner = Instance.new("UICorner")
-	Halocorner.CornerRadius = UDim.new(1, 0)
-	Halocorner.Parent = Halo
-	local Halogradient = Instance.new("UIGradient")
-	Halogradient.Color = Gradient
-	Halogradient.Parent = Halo
+	local Rays = Instance.new("ImageLabel")
+	Rays.Name = "Rays"
+	Rays.AnchorPoint = Vector2.new(0.5, 0.5)
+	Rays.Position = UDim2.fromScale(0.5, 0.4)
+	Rays.Size = UDim2.fromOffset(250, 250)
+	Rays.BackgroundTransparency = 1
+	Rays.Image = PurchaseRaysImage
+	Rays.ScaleType = Enum.ScaleType.Fit
+	Rays.ImageTransparency = 0.15
+	Rays.ZIndex = 28
+	Rays.Parent = Container
 
 	local Icon = Instance.new("ImageLabel")
 	Icon.Name = "Icon"
@@ -843,42 +861,102 @@ function FeedbackController:Purchase(Name: string, ImageId: string, Gradient: Co
 	Label.Size = UDim2.fromScale(1.6, 0.17)
 	Label.BackgroundTransparency = 1
 	Label.FontFace = TextFont
-	Label.Text = string.upper(Name)
-	Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Label.Text = Name
+	Label.TextColor3 = White
 	Label.TextScaled = true
 	Label.TextStrokeColor3 = Color3.fromRGB(24, 18, 12)
 	Label.TextStrokeTransparency = 0.25
 	Label.ZIndex = 29
 	Label.Parent = Container
-	local Labelgradient = Instance.new("UIGradient")
-	Labelgradient.Color = Gradient
-	Labelgradient.Parent = Label
+	RarityGradient:Clone().Parent = Label
 
 	local Scale = GetScale(Container)
 	Scale.Scale = if self:IsMotionEnabled() then 0.4 else 1
 	TweenService:Create(Scale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-	TweenService:Create(Halo, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = UDim2.fromOffset(240, 240),
-		BackgroundTransparency = 1,
-	}):Play()
-	local Fadeout = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0.75)
+	TweenService:Create(Rays, TweenInfo.new(PurchaseLifetime, Enum.EasingStyle.Linear), { Rotation = 150 }):Play()
+	local Fadeout = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, PurchaseLifetime - 0.4)
 	TweenService:Create(Container, Fadeout, { Position = UDim2.fromScale(0.5, 0.4) }):Play()
+	TweenService:Create(Rays, Fadeout, { ImageTransparency = 1 }):Play()
 	TweenService:Create(Icon, Fadeout, { ImageTransparency = 1 }):Play()
 	TweenService:Create(Label, Fadeout, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
 
 	self:Burst(self.overlay, Color, 26)
 	self:FovPunch(2)
 	self:PlaySound("CashGain", 0.15)
-	Debris:AddItem(Container, 1.4)
+	Debris:AddItem(Container, PurchaseLifetime)
 end
 
 function FeedbackController:Sale(Name: string, Value: number, Count: number?)
 	local Amount = FormatCurrency(Value)
 	local Text = if Count and Count > 1
-		then string.format("%d ITEMS SOLD  +%s", Count, Amount)
-		else string.format("%s SOLD  +%s", string.upper(Name), Amount)
-	self:CenterText(Text, Color3.fromRGB(126, 255, 145), Count ~= nil and Count > 1)
+		then string.format("%d Items Sold  +%s", Count, Amount)
+		else string.format("%s Sold  +%s", Name, Amount)
+	self:CenterText(Text, GainGradient, Count ~= nil and Count > 1)
 	self:PlaySound("SellItem", ConfirmCooldown)
+end
+
+function FeedbackController:DailyTaskReward(Reward: number)
+	local Now = os.clock()
+	local StartAt = math.max(Now, self.dailyTaskRewardFreeAt or 0)
+	self.dailyTaskRewardFreeAt = StartAt + DailyTaskRewardLifetime
+	task.delay(StartAt - Now, function()
+		self:PlaySound("DailyReward", ConfirmCooldown)
+		if not self:IsDecorativeEnabled() then return end
+		local Container = Instance.new("Frame")
+		Container.Name = "DailyTaskRewardText"
+		Container.AnchorPoint = Vector2.new(0.5, 0.5)
+		Container.Position = UDim2.fromScale(0.5, 0.26)
+		Container.Size = UDim2.fromOffset(520, 120)
+		Container.BackgroundTransparency = 1
+		Container.ZIndex = 22
+		Container.Parent = self.overlay
+		local Title = Instance.new("TextLabel")
+		Title.Name = "Title"
+		Title.AnchorPoint = Vector2.new(0.5, 0.5)
+		Title.Position = UDim2.fromScale(0.5, 0.3)
+		Title.Size = UDim2.fromScale(1, 0.5)
+		Title.BackgroundTransparency = 1
+		Title.FontFace = TextFont
+		Title.Text = "Daily Task Complete!"
+		Title.TextColor3 = White
+		Title.TextScaled = true
+		Title.TextStrokeColor3 = Color3.fromRGB(83, 48, 21)
+		Title.TextStrokeTransparency = 0.12
+		Title.ZIndex = 23
+		Title.Parent = Container
+		local Titlegradient = Instance.new("UIGradient")
+		Titlegradient.Color = DailyTaskTitleGradient
+		Titlegradient.Rotation = 90
+		Titlegradient.Parent = Title
+		local RewardLabel = Instance.new("TextLabel")
+		RewardLabel.Name = "Reward"
+		RewardLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+		RewardLabel.Position = UDim2.fromScale(0.5, 0.8)
+		RewardLabel.Size = UDim2.fromScale(0.6, 0.38)
+		RewardLabel.BackgroundTransparency = 1
+		RewardLabel.FontFace = TextFont
+		RewardLabel.Text = "+" .. FormatCurrency(Reward)
+		RewardLabel.TextColor3 = White
+		RewardLabel.TextScaled = true
+		RewardLabel.TextStrokeColor3 = Color3.fromRGB(24, 61, 30)
+		RewardLabel.TextStrokeTransparency = 0.2
+		RewardLabel.ZIndex = 23
+		RewardLabel.Parent = Container
+		local Rewardgradient = Instance.new("UIGradient")
+		Rewardgradient.Color = GainGradient
+		Rewardgradient.Rotation = 90
+		Rewardgradient.Parent = RewardLabel
+		local Scale = GetScale(Container)
+		Scale.Scale = if self:IsMotionEnabled() then 0.35 else 1
+		TweenService:Create(Scale, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		local FadeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, DailyTaskRewardLifetime - 0.4)
+		TweenService:Create(Container, FadeInfo, { Position = UDim2.fromScale(0.5, 0.22) }):Play()
+		for _, Label in ipairs({ Title, RewardLabel }) do
+			TweenService:Create(Label, FadeInfo, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+		end
+		self:Burst(Container, GainGradient.Keypoints[1].Value, 16)
+		Debris:AddItem(Container, DailyTaskRewardLifetime)
+	end)
 end
 
 function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: number?, Fadeinseconds: number?): Sound?
