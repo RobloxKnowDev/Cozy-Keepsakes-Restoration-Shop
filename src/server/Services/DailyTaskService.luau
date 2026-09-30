@@ -1,8 +1,11 @@
+local Lighting = game:GetService("Lighting")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Config = require(ReplicatedStorage.Shared.Config.DailyTasks)
+local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 
 local DailyTaskService = {
@@ -17,6 +20,8 @@ local DailyTaskService = {
 
 type DailyTask = {
 	Id: string,
+	Goal: number,
+	Reward: number,
 	Progress: number,
 	Completed: boolean,
 }
@@ -34,15 +39,52 @@ local function CurrentDay(): number
 	return math.floor(Workspace:GetServerTimeNow() / DaySeconds)
 end
 
-local function NewData(): DailyTaskData
-	local Ids = {}
-	for Id in pairs(Config.Tasks) do
-		table.insert(Ids, Id)
+local function NewData(Player: Player, Previous: { DailyTask }, Forced: string?): DailyTaskData
+	local Sold = Core:GetService("StatsService"):GetStats(Player).ItemsSold
+	local Repeated = {}
+	for _, Task in ipairs(Previous) do
+		Repeated[Task.Id] = true
+	end
+	local Candidates = {}
+	for Id, Definition in pairs(Config.Tasks) do
+		local Tiers = {}
+		for _, Tier in ipairs(Definition.Tiers) do
+			if Id == Forced or Sold >= (Tier.MinimumSold or 0) then
+				table.insert(Tiers, Tier)
+			end
+		end
+		if #Tiers > 0 then
+			table.insert(Candidates, {
+				Id = Id,
+				Event = Definition.Event,
+				Tiers = Tiers,
+				Order = if Id == Forced then -1 else Generator:NextNumber() + (if Repeated[Id] then 1 else 0),
+			})
+		end
+	end
+	table.sort(Candidates, function(First, Second)
+		return First.Order < Second.Order
+	end)
+	local Picked = {}
+	local Events = {}
+	for _, Candidate in ipairs(Candidates) do
+		if #Picked < Config.TaskCount and not Events[Candidate.Event] then
+			Events[Candidate.Event] = true
+			table.insert(Picked, Candidate)
+		end
+	end
+	for _, Candidate in ipairs(Candidates) do
+		if #Picked < Config.TaskCount and not table.find(Picked, Candidate) then
+			table.insert(Picked, Candidate)
+		end
 	end
 	local Tasks = {}
-	for _ = 1, Config.TaskCount do
+	for _, Candidate in ipairs(Picked) do
+		local Tier = Candidate.Tiers[Generator:NextInteger(1, #Candidate.Tiers)]
 		table.insert(Tasks, {
-			Id = table.remove(Ids, Generator:NextInteger(1, #Ids)),
+			Id = Candidate.Id,
+			Goal = Tier.Goal,
+			Reward = Tier.Reward,
 			Progress = 0,
 			Completed = false,
 		})
@@ -53,10 +95,41 @@ local function NewData(): DailyTaskData
 	}
 end
 
+local function IsValid(Tasks: { any }): boolean
+	for _, Task in ipairs(Tasks) do
+		if not Config.Tasks[Task.Id] or type(Task.Goal) ~= "number" or type(Task.Reward) ~= "number" then
+			return false
+		end
+	end
+	return true
+end
+
+local function Matches(Definition, Data): boolean
+	if Definition.Rarity and (table.find(Rarityconfig.Order, Data.Rarity) or 0) < table.find(Rarityconfig.Order, Definition.Rarity) then
+		return false
+	end
+	if Definition.Mutated and Data.Mutation == "Normal" then
+		return false
+	end
+	if Definition.Family and not table.find(Config.Families[Definition.Family], Data.ObjectKey) then
+		return false
+	end
+	if Definition.Tool and Data.Tool ~= Definition.Tool then
+		return false
+	end
+	if Definition.Restored and Data.Percent < 100 then
+		return false
+	end
+	if Definition.FromScratch and Data.Start > 0 then
+		return false
+	end
+	return true
+end
+
 function DailyTaskService:EnsurePlayer(Player: Player): DailyTaskData
 	local Data = DataByPlayer[Player]
 	if Data == nil or Data.Day ~= CurrentDay() then
-		Data = NewData()
+		Data = NewData(Player, if Data then Data.Tasks else {})
 		DataByPlayer[Player] = Data
 	end
 	return Data
@@ -74,40 +147,57 @@ function DailyTaskService:PushState(Player: Player)
 	RemoteManager:FireClient(self.Name, "StateUpdated", Player, self:GetState(Player))
 end
 
-function DailyTaskService:AddProgress(Player: Player, Id: string, Amount: number)
+function DailyTaskService:Record(Player: Player, Event: string, Data: { [string]: any })
+	if not Core:GetService("DataService"):IsLoaded(Player) then
+		return
+	end
+	local Changed = false
 	for _, Task in ipairs(self:EnsurePlayer(Player).Tasks) do
-		if Task.Id == Id and not Task.Completed then
-			local Definition = Config.Tasks[Id]
-			Task.Progress = math.min(Task.Progress + Amount, Definition.Goal)
-			if Task.Progress >= Definition.Goal then
-				Task.Completed = true
-				Core:GetService("CashService"):AddCash(Player, Definition.Reward, false)
-				RemoteManager:FireClient(self.Name, "TaskCompleted", Player, Id)
+		local Definition = Config.Tasks[Task.Id]
+		if not Task.Completed and Definition.Event == Event and Matches(Definition, Data) then
+			local Amount = math.max(if Definition.Measure then Data[Definition.Measure] else 1, 0)
+			local Progress = math.min(if Definition.Single then math.max(Task.Progress, Amount) else Task.Progress + Amount, Task.Goal)
+			if Progress > Task.Progress then
+				Task.Progress = Progress
+				Changed = true
+				if Progress >= Task.Goal then
+					Task.Completed = true
+					Core:GetService("CashService"):AddCash(Player, Task.Reward, false)
+					RemoteManager:FireClient(self.Name, "TaskCompleted", Player, Task)
+				end
 			end
-			self:PushState(Player)
 		end
 	end
+	if Changed then
+		self:PushState(Player)
+	end
+end
+
+function DailyTaskService:Reroll(Player: Player, Forced: string?)
+	DataByPlayer[Player] = NewData(Player, self:EnsurePlayer(Player).Tasks, Forced)
+	self:PushState(Player)
 end
 
 function DailyTaskService:Init()
 	Core:GetService("DataService"):Register("DailyTasks", {
 		Load = function(Player, Saved)
-			if Saved.Day == CurrentDay() then
+			if Saved.Day == CurrentDay() and IsValid(Saved.Tasks) then
 				local Tasks = {}
 				for _, Task in ipairs(Saved.Tasks) do
-					local Definition = Config.Tasks[Task.Id]
-					if Definition then
-						table.insert(Tasks, {
-							Id = Task.Id,
-							Progress = math.clamp(tonumber(Task.Progress) or 0, 0, Definition.Goal),
-							Completed = Task.Completed == true,
-						})
-					end
+					table.insert(Tasks, {
+						Id = Task.Id,
+						Goal = Task.Goal,
+						Reward = Task.Reward,
+						Progress = math.clamp(tonumber(Task.Progress) or 0, 0, Task.Goal),
+						Completed = Task.Completed == true,
+					})
 				end
 				DataByPlayer[Player] = {
 					Day = Saved.Day,
 					Tasks = Tasks,
 				}
+			else
+				DataByPlayer[Player] = NewData(Player, Saved.Tasks)
 			end
 			self:PushState(Player)
 		end,
@@ -126,6 +216,12 @@ function DailyTaskService:Init()
 			DataByPlayer[Player] = nil
 		end,
 	})
+
+	Lighting:GetAttributeChangedSignal("Day"):Connect(function()
+		for _, Player in ipairs(Players:GetPlayers()) do
+			self:Record(Player, "Day", {})
+		end
+	end)
 
 	RemoteManager:OnServerInvoke(self.Name, "GetState", function(Player)
 		return self:GetState(Player)

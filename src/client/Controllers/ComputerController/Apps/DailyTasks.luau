@@ -18,8 +18,9 @@ local function FormatAmount(Definition, Value: number): string
 	return tostring(Value)
 end
 
-local function TaskText(Definition): string
-	return string.format(Definition.Text, FormatAmount(Definition, Definition.Goal))
+local function TaskText(Task): string
+	local Definition = Config.Tasks[Task.Id]
+	return string.format(Definition.Text, FormatAmount(Definition, Task.Goal))
 end
 
 function DailyTasks.UpdateReset(Controller)
@@ -38,10 +39,10 @@ function DailyTasks.Apply(Controller, State)
 		Card.Name = "Task_" .. Order
 		Card.LayoutOrder = Order
 		Card.Visible = true
-		Card:WaitForChild("NameText").Text = TaskText(Definition)
-		Card:WaitForChild("NumberText").Text = FormatAmount(Definition, Task.Progress) .. "/" .. FormatAmount(Definition, Definition.Goal)
-		Card:WaitForChild("CashText").Text = Shared.FormatCurrency(Definition.Reward)
-		Card:WaitForChild("FrameBar"):WaitForChild("Bar").Size = UDim2.fromScale(math.clamp(Task.Progress / Definition.Goal, 0, 1), 1)
+		Card:WaitForChild("NameText").Text = TaskText(Task)
+		Card:WaitForChild("NumberText").Text = FormatAmount(Definition, Task.Progress) .. "/" .. FormatAmount(Definition, Task.Goal)
+		Card:WaitForChild("CashText").Text = Shared.FormatCurrency(Task.Reward)
+		Card:WaitForChild("FrameBar"):WaitForChild("Bar").Size = UDim2.fromScale(math.clamp(Task.Progress / Task.Goal, 0, 1), 1)
 		Card.Parent = Controller.dailyTasksList
 		table.insert(Controller.dailyTaskCards, Card)
 	end
@@ -63,13 +64,12 @@ function DailyTasks.Start(Controller)
 	RemoteManager:OnClientEvent("DailyTaskService", "StateUpdated", function(State)
 		DailyTasks.Apply(Controller, State)
 	end)
-	RemoteManager:OnClientEvent("DailyTaskService", "TaskCompleted", function(Id)
-		local Definition = Config.Tasks[Id]
+	RemoteManager:OnClientEvent("DailyTaskService", "TaskCompleted", function(Task)
 		Core:GetController("MessageController"):Show(
-			"Task completed: " .. TaskText(Definition) .. " +" .. Shared.FormatCurrency(Definition.Reward),
+			"Task completed: " .. TaskText(Task) .. " +" .. Shared.FormatCurrency(Task.Reward),
 			CompletedGradient
 		)
-		Core:GetController("FeedbackController"):DailyTaskReward(Definition.Reward)
+		Core:GetController("FeedbackController"):DailyTaskReward(Task.Reward)
 	end)
 	task.spawn(function()
 		while true do

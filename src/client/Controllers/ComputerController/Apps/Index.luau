@@ -14,16 +14,7 @@ for Rank, Rarity in ipairs(Rarityconfig.Order) do
 	Rarityrank[Rarity] = Rank
 end
 local GainGradient = Rarityconfig.Common.Gradient
-local LockedIconColor = Color3.fromRGB(160, 160, 160)
-local LockedIconTransparency = 0.35
-
-local function UpdateCount(Controller)
-	local UnlockedCount = 0
-	for _, Entry in ipairs(Controller.indexEntries) do
-		if Controller.indexUnlockedByObject[Entry.ObjectKey] then UnlockedCount += 1 end
-	end
-	Controller.restoredText.Text = string.format("Restored items  (%d/%d)", UnlockedCount, #Controller.indexEntries)
-end
+local UnlockedIconColor = Color3.fromRGB(255, 255, 255)
 
 function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 	if Entries then
@@ -43,17 +34,14 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 		end
 		return tostring(Left.Name or "") < tostring(Right.Name or "")
 	end)
-	Controller.indexEntries = Sortedentries
-	Controller.indexUnlockedByObject = {}
 	Controller.indexRainbowGradients = {}
 	local Unlockedname = nil
 	for _, Child in ipairs(Controller.indexScrollingFrame:GetChildren()) do
 		if Child ~= Controller.indexTemplate and not Child:IsA("UIGridLayout") then Child:Destroy() end
 	end
 
-	for Order, Entry in ipairs(Controller.indexEntries) do
+	for Order, Entry in ipairs(Sortedentries) do
 		local Unlockedbymutation = if type(Entry.Unlocked) == "table" then Entry.Unlocked else {}
-		Controller.indexUnlockedByObject[Entry.ObjectKey] = Unlockedbymutation[Page] == true
 		if Entry.ObjectKey == Unlockedkey and Unlockedbymutation[tostring(Unlockedmutation)] == true then
 			Unlockedname = tostring(Entry.Name or Entry.ObjectKey or "Unknown item")
 		end
@@ -64,7 +52,10 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 		Card.Parent = Controller.indexScrollingFrame
 		local RootButton = Card:WaitForChild("Button")
 		Shared.AnimateButton(RootButton, function() return false end)
-		local NameText = RootButton:WaitForChild("NameText")
+		Core:GetController("GamepadController"):OnActivated(RootButton, function()
+			Core:GetController("FeedbackController"):UiClick()
+		end)
+		local NameText = RootButton:WaitForChild("ObjectNameText")
 		local RarityText = RootButton:WaitForChild("RarityText")
 		local MutationText = RootButton:WaitForChild("MutationText")
 		local Icon = RootButton:WaitForChild("Icon")
@@ -81,11 +72,10 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 		if Page == "Rainbow" then
 			table.insert(Controller.indexRainbowGradients, MutationGradient)
 		end
-		local DefaultColor = Icon.ImageColor3
-		local DefaultTransparency = Icon.ImageTransparency
 		Icon.Image = tostring(Entry.ImageId or "")
-		Icon.ImageColor3 = if IsUnlocked then DefaultColor else LockedIconColor
-		Icon.ImageTransparency = if IsUnlocked then DefaultTransparency else LockedIconTransparency
+		if IsUnlocked then
+			Icon.ImageColor3 = UnlockedIconColor
+		end
 	end
 
 	if Unlockedname then
@@ -94,7 +84,6 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 			else Mutationconfig[tostring(Unlockedmutation)].Name .. " " .. Unlockedname
 		Core:GetController("MessageController"):Show(string.format("New index entry unlocked: %s", Label), GainGradient)
 	end
-	UpdateCount(Controller)
 	task.defer(function()
 		Controller.indexScrollingFrame.CanvasSize = UDim2.fromOffset(0, Controller.indexGridLayout.AbsoluteContentSize.Y)
 	end)
@@ -112,15 +101,13 @@ function Index.SetMutation(Controller, Mutation: string)
 end
 
 function Index.Init(Controller)
-	Controller.indexScrollingFrame = Controller.indexFrame:WaitForChild("ScrollingFrame")
+	local Page = Controller.indexPage
+	Controller.indexScrollingFrame = Page:WaitForChild("Template")
 	Controller.indexTemplate = Controller.indexScrollingFrame:WaitForChild("Template")
 	Controller.indexGridLayout = Controller.indexScrollingFrame:WaitForChild("UIGridLayout")
 	Controller.indexGridLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	Controller.restoredText = Controller.indexFrame:WaitForChild("RestoredText")
-	Controller.indexEntries = {}
-	Controller.indexUnlockedByObject = {}
 	Controller.indexTemplate.Visible = false
-	Controller.indexMutationFrame = Controller.indexFrame:WaitForChild("MutationFrame")
+	Controller.indexMutationFrame = Page:WaitForChild("MutationButton")
 	Controller.indexRainbowGradient = Uigradient.Ensure(Controller.indexMutationFrame:WaitForChild("RainbowButton"):WaitForChild("Text"))
 	Controller.indexRainbowGradients = {}
 	Controller.indexMutation = "Normal"

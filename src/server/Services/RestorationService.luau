@@ -888,7 +888,13 @@ function Restorationservice:Init()
 		end
 		Core:GetService("TutorialService"):MarkObjectDone(Player)
 		if Itemdata.RestorationPercent >= 100 and Startpercent < 100 then
-			Core:GetService("DailyTaskService"):AddProgress(Player, "RestoreItems", 1)
+			Core:GetService("DailyTaskService"):Record(Player, "Restore", {
+				ObjectKey = Objectkey,
+				Rarity = Itemdata.Rarity,
+				Mutation = Itemdata.Mutation,
+				Value = Itemdata.MaxValue,
+				Start = Startpercent,
+			})
 		end
 		if Completionratio >= 0.5 and Player.Parent then
 			Inventoryservice:UnlockIndexEntry(Player, Objectkey, Itemdata.Mutation)
@@ -1028,7 +1034,10 @@ function Restorationservice:Init()
 					end
 					Entry.Hits = Coveragecellcount * Entry.Passes
 				end
-				if Iscovered(Entry) then Target:SetAttribute("Cleaned", true) end
+				if Iscovered(Entry) and Target:GetAttribute("Cleaned") ~= true then
+					Target:SetAttribute("Cleaned", true)
+					Core:GetService("DailyTaskService"):Record(Player, "Clean", { Tool = Toolname })
+				end
 				Removeddirt += Newlycovered * 16 / Opaquepasses
 			end
 		end

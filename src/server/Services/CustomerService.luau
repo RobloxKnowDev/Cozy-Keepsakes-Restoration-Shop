@@ -918,7 +918,11 @@ function Customerservice:Init()
 			}, PendingOffer.Price)
 			Core:GetService("TutorialService"):MarkObjectBought(Player)
 			if not PendingOffer.Emergency then
-				Core:GetService("DailyTaskService"):AddProgress(Player, "BuyItems", 1)
+				Core:GetService("DailyTaskService"):Record(Player, "Buy", {
+					ObjectKey = PendingOffer.ObjectKey,
+					Rarity = Objectconfig.Object[PendingOffer.ObjectKey].Rarity,
+					Value = PendingOffer.Price,
+				})
 			end
 			local ExitAttachment = AttachmentsByIndex[0]
 			OccupiedSlots[1] = nil

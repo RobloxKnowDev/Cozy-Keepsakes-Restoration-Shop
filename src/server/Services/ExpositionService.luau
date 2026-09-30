@@ -354,6 +354,10 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 
 	local Displaysnapshot = Commitdisplaychange()
 	Inventoryservice:PushItems(Player)
+	Core:GetService("DailyTaskService"):Record(Player, "Display", {
+		Rarity = Removeditem.Rarity,
+		Percent = Removeditem.RestorationPercent,
+	})
 	return {
 		Success = true,
 		SlotIndex = Slotindex,

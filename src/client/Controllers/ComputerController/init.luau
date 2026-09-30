@@ -10,6 +10,7 @@ local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local UiFade = require(ReplicatedStorage.Shared.Utils.UiFade)
 local DailyTasks = require(script.Apps.DailyTasks)
 local Home = require(script.Apps.Home)
+local Index = require(script.Apps.Index)
 local Inventory = require(script.Apps.Inventory)
 local Shared = require(script.Apps.Shared)
 
@@ -18,7 +19,7 @@ local ComputerController = {
 	Priority = 3,
 }
 
-local Applications = { Home, DailyTasks, Inventory }
+local Applications = { Home, DailyTasks, Index, Inventory }
 local HighlightFillColor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
 local CountDuration = 0.65
@@ -46,7 +47,7 @@ local function IsGamepad(InputType: Enum.UserInputType): boolean
 	return Core:GetController("GamepadController"):IsGamepad(InputType)
 end
 
-local PageOrder = { "Home", "Inventory" }
+local PageOrder = { "Home", "Index", "Inventory" }
 
 function ComputerController:IsOpen(): boolean
 	return self.isOpen == true
@@ -183,6 +184,7 @@ end
 function ComputerController:SetPage(PageName: string)
 	self.activePage = PageName
 	self.homePage.Visible = PageName == "Home"
+	self.indexPage.Visible = PageName == "Index"
 	self.inventoryPage.Visible = PageName == "Inventory"
 	for _, Refresh in ipairs(self.navButtonRefreshes) do
 		Refresh()
@@ -266,6 +268,7 @@ function ComputerController:Init()
 	self.header = self.frame:WaitForChild("Header")
 	self.pages = self.frame:WaitForChild("Pages")
 	self.homePage = self.pages:WaitForChild("HomePage")
+	self.indexPage = self.pages:WaitForChild("IndexPage")
 	self.inventoryPage = self.pages:WaitForChild("InventoryPage")
 	self.LeftFrame = self.frame:WaitForChild("Left")
 	self.closeButton = self.header:WaitForChild("CloseButton")
@@ -304,6 +307,7 @@ function ComputerController:Init()
 	self.surfaceGui.Enabled = true
 	self.frame.Visible = true
 	self.homePage.Visible = false
+	self.indexPage.Visible = false
 	self.inventoryPage.Visible = false
 	Shared.AnimateButton(self.closeButton, function()
 		return false
@@ -404,6 +408,9 @@ function ComputerController:Start()
 	end)
 	Core:GetController("GamepadController"):OnActivated(self.homeButton, function()
 		self:SetPage("Home")
+	end)
+	Core:GetController("GamepadController"):OnActivated(self.indexButton, function()
+		self:SetPage("Index")
 	end)
 	Core:GetController("GamepadController"):OnActivated(self.inventoryNavButton, function()
 		self:SetPage("Inventory")

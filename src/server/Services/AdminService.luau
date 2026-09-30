@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local Dailytasksconfig = require(ReplicatedStorage.Shared.Config.DailyTasks)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Remotemanager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Upgradesconfig = require(ReplicatedStorage.Shared.Config.Upgrades)
@@ -323,6 +324,24 @@ local Commands = {
 		end,
 	},
 	{
+		Name = "dailytask",
+		Usage = "dailytask <player> [task]",
+		Description = "Reroll today's daily tasks, optionally forcing one",
+		Arguments = { "player", "task" },
+		Run = function(_Caller: Player, Arguments: { string }): string
+			local Target = Findplayer(Arguments[1])
+			if not Target then
+				return "Player not found: " .. tostring(Arguments[1])
+			end
+			local Taskid = Findkey(Dailytasksconfig.Tasks, Arguments[2])
+			if Arguments[2] and not Taskid then
+				return "Unknown task: " .. tostring(Arguments[2])
+			end
+			Core:GetService("DailyTaskService"):Reroll(Target, Taskid)
+			return "Daily tasks rerolled for " .. Target.Name
+		end,
+	},
+	{
 		Name = "save",
 		Usage = "save <player>",
 		Description = "Force an immediate save",
@@ -396,12 +415,18 @@ function Adminservice:Init()
 			table.insert(Upgradekeys, Key)
 		end
 		table.sort(Upgradekeys)
+		local Taskkeys = {}
+		for Key in pairs(Dailytasksconfig.Tasks) do
+			table.insert(Taskkeys, Key)
+		end
+		table.sort(Taskkeys)
 		return {
 			Commands = List,
 			Options = {
 				object = Objectkeys,
 				upgrade = Upgradekeys,
 				boost = { "reputation", "sale", "serverluck" },
+				task = Taskkeys,
 			},
 		}
 	end)

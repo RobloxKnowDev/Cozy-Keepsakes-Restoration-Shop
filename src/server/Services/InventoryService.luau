@@ -70,6 +70,16 @@ local function ApplySaleMultiplier(BaseValue: number, Multiplier: number): numbe
 	return math.round(BaseValue * Multiplier * 100) / 100
 end
 
+local function RecordSale(Player: Player, Item: RestoredItem, SaleValue: number)
+	Core:GetService("DailyTaskService"):Record(Player, "Sell", {
+		ObjectKey = Item.ObjectKey,
+		Rarity = Item.Rarity,
+		Mutation = if Item.RestorationPercent / 100 >= Mutationconfig.RevealRatio then Item.Mutation else "Normal",
+		Value = SaleValue,
+		Profit = SaleValue - Item.PurchasePrice,
+	})
+end
+
 local function Newindex(): { [string]: { [string]: boolean } }
 	local Index = {}
 	for _, Mutation in ipairs(Mutationconfig.Order) do
@@ -263,8 +273,7 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	Core:GetService("CashService"):AddCash(Player, SaleValue)
 	Core:GetService("StatsService"):AddItemsSold(Player, 1)
 	if SaleValue > 0 then
-		Core:GetService("DailyTaskService"):AddProgress(Player, "SellItems", 1)
-		Core:GetService("DailyTaskService"):AddProgress(Player, "EarnCash", SaleValue)
+		RecordSale(Player, Item, SaleValue)
 	end
 	self:PushItems(Player)
 	local SoldItem = CloneItem(Item)
@@ -278,7 +287,6 @@ function Inventoryservice:SellAllRestoredItems(Player: Player)
 	local Items = self:EnsurePlayer(Player)
 	local SoldItems = {}
 	local TotalValue = 0
-	local PaidCount = 0
 
 	for Index = #Items, 1, -1 do
 		local Item = table.remove(Items, Index)
@@ -286,17 +294,13 @@ function Inventoryservice:SellAllRestoredItems(Player: Player)
 		local SaleValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 		TotalValue += SaleValue
 		if SaleValue > 0 then
-			PaidCount += 1
+			RecordSale(Player, Item, SaleValue)
 		end
 	end
 
 	if #SoldItems > 0 then
 		Core:GetService("CashService"):AddCash(Player, TotalValue)
 		Core:GetService("StatsService"):AddItemsSold(Player, #SoldItems)
-	end
-	if PaidCount > 0 then
-		Core:GetService("DailyTaskService"):AddProgress(Player, "SellItems", PaidCount)
-		Core:GetService("DailyTaskService"):AddProgress(Player, "EarnCash", TotalValue)
 	end
 
 	self:PushItems(Player)
