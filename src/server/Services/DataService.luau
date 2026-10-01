@@ -186,15 +186,22 @@ function Dataservice:Saveandrelease(Player: Player)
 	Writesnapshot(Player, Snapshot)
 end
 
-function Dataservice:Wipe(Player: Player): boolean
-	Blockedbyplayer[Player] = true
-	local Success, Error = pcall(function()
-		Store:RemoveAsync(tostring(Player.UserId))
+function Dataservice:Wipe(Userid: number): (boolean, string)
+	local Player = Players:GetPlayerByUserId(Userid)
+	if Player then
+		Blockedbyplayer[Player] = true
+		while Savingbyplayer[Player] do
+			task.wait()
+		end
+	end
+	local Success, Result = pcall(function()
+		return Store:RemoveAsync(tostring(Userid))
 	end)
 	if not Success then
-		warn("DataService: could not erase data for " .. Player.Name .. ": " .. tostring(Error))
+		warn("DataService: could not erase data for " .. Userid .. ": " .. tostring(Result))
+		return false, tostring(Result)
 	end
-	return Success
+	return true, if Result == nil then "no save found" else "save erased"
 end
 
 function Dataservice:Init()

@@ -28,6 +28,7 @@ local Store = DataStoreService:GetDataStore("DailyRewards_v2")
 local DataByPlayer: { [Player]: DailyRewardData } = {}
 local LoadedByPlayer: { [Player]: boolean } = {}
 local ActiveBoostByPlayer: { [Player]: boolean } = {}
+local BlockedByPlayer: { [Player]: boolean } = {}
 local MaximumStoredPurchases = 50
 
 local function Now(): number
@@ -109,18 +110,22 @@ function DailyRewardService:WaitForData(Player: Player): DailyRewardData?
 	return DataByPlayer[Player]
 end
 
-function DailyRewardService:Wipe(Player: Player)
-	DataByPlayer[Player] = NewData()
+function DailyRewardService:Wipe(UserId: number)
+	local Player = Players:GetPlayerByUserId(UserId)
+	if Player then
+		BlockedByPlayer[Player] = true
+		DataByPlayer[Player] = NewData()
+	end
 	local Success, Error = pcall(function()
-		Store:RemoveAsync(tostring(Player.UserId))
+		Store:RemoveAsync(tostring(UserId))
 	end)
 	if not Success then
-		warn("DailyRewardService: could not erase data for " .. Player.Name .. ": " .. tostring(Error))
+		warn("DailyRewardService: could not erase data for " .. UserId .. ": " .. tostring(Error))
 	end
 end
 
 function DailyRewardService:SavePlayer(Player: Player): boolean
-	if not LoadedByPlayer[Player] then return false end
+	if not LoadedByPlayer[Player] or BlockedByPlayer[Player] then return false end
 	local Snapshot = SerializeData(DataByPlayer[Player])
 	local Success, Error = pcall(function()
 		Store:SetAsync(tostring(Player.UserId), Snapshot)
@@ -252,6 +257,7 @@ function DailyRewardService:Init()
 		DataByPlayer[Player] = nil
 		LoadedByPlayer[Player] = nil
 		ActiveBoostByPlayer[Player] = nil
+		BlockedByPlayer[Player] = nil
 	end)
 
 	RemoteManager:OnServerInvoke(self.Name, "GetState", function(Player)

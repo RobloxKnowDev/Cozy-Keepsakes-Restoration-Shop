@@ -1,5 +1,6 @@
 local Assetservice = game:GetService("AssetService")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
+local Runservice = game:GetService("RunService")
 local Tweenservice = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
@@ -227,7 +228,7 @@ end
 local Testmutationindex = 0
 
 local function Rollmutation(): string
-	if Testmutationindex < #Mutationconfig.TestSequence then
+	if Runservice:IsStudio() and Testmutationindex < #Mutationconfig.TestSequence then
 		Testmutationindex += 1
 		return Mutationconfig.TestSequence[Testmutationindex]
 	end

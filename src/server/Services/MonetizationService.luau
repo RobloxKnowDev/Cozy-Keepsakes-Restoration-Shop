@@ -22,6 +22,7 @@ local MonetizationService = {
 
 local GamePassCache: { [Player]: { [string]: boolean } } = {}
 local PersonalReputationBoostEndsAt: { [Player]: number } = {}
+local PersonalReputationBoostDuration: { [Player]: number } = {}
 local ServerLuckLevel = 0
 local ServerLuckEndsAt = 0
 
@@ -75,6 +76,7 @@ function MonetizationService:GetSaleMultiplier(Player: Player): number
 		Multiplier *= 1 + (tonumber(Config.VIP.SaleBonusPercent) or 0) / 100
 	end
 	Multiplier *= Core:GetService("DailyRewardService"):GetSaleMultiplier(Player)
+	Multiplier *= Core:GetService("InventoryService"):GetIndexSaleMultiplier(Player)
 	return Multiplier
 end
 
@@ -116,6 +118,7 @@ function MonetizationService:GetShopState(Player: Player)
 		OwnsVIP = self:OwnsGamePass(Player, "VIP"),
 		OwnsDoubleMoney = self:OwnsGamePass(Player, "DoubleMoney"),
 		PersonalReputationBoostEndsAt = EffectivePersonalBoostEndsAt,
+		PersonalReputationBoostDuration = if EffectivePersonalBoostEndsAt > 0 then PersonalReputationBoostDuration[Player] else 0,
 		ReputationMultiplier = self:GetReputationMultiplier(Player),
 		ServerLuckLevel = EffectiveServerLuckLevel,
 		ServerLuckMultiplier = if CurrentDefinition then CurrentDefinition.Multiplier else 1,
@@ -149,6 +152,7 @@ function MonetizationService:GrantStarterPack(Player: Player): boolean
 	Core:GetService("CashService"):AddCash(Player, tonumber(Config.StarterPack.Cash) or 0, false)
 	local CurrentTime = Now()
 	PersonalReputationBoostEndsAt[Player] = math.max(PersonalReputationBoostEndsAt[Player] or 0, CurrentTime) + (tonumber(Config.StarterPack.ReputationDurationSeconds) or 0)
+	PersonalReputationBoostDuration[Player] = PersonalReputationBoostEndsAt[Player] - CurrentTime
 	self:PushState(Player)
 	Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
 	if Ready then self:StarterPackObjectReady(Player) end
@@ -165,7 +169,11 @@ function MonetizationService:GrantGamePass(Player: Player, PassName: string)
 	self:PushState(Player)
 end
 
-function MonetizationService:GrantServerLuck(Level: number): boolean
+function MonetizationService:GetServerLuckLevel(): number
+	return if ServerLuckEndsAt > Now() then ServerLuckLevel else 0
+end
+
+function MonetizationService:GrantServerLuck(Level: number, Purchases: number?): boolean
 	if Level < 1 or Level > #Config.ServerReputationLuck.Levels then
 		return false
 	end
@@ -174,7 +182,7 @@ function MonetizationService:GrantServerLuck(Level: number): boolean
 		ServerLuckEndsAt = 0
 	end
 	ServerLuckLevel = math.max(ServerLuckLevel, Level)
-	ServerLuckEndsAt = math.max(ServerLuckEndsAt, Now()) + (tonumber(Config.ServerReputationLuck.DurationPerPurchaseSeconds) or 0)
+	ServerLuckEndsAt = math.max(ServerLuckEndsAt, Now()) + (tonumber(Config.ServerReputationLuck.DurationPerPurchaseSeconds) or 0) * (Purchases or 1)
 	self:PushAllStates()
 	Core:GetService("ExpositionService"):RefreshAllReputations()
 	return true
@@ -211,7 +219,9 @@ function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: n
 end
 
 function MonetizationService:GrantReputationBoost(Player: Player, Seconds: number)
-	PersonalReputationBoostEndsAt[Player] = math.max(PersonalReputationBoostEndsAt[Player] or 0, Now()) + Seconds
+	local CurrentTime = Now()
+	PersonalReputationBoostEndsAt[Player] = math.max(PersonalReputationBoostEndsAt[Player] or 0, CurrentTime) + Seconds
+	PersonalReputationBoostDuration[Player] = PersonalReputationBoostEndsAt[Player] - CurrentTime
 	self:PushAllStates()
 	Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
 end
@@ -220,15 +230,21 @@ function MonetizationService:Init()
 	Core:GetService("DataService"):Register("Monetization", {
 		Load = function(Player, Saved)
 			PersonalReputationBoostEndsAt[Player] = math.max(tonumber(Saved.PersonalReputationBoostEndsAt) or 0, 0)
+			PersonalReputationBoostDuration[Player] = tonumber(Saved.PersonalReputationBoostDuration)
+				or math.max(PersonalReputationBoostEndsAt[Player] - Now(), 0)
 			self:PushAllStates()
 			Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
 		end,
 		Save = function(Player)
-			return { PersonalReputationBoostEndsAt = PersonalReputationBoostEndsAt[Player] or 0 }
+			return {
+				PersonalReputationBoostEndsAt = PersonalReputationBoostEndsAt[Player] or 0,
+				PersonalReputationBoostDuration = PersonalReputationBoostDuration[Player] or 0,
+			}
 		end,
 		Clear = function(Player)
 			GamePassCache[Player] = nil
 			PersonalReputationBoostEndsAt[Player] = nil
+			PersonalReputationBoostDuration[Player] = nil
 		end,
 	})
 	local function SetupPlayer(Player: Player)
@@ -306,6 +322,7 @@ function MonetizationService:Init()
 			for Player, EndsAt in pairs(PersonalReputationBoostEndsAt) do
 				if EndsAt <= CurrentTime then
 					PersonalReputationBoostEndsAt[Player] = nil
+					PersonalReputationBoostDuration[Player] = nil
 					table.insert(ExpiredPersonalBoosts, Player)
 				end
 			end

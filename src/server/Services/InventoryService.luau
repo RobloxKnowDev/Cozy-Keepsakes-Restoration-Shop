@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Indexrewards = require(Replicatedstorage.Shared.Config.IndexRewards)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Objectconfig = require(Replicatedstorage.Shared.Config.Object)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
@@ -46,6 +47,22 @@ type IndexEntry = {
 local ItemsByPlayer: { [Player]: { RestoredItem } } = {}
 local IndexByPlayer: { [Player]: { [string]: { [string]: boolean } } } = {}
 local NextItemId = 0
+
+local Objectcount = 0
+for _ in pairs(Objectconfig.Object) do
+	Objectcount += 1
+end
+local Requiredentries = math.ceil(Objectcount * Indexrewards.Ratio)
+
+local function Countunlocked(Page: { [string]: boolean }): number
+	local Count = 0
+	for Objectkey in pairs(Objectconfig.Object) do
+		if Page[Objectkey] == true then
+			Count += 1
+		end
+	end
+	return Count
+end
 
 local function CloneItem(Item: RestoredItem): RestoredItem
 	return {
@@ -145,6 +162,20 @@ function Inventoryservice:GetIndexEntries(Player: Player): { IndexEntry }
 	end)
 
 	return Entries
+end
+
+function Inventoryservice:GetIndexSaleMultiplier(Player: Player): number
+	local Index = IndexByPlayer[Player]
+	if not Index then
+		return 1
+	end
+	local Pages = 0
+	for _, Mutation in ipairs(Mutationconfig.Order) do
+		if Countunlocked(Index[Mutation]) >= Requiredentries then
+			Pages += 1
+		end
+	end
+	return 1 + Pages * Indexrewards.SellPercent / 100
 end
 
 function Inventoryservice:GetRestoredItems(Player: Player): { RestoredItem }
@@ -248,6 +279,9 @@ function Inventoryservice:UnlockIndexEntry(Player: Player, ObjectKey: string, Mu
 
 	Page[ObjectKey] = true
 	self:PushIndex(Player, ObjectKey, Mutation)
+	if Countunlocked(Page) == Requiredentries then
+		self:PushItems(Player)
+	end
 	return true
 end
 

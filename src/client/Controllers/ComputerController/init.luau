@@ -13,13 +13,14 @@ local Home = require(script.Apps.Home)
 local Index = require(script.Apps.Index)
 local Inventory = require(script.Apps.Inventory)
 local Shared = require(script.Apps.Shared)
+local Upgrades = require(script.Apps.Upgrades)
 
 local ComputerController = {
 	Name = "ComputerController",
 	Priority = 3,
 }
 
-local Applications = { Home, DailyTasks, Index, Inventory }
+local Applications = { Home, DailyTasks, Index, Inventory, Upgrades }
 local HighlightFillColor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
 local CountDuration = 0.65
@@ -47,7 +48,7 @@ local function IsGamepad(InputType: Enum.UserInputType): boolean
 	return Core:GetController("GamepadController"):IsGamepad(InputType)
 end
 
-local PageOrder = { "Home", "Index", "Inventory" }
+local PageOrder = { "Home", "Index", "Inventory", "Upgrades" }
 
 function ComputerController:IsOpen(): boolean
 	return self.isOpen == true
@@ -186,6 +187,7 @@ function ComputerController:SetPage(PageName: string)
 	self.homePage.Visible = PageName == "Home"
 	self.indexPage.Visible = PageName == "Index"
 	self.inventoryPage.Visible = PageName == "Inventory"
+	self.upgradesPage.Visible = PageName == "Upgrades"
 	for _, Refresh in ipairs(self.navButtonRefreshes) do
 		Refresh()
 	end
@@ -270,6 +272,7 @@ function ComputerController:Init()
 	self.homePage = self.pages:WaitForChild("HomePage")
 	self.indexPage = self.pages:WaitForChild("IndexPage")
 	self.inventoryPage = self.pages:WaitForChild("InventoryPage")
+	self.upgradesPage = self.pages:WaitForChild("UpgradePage")
 	self.LeftFrame = self.frame:WaitForChild("Left")
 	self.closeButton = self.header:WaitForChild("CloseButton")
 	self.homeButton = self.LeftFrame:WaitForChild("HomeButton")
@@ -309,6 +312,7 @@ function ComputerController:Init()
 	self.homePage.Visible = false
 	self.indexPage.Visible = false
 	self.inventoryPage.Visible = false
+	self.upgradesPage.Visible = false
 	Shared.AnimateButton(self.closeButton, function()
 		return false
 	end)
@@ -414,6 +418,9 @@ function ComputerController:Start()
 	end)
 	Core:GetController("GamepadController"):OnActivated(self.inventoryNavButton, function()
 		self:SetPage("Inventory")
+	end)
+	Core:GetController("GamepadController"):OnActivated(self.upgradesButton, function()
+		self:SetPage("Upgrades")
 	end)
 end
 

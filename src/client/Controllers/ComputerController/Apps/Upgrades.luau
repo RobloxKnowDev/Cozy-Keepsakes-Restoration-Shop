@@ -11,17 +11,19 @@ local Shared = require(script.Parent.Shared)
 
 local Upgrades = {}
 local ErrorGradient = Rarityconfig.Mythic.Gradient
-local RobuxIcon = ""
-
-local function FormatValue(UpgradeName: string, Value: number?): string
-	if Value == nil then return "MAX" end
-	if UpgradeName == "PurchaseDiscount" then return string.format("%d%%", Value) end
-	if UpgradeName == "PriceEstimation" then return string.format("%d estimated / day", Value) end
-	if UpgradeName == "DailyCustomers" then return string.format("%d / day", Value) end
-	if UpgradeName == "CooldownReduction" then return FormatDuration(Customerconfig.GetInterval(Value)) end
-	if UpgradeName == "DisplaySpace" then return string.format("%d slots", Value) end
-	return tostring(Value)
-end
+local RobuxIcon = " "
+local ValueTexts = {
+	PurchaseDiscount = function(Value: number): string
+		return string.format("%d%%", Value)
+	end,
+	CooldownReduction = function(Value: number): string
+		return FormatDuration(Customerconfig.GetInterval(Value))
+	end,
+}
+local SecondTexts = {
+	PurchaseDiscount = "-1%",
+	CooldownReduction = string.format("-%ds", Customerconfig.SecondsPerCooldownLevel),
+}
 
 local function LoadRobuxPrice(CardData, ProductId: number)
 	CardData.ProductRequestId = (CardData.ProductRequestId or 0) + 1
@@ -35,7 +37,9 @@ local function LoadRobuxPrice(CardData, ProductId: number)
 		local Success, Info = pcall(function()
 			return MarketplaceService:GetProductInfo(ProductId, Enum.InfoType.Product)
 		end)
-		if CardData.ProductRequestId ~= RequestId then return end
+		if CardData.ProductRequestId ~= RequestId then
+			return
+		end
 		local Price = Success and type(Info) == "table" and tonumber(Info.PriceInRobux) or nil
 		CardData.RobuxPriceText.Text = if Price then string.format("%s%d", RobuxIcon, math.floor(Price)) else "N/A"
 	end)
@@ -43,20 +47,21 @@ end
 
 local function ApplyCard(Controller, UpgradeName: string, State)
 	local CardData = Controller.upgradeCards[UpgradeName]
-	if not CardData or not State then return end
+	if not CardData or not State then
+		return
+	end
 	local IsMax = State.MaxLevel ~= nil and State.Level >= State.MaxLevel
 	local WasMax = CardData.IsMaxLevel == true
 	CardData.IsMaxLevel = IsMax
-	CardData.LevelText.Text = if State.MaxLevel then string.format("Level %d / %d", State.Level, State.MaxLevel) else string.format("Level %d / ∞", State.Level)
-	CardData.CurrentText.Text = FormatValue(UpgradeName, State.CurrentValue)
-	CardData.NextText.Text = FormatValue(UpgradeName, State.NextValue)
+	local FormatValue = ValueTexts[UpgradeName]
+	CardData.LevelText.Text = if FormatValue
+		then FormatValue(State.CurrentValue)
+		elseif State.MaxLevel then string.format("%d/%d", State.Level, State.MaxLevel)
+		else string.format("%d/∞", State.Level)
 	CardData.CashPriceText.Text = if IsMax then "MAX" else Shared.FormatCurrency(State.CashPrice or 0)
-	CardData.CashButton.Active = not IsMax
-	CardData.CashButton.AutoButtonColor = not IsMax
+	CardData.SecondText.Visible = SecondTexts[UpgradeName] ~= nil and not IsMax
 	local ProductId = tonumber(State.DeveloperProductId) or 0
 	CardData.ProductId = ProductId
-	CardData.RobuxButton.Active = not IsMax and ProductId > 0
-	CardData.RobuxButton.AutoButtonColor = not IsMax and ProductId > 0
 	if IsMax then
 		CardData.ProductRequestId += 1
 		CardData.RobuxPriceText.Text = "MAX"
@@ -67,36 +72,48 @@ local function ApplyCard(Controller, UpgradeName: string, State)
 end
 
 function Upgrades.Apply(Controller, State)
-	if type(State) ~= "table" then return end
+	if type(State) ~= "table" then
+		return
+	end
 	Controller.upgradeState = State
-	for UpgradeName in pairs(Controller.upgradeCards) do ApplyCard(Controller, UpgradeName, State[UpgradeName]) end
+	for UpgradeName in pairs(Controller.upgradeCards) do
+		ApplyCard(Controller, UpgradeName, State[UpgradeName])
+	end
 end
 
 local function BindCard(Controller, UpgradeName: string)
 	local Card = Controller.upgradesScrollingFrame:WaitForChild(UpgradeName)
 	local Button = Card:WaitForChild("Button")
-	local CashButton = Button:WaitForChild("UpgradeButton")
+	local CashButton = Button:WaitForChild("BuyButton")
 	local RobuxButton = Button:WaitForChild("RobuxButton")
+	local SecondText = CashButton:WaitForChild("SecondText")
+	SecondText.Text = SecondTexts[UpgradeName] or ""
 	local CardData = {
 		CashButton = CashButton,
 		RobuxButton = RobuxButton,
 		CashPriceText = CashButton:WaitForChild("PriceText"),
 		RobuxPriceText = RobuxButton:WaitForChild("PriceText"),
+		SecondText = SecondText,
 		LevelText = Button:WaitForChild("LevelText"),
-		CurrentText = Button:WaitForChild("CurrentText"),
-		NextText = Button:WaitForChild("NextText"),
 		ProductId = 0,
 		LastProductId = nil,
 		IsMaxLevel = false,
 		ProductRequestId = 0,
 	}
 	Controller.upgradeCards[UpgradeName] = CardData
-	Shared.AnimateButton(CashButton, function() return not CashButton.Active end)
-	Shared.AnimateButton(RobuxButton, function() return not RobuxButton.Active end)
+	Shared.AnimateButton(CashButton, function()
+		return false
+	end)
+	Shared.AnimateButton(RobuxButton, function()
+		return false
+	end)
 	CashButton:SetAttribute("SilentClick", true)
 	Core:GetController("GamepadController"):OnActivated(CashButton, function()
-		if not CashButton.Active then return end
 		local Feedback = Core:GetController("FeedbackController")
+		if CardData.IsMaxLevel then
+			Feedback:UiClick()
+			return
+		end
 		local State = Controller.upgradeState and Controller.upgradeState[UpgradeName]
 		local Price = tonumber(State and State.CashPrice) or 0
 		if Core:GetController("CashController"):GetCash() >= Price then
@@ -109,32 +126,45 @@ local function BindCard(Controller, UpgradeName: string)
 			return
 		end
 		local Reason = type(Response) == "table" and Response.Reason or "UpgradeFailed"
-		local Message = if Reason == "NotEnoughCash" then "Not enough money" elseif Reason == "MaxLevel" then "Maximum level reached" else "Upgrade purchase failed"
+		local Message = if Reason == "NotEnoughCash"
+			then "Not enough money"
+			elseif Reason == "MaxLevel" then "Maximum level reached"
+			else "Upgrade purchase failed"
 		Core:GetController("MessageController"):Show(Message, ErrorGradient)
 	end)
 	Core:GetController("GamepadController"):OnActivated(RobuxButton, function()
-		if RobuxButton.Active and CardData.ProductId > 0 then
+		if not CardData.IsMaxLevel and CardData.ProductId > 0 then
 			MarketplaceService:PromptProductPurchase(Players.LocalPlayer, CardData.ProductId)
 		end
 	end)
 end
 
 function Upgrades.Init(Controller)
-	Controller.upgradesScrollingFrame = Controller.upgradesFrame:WaitForChild("ScrollingFrame")
+	Controller.upgradesScrollingFrame = Controller.upgradesPage:WaitForChild("ScrollingFrame")
 	Controller.upgradesGridLayout = Controller.upgradesScrollingFrame:WaitForChild("UIGridLayout")
 	Controller.upgradeCards = {}
 	Controller.upgradeState = {}
-	for _, Name in ipairs({ "PriceEstimation", "DailyCustomers", "PurchaseDiscount", "DisplaySpace", "CooldownReduction" }) do
+	for _, Name in ipairs({
+		"PriceEstimation",
+		"DailyCustomers",
+		"PurchaseDiscount",
+		"DisplaySpace",
+		"CooldownReduction",
+	}) do
 		BindCard(Controller, Name)
 	end
-	Upgrades.Apply(Controller, RemoteManager:InvokeServer("UpgradeService", "GetUpgrades"))
 end
 
 function Upgrades.Start(Controller)
 	Controller.upgradesGridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		Controller.upgradesScrollingFrame.CanvasSize = UDim2.fromOffset(0, Controller.upgradesGridLayout.AbsoluteContentSize.Y)
+		Controller.upgradesScrollingFrame.CanvasSize =
+			UDim2.fromOffset(0, Controller.upgradesGridLayout.AbsoluteContentSize.Y)
 	end)
-	RemoteManager:OnClientEvent("UpgradeService", "UpgradesUpdated", function(State) Upgrades.Apply(Controller, State) end)
+	RemoteManager:OnClientEvent("UpgradeService", "UpgradesUpdated", function(State)
+		Upgrades.Apply(Controller, State)
+	end)
+	Upgrades.Apply(Controller, RemoteManager:InvokeServer("UpgradeService", "GetUpgrades"))
+	Controller.upgradesScrollingFrame.CanvasSize = UDim2.fromOffset(0, Controller.upgradesGridLayout.AbsoluteContentSize.Y)
 end
 
 return Upgrades

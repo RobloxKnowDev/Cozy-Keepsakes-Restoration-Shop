@@ -21,6 +21,7 @@ local Loadedbyplayer: { [Player]: boolean } = {}
 local Objectdonebyplayer: { [Player]: boolean } = {}
 local Stepbyplayer: { [Player]: number } = {}
 local Boughtbyplayer: { [Player]: boolean } = {}
+local Blockedbyplayer: { [Player]: boolean } = {}
 
 local function Loadplayer(Player: Player)
 	Completedbyplayer[Player] = false
@@ -42,21 +43,25 @@ local function Loadplayer(Player: Player)
 	Loadedbyplayer[Player] = true
 end
 
-function Tutorialservice:Wipe(Player: Player)
-	Completedbyplayer[Player] = false
-	Objectdonebyplayer[Player] = nil
-	Stepbyplayer[Player] = 1
-	Boughtbyplayer[Player] = false
+function Tutorialservice:Wipe(Userid: number)
+	local Player = Players:GetPlayerByUserId(Userid)
+	if Player then
+		Blockedbyplayer[Player] = true
+		Completedbyplayer[Player] = false
+		Objectdonebyplayer[Player] = nil
+		Stepbyplayer[Player] = 1
+		Boughtbyplayer[Player] = false
+	end
 	local Success, Error = pcall(function()
-		Store:RemoveAsync(tostring(Player.UserId))
+		Store:RemoveAsync(tostring(Userid))
 	end)
 	if not Success then
-		warn("TutorialService: could not erase data for " .. Player.Name .. ": " .. tostring(Error))
+		warn("TutorialService: could not erase data for " .. Userid .. ": " .. tostring(Error))
 	end
 end
 
 local function Saveplayer(Player: Player)
-	if not Loadedbyplayer[Player] then
+	if not Loadedbyplayer[Player] or Blockedbyplayer[Player] then
 		return
 	end
 	local Success, Error = pcall(function()
@@ -105,6 +110,7 @@ function Tutorialservice:Init()
 		Objectdonebyplayer[Player] = nil
 		Stepbyplayer[Player] = nil
 		Boughtbyplayer[Player] = nil
+		Blockedbyplayer[Player] = nil
 	end)
 	for _, Player in ipairs(Players:GetPlayers()) do
 		task.spawn(Loadplayer, Player)

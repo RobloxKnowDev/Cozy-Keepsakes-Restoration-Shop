@@ -1,16 +1,10 @@
 local DailyRewards = require(script.Parent.DailyRewards)
-local Monetization = require(script.Parent.Monetization)
 
 local SaleBoost = DailyRewards.Rewards[4]
 
 return {
 	StarterReputation = {
 		Title = "Reputation Boost",
-		Description = string.format(
-			"x%d on your global reputation for %d min",
-			Monetization.StarterPack.ReputationMultiplier,
-			Monetization.StarterPack.ReputationDurationSeconds / 60
-		),
 		Icon = "rbxassetid://140355094643401",
 	},
 
@@ -24,5 +18,10 @@ return {
 		Title = "Sell Boost",
 		Description = string.format("+%d%% money on every sale", SaleBoost.Percent),
 		Icon = "rbxassetid://131705537343553",
+	},
+
+	IndexSellBonus = {
+		Title = "Index Sell Bonus",
+		Icon = "rbxassetid://88682218694776",
 	},
 }

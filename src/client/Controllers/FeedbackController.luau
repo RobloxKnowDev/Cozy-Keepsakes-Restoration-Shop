@@ -32,8 +32,8 @@ local UiClickCooldown = 0.08
 local ConfirmCooldown = 0.15
 local DonationColor = Color3.fromRGB(126, 255, 145)
 local GainGradient = Rarityconfig.Common.Gradient
-local DailyTaskRewardLifetime = 2.4
-local DailyTaskTitleGradient = ColorSequence.new(Color3.fromRGB(255, 196, 45), Color3.fromRGB(255, 243, 176))
+local RewardPopupLifetime = 2.4
+local RewardTitleGradient = ColorSequence.new(Color3.fromRGB(255, 196, 45), Color3.fromRGB(255, 243, 176))
 local PurchaseLifetime = 2.3
 local PurchaseRaysImage = "rbxassetid://126271042027223"
 local White = Color3.fromRGB(255, 255, 255)
@@ -896,14 +896,18 @@ function FeedbackController:Sale(Name: string, Value: number, Count: number?)
 end
 
 function FeedbackController:DailyTaskReward(Reward: number)
+	self:RewardPopup("Daily Task Complete!", "+" .. FormatCurrency(Reward))
+end
+
+function FeedbackController:RewardPopup(TitleText: string, RewardText: string, TitleGradient: ColorSequence?, Rainbow: boolean?)
 	local Now = os.clock()
-	local StartAt = math.max(Now, self.dailyTaskRewardFreeAt or 0)
-	self.dailyTaskRewardFreeAt = StartAt + DailyTaskRewardLifetime
+	local StartAt = math.max(Now, self.rewardPopupFreeAt or 0)
+	self.rewardPopupFreeAt = StartAt + RewardPopupLifetime
 	task.delay(StartAt - Now, function()
 		self:PlaySound("DailyReward", ConfirmCooldown)
 		if not self:IsDecorativeEnabled() then return end
 		local Container = Instance.new("Frame")
-		Container.Name = "DailyTaskRewardText"
+		Container.Name = "RewardPopup"
 		Container.AnchorPoint = Vector2.new(0.5, 0.5)
 		Container.Position = UDim2.fromScale(0.5, 0.26)
 		Container.Size = UDim2.fromOffset(520, 120)
@@ -917,7 +921,7 @@ function FeedbackController:DailyTaskReward(Reward: number)
 		Title.Size = UDim2.fromScale(1, 0.5)
 		Title.BackgroundTransparency = 1
 		Title.FontFace = TextFont
-		Title.Text = "Daily Task Complete!"
+		Title.Text = TitleText
 		Title.TextColor3 = White
 		Title.TextScaled = true
 		Title.TextStrokeColor3 = Color3.fromRGB(83, 48, 21)
@@ -925,9 +929,19 @@ function FeedbackController:DailyTaskReward(Reward: number)
 		Title.ZIndex = 23
 		Title.Parent = Container
 		local Titlegradient = Instance.new("UIGradient")
-		Titlegradient.Color = DailyTaskTitleGradient
+		Titlegradient.Color = TitleGradient or RewardTitleGradient
 		Titlegradient.Rotation = 90
 		Titlegradient.Parent = Title
+		if Rainbow then
+			local Connection
+			Connection = RunService.Heartbeat:Connect(function()
+				if not Container.Parent then
+					Connection:Disconnect()
+					return
+				end
+				Titlegradient.Color = Core:GetController("MutationController"):GetGradient("Rainbow")
+			end)
+		end
 		local RewardLabel = Instance.new("TextLabel")
 		RewardLabel.Name = "Reward"
 		RewardLabel.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -935,7 +949,7 @@ function FeedbackController:DailyTaskReward(Reward: number)
 		RewardLabel.Size = UDim2.fromScale(0.6, 0.38)
 		RewardLabel.BackgroundTransparency = 1
 		RewardLabel.FontFace = TextFont
-		RewardLabel.Text = "+" .. FormatCurrency(Reward)
+		RewardLabel.Text = RewardText
 		RewardLabel.TextColor3 = White
 		RewardLabel.TextScaled = true
 		RewardLabel.TextStrokeColor3 = Color3.fromRGB(24, 61, 30)
@@ -949,13 +963,13 @@ function FeedbackController:DailyTaskReward(Reward: number)
 		local Scale = GetScale(Container)
 		Scale.Scale = if self:IsMotionEnabled() then 0.35 else 1
 		TweenService:Create(Scale, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-		local FadeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, DailyTaskRewardLifetime - 0.4)
+		local FadeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, RewardPopupLifetime - 0.4)
 		TweenService:Create(Container, FadeInfo, { Position = UDim2.fromScale(0.5, 0.22) }):Play()
 		for _, Label in ipairs({ Title, RewardLabel }) do
 			TweenService:Create(Label, FadeInfo, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
 		end
 		self:Burst(Container, GainGradient.Keypoints[1].Value, 16)
-		Debris:AddItem(Container, DailyTaskRewardLifetime)
+		Debris:AddItem(Container, RewardPopupLifetime)
 	end)
 end
 

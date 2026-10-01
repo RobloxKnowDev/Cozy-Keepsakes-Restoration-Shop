@@ -1,5 +1,6 @@
 local DataStoreService = game:GetService("DataStoreService")
 local MessagingService = game:GetService("MessagingService")
+local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local UserService = game:GetService("UserService")
 
@@ -159,9 +160,11 @@ local function Refreshall()
 	Schedulepush()
 end
 
-function Leaderboardservice:Wipe(Player: Player)
-	local Userid = Player.UserId
-	Lastwritten[Player] = nil
+function Leaderboardservice:Wipe(Userid: number)
+	local Player = Players:GetPlayerByUserId(Userid)
+	if Player then
+		Lastwritten[Player] = nil
+	end
 	while Pendingwrites > 0 do
 		task.wait()
 	end
@@ -170,7 +173,7 @@ function Leaderboardservice:Wipe(Player: Player)
 			Stores[Board]:RemoveAsync(tostring(Userid))
 		end)
 		if not Success then
-			warn("LeaderboardService: could not erase " .. Board .. " for " .. Player.Name .. ": " .. tostring(Error))
+			warn("LeaderboardService: could not erase " .. Board .. " for " .. Userid .. ": " .. tostring(Error))
 		end
 		Mergescore(Board, Userid, 0)
 		pcall(function()

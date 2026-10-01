@@ -6,12 +6,14 @@ local RunService = game:GetService("RunService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Dailytasksconfig = require(ReplicatedStorage.Shared.Config.DailyTasks)
+local Monetizationconfig = require(ReplicatedStorage.Shared.Config.Monetization)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Remotemanager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Upgradesconfig = require(ReplicatedStorage.Shared.Config.Upgrades)
 
 local Banstore = DataStoreService:GetDataStore("Bans_v1")
 local Broadcasttopic = "AdminBroadcast"
+local Resettopic = "AdminResetData"
 
 local Adminservice = {
 	Name = "AdminService",
@@ -85,6 +87,9 @@ local function Giveitem(Target: Player, Objectkey: string, Percent: number)
 		NetProfit = Value,
 		Reputation = math.round(Maximums.MaxReputation * Ratio * 100) / 100,
 	})
+	if Ratio >= 0.5 then
+		Core:GetService("InventoryService"):UnlockIndexEntry(Target, Objectkey, Maximums.Mutation)
+	end
 end
 
 local function Setban(Userid: number, Entry: any): boolean
@@ -118,28 +123,60 @@ local function Kickeveryone(Reason: string)
 	end
 end
 
+local function Finduser(Text: string): (number, string)
+	local Lower = string.lower(Text)
+	for _, Player in ipairs(Players:GetPlayers()) do
+		if string.lower(Player.Name) == Lower then
+			return Player.UserId, Player.Name
+		end
+	end
+	if not string.match(Text, "^%-?%d+$") then
+		return Players:GetUserIdFromNameAsync(Text), Text
+	end
+	local Userid = tonumber(Text) :: number
+	local Success, Name = pcall(function()
+		return Players:GetNameFromUserIdAsync(Userid)
+	end)
+	return Userid, if Success then Name else "Unknown"
+end
+
+local function Wipeuser(Userid: number): (boolean, string)
+	local Erased, Reason = Core:GetService("DataService"):Wipe(Userid)
+	Core:GetService("TutorialService"):Wipe(Userid)
+	Core:GetService("DailyRewardService"):Wipe(Userid)
+	Core:GetService("LeaderboardService"):Wipe(Userid)
+	local Target = Players:GetPlayerByUserId(Userid)
+	if Target then
+		task.defer(function()
+			if Target.Parent then
+				Target:Kick("Your data was reset. Please rejoin.")
+			end
+		end)
+	end
+	return Erased, Reason
+end
+
 local Commands = {
 	{
 		Name = "resetdata",
-		Usage = "resetdata <player>",
-		Description = "Erase the whole save and disconnect the player",
+		Usage = "resetdata <username|userid>",
+		Description = "Erase a whole save, even offline",
 		Arguments = { "player" },
 		Run = function(_Caller: Player, Arguments: { string }): string
-			local Target = Findplayer(Arguments[1])
-			if not Target then
-				return "Player not found: " .. tostring(Arguments[1])
+			if #Arguments ~= 1 then
+				return "Usage: resetdata <username|userid>"
 			end
-			Core:GetService("DataService"):Wipe(Target)
-			Core:GetService("TutorialService"):Wipe(Target)
-			Core:GetService("DailyRewardService"):Wipe(Target)
-			Core:GetService("LeaderboardService"):Wipe(Target)
-			local Name = Target.Name
-			task.defer(function()
-				if Target.Parent then
-					Target:Kick("Your data was reset. Please rejoin.")
-				end
+			local Userid, Name = Finduser(Arguments[1])
+			local Online = Players:GetPlayerByUserId(Userid) ~= nil
+			local Erased, Reason = Wipeuser(Userid)
+			local Result = string.format("%s (%d): %s", Name, Userid, if Erased then Reason else "failed, " .. Reason)
+			if Online then
+				return Result
+			end
+			local Notified = pcall(function()
+				MessagingService:PublishAsync(Resettopic, Userid)
 			end)
-			return "Save erased for " .. Name
+			return if Notified then Result else Result .. ", broadcast failed"
 		end,
 	},
 	{
@@ -152,7 +189,7 @@ local Commands = {
 			if not Target then
 				return "Player not found: " .. tostring(Arguments[1])
 			end
-			Core:GetService("TutorialService"):Wipe(Target)
+			Core:GetService("TutorialService"):Wipe(Target.UserId)
 			return "Tutorial reset for " .. Target.Name
 		end,
 	},
@@ -317,8 +354,12 @@ local Commands = {
 				return string.format("%s: sale bonus for %d s", Target.Name, Value)
 			end
 			if Kind == "serverluck" then
-				local Granted = Core:GetService("MonetizationService"):GrantServerLuck(math.max(math.floor(Value), 1))
-				return if Granted then "Server luck enabled (level " .. math.floor(Value) .. ")" else "Invalid level"
+				local Level = math.max(math.floor(Value), 1)
+				local Monetizationservice = Core:GetService("MonetizationService")
+				local Purchases = math.max(Level - Monetizationservice:GetServerLuckLevel(), 1)
+				local Granted = Monetizationservice:GrantServerLuck(Level, Purchases)
+				local Minutes = math.floor(Purchases * Monetizationconfig.ServerReputationLuck.DurationPerPurchaseSeconds / 60)
+				return if Granted then string.format("Server luck enabled (level %d, +%d min)", Level, Minutes) else "Invalid level"
 			end
 			return "Unknown type: " .. Kind .. " (reputation, sale, serverluck)"
 		end,
@@ -384,6 +425,11 @@ function Adminservice:Init()
 		local Subscribed = pcall(function()
 			MessagingService:SubscribeAsync(Broadcasttopic, function()
 				Kickeveryone("The server is restarting. Please rejoin.")
+			end)
+			MessagingService:SubscribeAsync(Resettopic, function(Message)
+				if Players:GetPlayerByUserId(Message.Data) then
+					Wipeuser(Message.Data)
+				end
 			end)
 		end)
 		if not Subscribed then

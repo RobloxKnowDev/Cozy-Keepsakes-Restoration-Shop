@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local MonetizationConfig = require(ReplicatedStorage.Shared.Config.Monetization)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
@@ -9,12 +10,33 @@ local GainColor = Color3.fromRGB(126, 255, 145)
 local LossColor = Color3.fromRGB(255, 138, 138)
 local ReputationBoostColor = Color3.fromRGB(255, 228, 77)
 
+local function FormatBoostDuration(Seconds: number): string
+	local Total = math.ceil(Seconds)
+	if Total < 60 then
+		return string.format("%d s", Total)
+	end
+	if Total % 60 == 0 then
+		return string.format("%d min", Total // 60)
+	end
+	return string.format("%d min %d s", Total // 60, Total % 60)
+end
+
 function Home.ApplyReputationBoost(Controller, State)
 	Controller.reputationText.TextColor3 = if (tonumber(State.ReputationMultiplier) or 1) > 1
 		then ReputationBoostColor
 		else Controller.baseReputationTextColor
 	local BoostController = Core:GetController("BoostController")
-	BoostController:SetBoost("StarterReputation", State.PersonalReputationBoostEndsAt, 1)
+	BoostController:SetBoost(
+		"StarterReputation",
+		State.PersonalReputationBoostEndsAt,
+		1,
+		nil,
+		string.format(
+			"x%d on your global reputation for %s",
+			MonetizationConfig.StarterPack.ReputationMultiplier,
+			FormatBoostDuration(State.PersonalReputationBoostDuration)
+		)
+	)
 	BoostController:SetBoost("ServerReputationLuck", State.ServerLuckEndsAt, 2, State.ServerLuckMultiplier)
 end
 
