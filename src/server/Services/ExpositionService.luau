@@ -353,7 +353,6 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 	Releasereservation(Player, Slotindex)
 
 	local Displaysnapshot = Commitdisplaychange()
-	Inventoryservice:PushItems(Player)
 	Core:GetService("DailyTaskService"):Record(Player, "Display", {
 		Rarity = Removeditem.Rarity,
 		Percent = Removeditem.RestorationPercent,
@@ -396,7 +395,6 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 	Busyplayers[Player] = nil
 
 	local Displaysnapshot = Commitdisplaychange()
-	Inventoryservice:PushItems(Player)
 	return {
 		Success = true,
 		RemovedReputation = Basereputation,

@@ -24,9 +24,12 @@ local function GetReputation(Item): number
 end
 
 local function FillItemStats(Frame: GuiObject, Item)
-	Frame:WaitForChild("Icon").Image = tostring(Item.ImageId or "")
-	Frame:WaitForChild("CashText").Text = Shared.FormatCurrency(Item.CurrentValue or 0)
-	Frame:WaitForChild("ReputationText").Text = tostring(GetReputation(Item))
+	local Icon = Frame:WaitForChild("Icon") :: ImageLabel
+	local CashText = Frame:WaitForChild("CashText") :: TextLabel
+	local ReputationText = Frame:WaitForChild("ReputationText") :: TextLabel
+	Icon.Image = tostring(Item.ImageId or "")
+	CashText.Text = Shared.FormatCurrency(Item.CurrentValue or 0)
+	ReputationText.Text = tostring(GetReputation(Item))
 end
 
 local function FillItemProgress(Frame: GuiObject, Item)
@@ -37,6 +40,7 @@ local function FillItemProgress(Frame: GuiObject, Item)
 end
 
 local function SetButtonEnabled(Button: GuiButton, Enabled: boolean)
+	if Button.Active == Enabled then return end
 	Button.Active = Enabled
 	Button.Interactable = Enabled
 	if not Enabled then Shared.ApplyActiveScale(Button, false) end
@@ -173,86 +177,108 @@ function Inventory.ApplyItems(Controller, Items)
 		return (tonumber(Left.Id) or 0) > (tonumber(Right.Id) or 0)
 	end)
 	Controller.inventoryItems = SortedItems
+	if Controller.activePage ~= "Inventory" then
+		Controller.inventoryDirty = true
+		return
+	end
+	Inventory.Render(Controller)
+end
 
+local function CreateCard(Controller, Item, IsOpen: boolean)
+	local Done = GetPercent(Item) >= 100
+	local Frame = Controller.inventoryTemplate:Clone()
+	Frame.Name = "Item_" .. tostring(Item.Id)
+	Frame.Visible = true
+	Frame.ZIndex = if IsOpen then 10 else 1
+	local Button = Frame:WaitForChild("Button") :: GuiButton
+	local ButtonOpen = Frame:WaitForChild("ButtonOpen") :: GuiButton
+	local InfoButton = ButtonOpen:WaitForChild("InfoButton") :: GuiButton
+	local ActionButton = ButtonOpen:WaitForChild("Button") :: GuiButton
+	Button.Visible = not IsOpen
+	ButtonOpen.Visible = IsOpen
+	ActionButton:WaitForChild("Text").Text = if Done then SellText else CleanText
+	if Done then
+		local ActionGradient = ActionButton:WaitForChild("UIGradient") :: UIGradient
+		ActionGradient.Color = Controller.inventorySellGradient.Color
+		ActionGradient.Transparency = Controller.inventorySellGradient.Transparency
+		ActionGradient.Rotation = Controller.inventorySellGradient.Rotation
+		ActionGradient.Offset = Controller.inventorySellGradient.Offset
+	end
+	local Card = {
+		Frame = Frame,
+		Button = Button,
+		ButtonOpen = ButtonOpen,
+		InfoButton = InfoButton,
+		ActionButton = ActionButton,
+		Item = Item,
+		Done = Done,
+	}
+	local Enabled = not Controller.inventoryInfoFrame.Visible
+	for _, Target in ipairs({ Button, ButtonOpen, InfoButton, ActionButton }) do
+		Target.Active = Enabled
+		Target.Interactable = Enabled
+		Shared.AnimateButton(Target, function()
+			return not Target.Active
+		end)
+	end
+	local Gamepad = Core:GetController("GamepadController")
+	Gamepad:OnActivated(Button, function()
+		Inventory.SetCardOpen(Controller, Card, true)
+	end)
+	Gamepad:OnActivated(ButtonOpen, function()
+		Inventory.SetCardOpen(Controller, Card, false)
+	end)
+	Gamepad:OnActivated(InfoButton, function()
+		Inventory.ShowItemInfo(Controller, Card.Item, true)
+	end)
+	Gamepad:OnActivated(ActionButton, function()
+		if not Done then
+			Inventory.Clean(Controller, Card.Item.Id)
+		elseif not Controller.sellLocked then
+			Inventory.Sell(Controller, Card.Item.Id)
+		end
+	end)
+	return Card
+end
+
+function Inventory.Render(Controller)
+	Controller.inventoryDirty = false
+	local ItemsById = {}
+	for _, Item in ipairs(Controller.inventoryItems) do
+		ItemsById[Item.Id] = Item
+	end
 	local OpenItemId = if Controller.inventoryOpenCard then Controller.inventoryOpenCard.Item.Id else nil
-	for _, Child in ipairs(Controller.inventoryScrollingFrame:GetChildren()) do
-		if Child ~= Controller.inventoryTemplate and Child ~= Controller.inventoryGridLayout then
-			Child:Destroy()
+	for Id, Card in pairs(Controller.inventoryCardsById) do
+		local Item = ItemsById[Id]
+		if not Item or (GetPercent(Item) >= 100) ~= Card.Done then
+			Card.Frame:Destroy()
+			Controller.inventoryCardsById[Id] = nil
 		end
 	end
 	table.clear(Controller.inventoryCards)
 	Controller.inventoryOpenCard = nil
 
-	local Gamepad = Core:GetController("GamepadController")
 	local InfoItem
-	for Order, Item in ipairs(SortedItems) do
-		local Frame = Controller.inventoryTemplate:Clone()
-		Frame.Name = "Item_" .. tostring(Item.Id)
-		Frame.LayoutOrder = Order
-		Frame.Visible = true
-		Frame.Parent = Controller.inventoryScrollingFrame
-		local Button = Frame:WaitForChild("Button") :: GuiButton
-		local ButtonOpen = Frame:WaitForChild("ButtonOpen") :: GuiButton
-		local InfoButton = ButtonOpen:WaitForChild("InfoButton") :: GuiButton
-		local ActionButton = ButtonOpen:WaitForChild("Button") :: GuiButton
-		local Done = GetPercent(Item) >= 100
-		FillItemStats(Button, Item)
-		FillItemProgress(Button, Item)
-		FillItemStats(ButtonOpen, Item)
-		ButtonOpen:WaitForChild("ObjectNameText").Text = tostring(Item.Name or "")
-		ActionButton:WaitForChild("Text").Text = if Done then SellText else CleanText
-		if Done then
-			local ActionGradient = ActionButton:WaitForChild("UIGradient") :: UIGradient
-			ActionGradient.Color = Controller.inventorySellGradient.Color
-			ActionGradient.Transparency = Controller.inventorySellGradient.Transparency
-			ActionGradient.Rotation = Controller.inventorySellGradient.Rotation
-			ActionGradient.Offset = Controller.inventorySellGradient.Offset
+	for Order, Item in ipairs(Controller.inventoryItems) do
+		local Card = Controller.inventoryCardsById[Item.Id]
+		local IsNew = Card == nil
+		if IsNew then
+			Card = CreateCard(Controller, Item, OpenItemId == Item.Id)
+			Controller.inventoryCardsById[Item.Id] = Card
 		end
-		local Card = {
-			Frame = Frame,
-			Button = Button,
-			ButtonOpen = ButtonOpen,
-			InfoButton = InfoButton,
-			ActionButton = ActionButton,
-			Item = Item,
-			Done = Done,
-		}
+		Card.Item = Item
+		Card.Frame.LayoutOrder = Order
+		FillItemStats(Card.Button, Item)
+		FillItemProgress(Card.Button, Item)
+		FillItemStats(Card.ButtonOpen, Item)
+		Card.ButtonOpen:WaitForChild("ObjectNameText").Text = tostring(Item.Name or "")
+		if IsNew then
+			Card.Frame.Parent = Controller.inventoryScrollingFrame
+		end
 		table.insert(Controller.inventoryCards, Card)
-		local IsOpen = OpenItemId == Item.Id
-		Button.Visible = not IsOpen
-		ButtonOpen.Visible = IsOpen
-		Frame.ZIndex = if IsOpen then 10 else 1
-		if IsOpen then
+		if OpenItemId == Item.Id then
 			Controller.inventoryOpenCard = Card
 		end
-		Shared.AnimateButton(Button, function()
-			return not Button.Active
-		end)
-		Shared.AnimateButton(ButtonOpen, function()
-			return not ButtonOpen.Active
-		end)
-		Shared.AnimateButton(InfoButton, function()
-			return not InfoButton.Active
-		end)
-		Shared.AnimateButton(ActionButton, function()
-			return not ActionButton.Active
-		end)
-		Gamepad:OnActivated(Button, function()
-			Inventory.SetCardOpen(Controller, Card, true)
-		end)
-		Gamepad:OnActivated(ButtonOpen, function()
-			Inventory.SetCardOpen(Controller, Card, false)
-		end)
-		Gamepad:OnActivated(InfoButton, function()
-			Inventory.ShowItemInfo(Controller, Item, true)
-		end)
-		Gamepad:OnActivated(ActionButton, function()
-			if not Done then
-				Inventory.Clean(Controller, Item.Id)
-			elseif not Controller.sellLocked then
-				Inventory.Sell(Controller, Item.Id)
-			end
-		end)
 		if Controller.inventoryInfoItemId == Item.Id then
 			InfoItem = Item
 		end
@@ -298,6 +324,8 @@ function Inventory.Init(Controller)
 	Controller.inventoryInfoReputationText = StatsFrame:WaitForChild("ReputationFrame"):WaitForChild("ReputationText")
 	Controller.inventoryItems = {}
 	Controller.inventoryCards = {}
+	Controller.inventoryCardsById = {}
+	Controller.inventoryDirty = false
 	Controller.inventoryOpenCard = nil
 	Controller.inventoryInfoItemId = nil
 	Controller.inventoryRainbowGradients = nil

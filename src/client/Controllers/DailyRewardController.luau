@@ -7,6 +7,7 @@ local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild
 local Config = require(ReplicatedStorage.Shared.Config.DailyRewards)
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
+local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
@@ -202,7 +203,7 @@ function DailyRewardController:ApplyState(State)
 	end
 	self.state = State
 	self:Refresh()
-	Core:GetController("BoostController"):SetBoost("DailySaleBoost", State.SaleBoostEndsAt, 3)
+	Core:GetController("BoostController"):SetBoost("DailySaleBoost", State.SaleBoostEndsAt, 4)
 end
 
 function DailyRewardController:Open()
@@ -305,7 +306,8 @@ function DailyRewardController:Claim()
 		FeedbackController:FloatingText(self.frame, "Reward Claimed", ClaimGradient)
 		FeedbackController:PlaySound("DailyReward", 0.2)
 		if Result.RewardType == "Item" then
-			print("DailyRewardController: " .. Result.RewardText .. " received for day " .. Result.Day)
+			local Definition = Objectconfig.Object[Config.Rewards[Result.Day].ObjectKey]
+			Core:GetController("MessageController"):Show(Definition.Name .. " added to your inventory", Rarityconfig[Definition.Rarity].Gradient)
 		end
 	end
 end

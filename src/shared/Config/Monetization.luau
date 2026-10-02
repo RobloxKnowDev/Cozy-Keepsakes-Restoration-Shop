@@ -2,6 +2,7 @@ return {
 	GamePasses = {
 		VIP = 1948647642,
 		DoubleMoney = 1948869685,
+		DoubleReputation = 2006690460,
 	},
 
 	CashProducts = {
@@ -14,12 +15,12 @@ return {
 	SkipDayProductId = 3709374250,
 
 	StarterPack = {
-		Id =  1949649693, 
+		Id = 1949649693,
 		PurchaseType = "GamePass",
 		Cash = 3_000,
-		ObjectKey = "AlarmClock",
+		ObjectKey = "ElectricTrain",
 		ReputationMultiplier = 2,
-		ReputationDurationSeconds = 30 * 60,
+		ReputationDurationSeconds = 15 * 60,
 	},
 
 	ServerReputationLuck = {

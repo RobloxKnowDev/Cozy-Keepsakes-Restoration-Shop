@@ -96,7 +96,8 @@ function MonetizationService:GetReputationMultiplier(Player: Player): number
 		local Level = Config.ServerReputationLuck.Levels[ServerLuckLevel]
 		ServerMultiplier = if Level then tonumber(Level.Multiplier) or 1 else 1
 	end
-	return PersonalMultiplier * ServerMultiplier
+	local PassMultiplier = if self:OwnsGamePass(Player, "DoubleReputation") then 2 else 1
+	return PersonalMultiplier * ServerMultiplier * PassMultiplier
 end
 
 function MonetizationService:GetShopState(Player: Player)
@@ -117,6 +118,7 @@ function MonetizationService:GetShopState(Player: Player)
 		OwnsStarterPack = if Config.StarterPack.PurchaseType == "GamePass" then self:OwnsGamePass(Player, "StarterPack") else false,
 		OwnsVIP = self:OwnsGamePass(Player, "VIP"),
 		OwnsDoubleMoney = self:OwnsGamePass(Player, "DoubleMoney"),
+		OwnsDoubleReputation = self:OwnsGamePass(Player, "DoubleReputation"),
 		PersonalReputationBoostEndsAt = EffectivePersonalBoostEndsAt,
 		PersonalReputationBoostDuration = if EffectivePersonalBoostEndsAt > 0 then PersonalReputationBoostDuration[Player] else 0,
 		ReputationMultiplier = self:GetReputationMultiplier(Player),
@@ -143,10 +145,7 @@ function MonetizationService:StarterPackObjectReady(Player: Player)
 end
 
 function MonetizationService:GrantStarterPack(Player: Player): boolean
-	local Granted, Ready = Core:GetService("RestorationService"):GrantObject(Player, tostring(Config.StarterPack.ObjectKey), function()
-		self:StarterPackObjectReady(Player)
-	end)
-	if not Granted then
+	if not Core:GetService("RestorationService"):GrantObject(Player, tostring(Config.StarterPack.ObjectKey)) then
 		return false
 	end
 	Core:GetService("CashService"):AddCash(Player, tonumber(Config.StarterPack.Cash) or 0, false)
@@ -155,7 +154,7 @@ function MonetizationService:GrantStarterPack(Player: Player): boolean
 	PersonalReputationBoostDuration[Player] = PersonalReputationBoostEndsAt[Player] - CurrentTime
 	self:PushState(Player)
 	Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
-	if Ready then self:StarterPackObjectReady(Player) end
+	self:StarterPackObjectReady(Player)
 	return true
 end
 
@@ -165,6 +164,7 @@ function MonetizationService:GrantGamePass(Player: Player, PassName: string)
 	Player:SetAttribute("Owns" .. PassName, true)
 	if PassName == "StarterPack" then self:GrantStarterPack(Player) end
 	if PassName == "VIP" then Core:GetService("CustomerService"):RefreshPendingOfferPrice(Player) end
+	if PassName == "DoubleReputation" then Core:GetService("ExpositionService"):RefreshPlayerReputation(Player) end
 	if PassName == "VIP" or PassName == "DoubleMoney" then Core:GetService("InventoryService"):PushItems(Player) end
 	self:PushState(Player)
 end
@@ -278,7 +278,10 @@ function MonetizationService:Init()
 	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(Player, GamePassId, WasPurchased)
 		if not WasPurchased then return end
 		local PassName = FindGamePassName(GamePassId)
-		if PassName then self:GrantGamePass(Player, PassName) end
+		if not PassName or GamePassCache[Player][PassName] then return end
+		GamePassCache[Player][PassName] = true
+		Core:GetService("DataService"):WaitForLoad(Player)
+		if Player.Parent then self:GrantGamePass(Player, PassName) end
 	end)
 
 	RemoteManager:OnServerInvoke(self.Name, "GetShopState", function(Player)
@@ -295,6 +298,8 @@ function MonetizationService:Init()
 	MarketplaceService.ProcessReceipt = function(ReceiptInfo)
 		local Player = Players:GetPlayerByUserId(ReceiptInfo.PlayerId)
 		if not Player then return Enum.ProductPurchaseDecision.NotProcessedYet end
+		Core:GetService("DataService"):WaitForLoad(Player)
+		if not Player.Parent then return Enum.ProductPurchaseDecision.NotProcessedYet end
 		local Success, Granted = pcall(function()
 			return self:HandleDeveloperProduct(Player, ReceiptInfo.ProductId, tostring(ReceiptInfo.PurchaseId))
 		end)

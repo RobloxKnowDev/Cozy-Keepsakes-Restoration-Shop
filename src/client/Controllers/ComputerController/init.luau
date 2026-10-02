@@ -13,6 +13,7 @@ local Home = require(script.Apps.Home)
 local Index = require(script.Apps.Index)
 local Inventory = require(script.Apps.Inventory)
 local Shared = require(script.Apps.Shared)
+local Shop = require(script.Apps.Shop)
 local Upgrades = require(script.Apps.Upgrades)
 
 local ComputerController = {
@@ -20,7 +21,7 @@ local ComputerController = {
 	Priority = 3,
 }
 
-local Applications = { Home, DailyTasks, Index, Inventory, Upgrades }
+local Applications = { Home, DailyTasks, Index, Inventory, Upgrades, Shop }
 local HighlightFillColor = Color3.fromRGB(255, 232, 163)
 local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
 local CountDuration = 0.65
@@ -48,7 +49,7 @@ local function IsGamepad(InputType: Enum.UserInputType): boolean
 	return Core:GetController("GamepadController"):IsGamepad(InputType)
 end
 
-local PageOrder = { "Home", "Index", "Inventory", "Upgrades" }
+local PageOrder = { "Home", "Index", "Inventory", "Upgrades", "Shop" }
 
 function ComputerController:IsOpen(): boolean
 	return self.isOpen == true
@@ -183,11 +184,15 @@ function ComputerController:AnimateComputerCashTo(TargetValue: number)
 end
 
 function ComputerController:SetPage(PageName: string)
+	if PageName == "Inventory" and self.inventoryDirty then
+		Inventory.Render(self)
+	end
 	self.activePage = PageName
 	self.homePage.Visible = PageName == "Home"
 	self.indexPage.Visible = PageName == "Index"
 	self.inventoryPage.Visible = PageName == "Inventory"
 	self.upgradesPage.Visible = PageName == "Upgrades"
+	self.shopPage.Visible = PageName == "Shop"
 	for _, Refresh in ipairs(self.navButtonRefreshes) do
 		Refresh()
 	end
@@ -254,7 +259,6 @@ function ComputerController:Init()
 	self.surfaceGui = self.computerModel:WaitForChild("SurfaceGui") :: SurfaceGui
 	self.surfaceGui.Adornee = self.computerModel
 	self.surfaceGui.Parent = PlayerGui
-	Core:GetController("FeedbackController"):BindClicksIn(self.surfaceGui)
 	self.surfaceGui.Active = false
 	self.inputBlocker = Instance.new("TextButton")
 	self.inputBlocker.Name = "InputBlocker"
@@ -273,6 +277,7 @@ function ComputerController:Init()
 	self.indexPage = self.pages:WaitForChild("IndexPage")
 	self.inventoryPage = self.pages:WaitForChild("InventoryPage")
 	self.upgradesPage = self.pages:WaitForChild("UpgradePage")
+	self.shopPage = self.pages:WaitForChild("ShopPage")
 	self.LeftFrame = self.frame:WaitForChild("Left")
 	self.closeButton = self.header:WaitForChild("CloseButton")
 	self.homeButton = self.LeftFrame:WaitForChild("HomeButton")
@@ -313,6 +318,7 @@ function ComputerController:Init()
 	self.indexPage.Visible = false
 	self.inventoryPage.Visible = false
 	self.upgradesPage.Visible = false
+	self.shopPage.Visible = false
 	Shared.AnimateButton(self.closeButton, function()
 		return false
 	end)
@@ -421,6 +427,9 @@ function ComputerController:Start()
 	end)
 	Core:GetController("GamepadController"):OnActivated(self.upgradesButton, function()
 		self:SetPage("Upgrades")
+	end)
+	Core:GetController("GamepadController"):OnActivated(self.shopButton, function()
+		self:SetPage("Shop")
 	end)
 end
 

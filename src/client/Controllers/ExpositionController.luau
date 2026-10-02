@@ -246,10 +246,12 @@ function Controller:SetSelectionControlsEnabled(Enabled: boolean)
 	self.infoCloseButton.Active = Enabled
 	self.infoCloseButton.Interactable = Enabled
 	for _, Card in ipairs(self.selectCards) do
-		for _, Button in ipairs({ Card.Button, Card.ButtonOpen, Card.InfoButton, Card.EquipButton }) do
-			Button.Active = Cardsenabled
-			Button.Interactable = Cardsenabled
-			if not Cardsenabled then Shared.ApplyActiveScale(Button, false) end
+		for _, Button in ipairs(Card.Buttons) do
+			if Button.Active ~= Cardsenabled then
+				Button.Active = Cardsenabled
+				Button.Interactable = Cardsenabled
+				if not Cardsenabled then Shared.ApplyActiveScale(Button, false) end
+			end
 		end
 	end
 end
@@ -354,43 +356,81 @@ function Controller:ApplySelectionItems(Items)
 		return Leftreputation > Rightreputation
 	end)
 	self.selectItems = Sorteditems
-	for _, Child in ipairs(self.selectScrollingFrame:GetChildren()) do
-		if Child ~= self.selectTemplate and Child ~= self.selectGridLayout then Child:Destroy() end
+	if not self.selectFrame.Visible then
+		self.selectDirty = true
+		return
+	end
+	self:RenderSelectionItems()
+end
+
+function Controller:CreateSelectionCard(Item, Isopen: boolean, Enabled: boolean)
+	local Card = self.selectTemplate:Clone()
+	Card.Name = "Item_" .. tostring(Item.Id)
+	Card.Visible = true
+	Card.ZIndex = if Isopen then 10 else 1
+	local Button = Card:WaitForChild("Button") :: GuiButton
+	local Buttonopen = Card:WaitForChild("ButtonOpen") :: GuiButton
+	local Infobutton = Buttonopen:WaitForChild("InfoButton") :: GuiButton
+	local Equipbutton = Buttonopen:WaitForChild("EquipButton") :: GuiButton
+	Button.Visible = not Isopen
+	Buttonopen.Visible = Isopen
+	local Carddata = {
+		Frame = Card,
+		Button = Button,
+		ButtonOpen = Buttonopen,
+		InfoButton = Infobutton,
+		EquipButton = Equipbutton,
+		Buttons = { Button, Buttonopen, Infobutton, Equipbutton },
+		Item = Item,
+	}
+	for _, Target in ipairs(Carddata.Buttons) do
+		Target.Active = Enabled
+		Target.Interactable = Enabled
+		Shared.AnimateButton(Target, function() return not Target.Active end)
+	end
+	local Gamepad = Core:GetController("GamepadController")
+	Gamepad:OnActivated(Button, function() self:SetCardOpen(Carddata, Carddata.Item, true) end)
+	Gamepad:OnActivated(Buttonopen, function() self:SetCardOpen(Carddata, Carddata.Item, false) end)
+	Gamepad:OnActivated(Infobutton, function() self:ShowItemInfo(Carddata.Item, true) end)
+	Gamepad:OnActivated(Equipbutton, function() self:PlaceDisplayItem(Carddata.Item.Id) end)
+	return Carddata
+end
+
+function Controller:RenderSelectionItems()
+	self.selectDirty = false
+	local Itemsbyid = {}
+	for _, Item in ipairs(self.selectItems) do
+		Itemsbyid[Item.Id] = Item
+	end
+	for Id, Carddata in pairs(self.selectCardsById) do
+		if not Itemsbyid[Id] then
+			Carddata.Frame:Destroy()
+			self.selectCardsById[Id] = nil
+		end
 	end
 	table.clear(self.selectCards)
 	self.openCard = nil
 
+	local Cardsenabled = self.selectFrameOpen and not self.selectPlacementPending and not self.infoFrame.Visible
 	local Infoitem
-	for Order, Item in ipairs(Sorteditems) do
-		local Card = self.selectTemplate:Clone()
-		Card.Name = "Item_" .. tostring(Item.Id)
-		Card.LayoutOrder = Order
-		Card.Visible = true
-		Card.Parent = self.selectScrollingFrame
-		local Button = Card:WaitForChild("Button") :: GuiButton
-		local Buttonopen = Card:WaitForChild("ButtonOpen") :: GuiButton
-		local Infobutton = Buttonopen:WaitForChild("InfoButton") :: GuiButton
-		local Equipbutton = Buttonopen:WaitForChild("EquipButton") :: GuiButton
-		local Nametext = Buttonopen:WaitForChild("ObjectNameText") :: TextLabel
-		self:FillItemStats(Button, Item)
-		self:FillItemProgress(Button, Item)
-		self:FillItemStats(Buttonopen, Item)
-		Nametext.Text = tostring(Item.Name or "")
-		local Carddata = { Frame = Card, Button = Button, ButtonOpen = Buttonopen, InfoButton = Infobutton, EquipButton = Equipbutton }
+	for Order, Item in ipairs(self.selectItems) do
+		local Carddata = self.selectCardsById[Item.Id]
+		local Isnew = Carddata == nil
+		if Isnew then
+			Carddata = self:CreateSelectionCard(Item, self.openCardItemId == Item.Id, Cardsenabled)
+			self.selectCardsById[Item.Id] = Carddata
+		end
+		Carddata.Item = Item
+		Carddata.Frame.LayoutOrder = Order
+		self:FillItemStats(Carddata.Button, Item)
+		self:FillItemProgress(Carddata.Button, Item)
+		self:FillItemStats(Carddata.ButtonOpen, Item)
+		Carddata.ButtonOpen:WaitForChild("ObjectNameText").Text = tostring(Item.Name or "")
+		if Isnew then
+			Carddata.Frame.Parent = self.selectScrollingFrame
+		end
 		table.insert(self.selectCards, Carddata)
-		local Isopen = self.openCardItemId == Item.Id
-		Button.Visible = not Isopen
-		Buttonopen.Visible = Isopen
-		Card.ZIndex = if Isopen then 10 else 1
-		if Isopen then self.openCard = Carddata end
-		Shared.AnimateButton(Button, function() return not Button.Active end)
-		Shared.AnimateButton(Buttonopen, function() return not Buttonopen.Active end)
-		Shared.AnimateButton(Infobutton, function() return not Infobutton.Active end)
-		Shared.AnimateButton(Equipbutton, function() return not Equipbutton.Active end)
-		Core:GetController("GamepadController"):OnActivated(Button, function() self:SetCardOpen(Carddata, Item, true) end)
-		Core:GetController("GamepadController"):OnActivated(Buttonopen, function() self:SetCardOpen(Carddata, Item, false) end)
-		Core:GetController("GamepadController"):OnActivated(Infobutton, function() self:ShowItemInfo(Item, true) end)
-		Core:GetController("GamepadController"):OnActivated(Equipbutton, function() self:PlaceDisplayItem(Item.Id) end)
+		if self.openCardItemId == Item.Id then self.openCard = Carddata end
 		if self.infoItemId == Item.Id then Infoitem = Item end
 	end
 	if not self.openCard then self.openCardItemId = nil end
@@ -445,6 +485,7 @@ function Controller:OpenSelectionFrame(SlotIndex: number)
 
 	self.selectPlacementPending = false
 	self.selectFrameOpen = true
+	if self.selectDirty then self:RenderSelectionItems() end
 	self.selectScrollingFrame.CanvasPosition = Vector2.zero
 	if self.openCard then
 		self.openCard.Button.Visible = true
@@ -473,7 +514,6 @@ function Controller:CloseSelectionFrame(Instant: boolean?, Fast: boolean?)
 	self.selectFrameOpen = false
 	self.selectPlacementPending = false
 	self:CloseItemInfo()
-	self:SetSelectionControlsEnabled(false)
 	self:UpdateButtonAvailability()
 
 	if Instant then
@@ -760,6 +800,8 @@ function Controller:Init()
 	self.slotButtons = {}
 	self.animatedButtons = { self.reputationButtonL, self.reputationButtonR }
 	self.selectCards = {}
+	self.selectCardsById = {}
+	self.selectDirty = false
 	self.selectItems = {}
 	self.displayItemsBySlot = {}
 	self.displayItemsRevision = -1

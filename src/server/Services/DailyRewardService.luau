@@ -162,8 +162,7 @@ function DailyRewardService:GrantReward(Player: Player, Day: number, Data: Daily
 		return true
 	end
 	if Reward.Type == "Item" then
-		print("DailyRewardService: " .. Player.Name .. " received the day " .. Day .. " " .. Reward.Rarity .. " item")
-		return true
+		return (Core:GetService("RestorationService"):GrantObject(Player, Reward.ObjectKey))
 	end
 	if Reward.Type == "SaleBoost" then
 		Data.SaleBoostEndsAt = math.max(Data.SaleBoostEndsAt, Now()) + (tonumber(Reward.DurationSeconds) or 0)
@@ -182,10 +181,14 @@ function DailyRewardService:ClaimNextReward(Player: Player)
 	if Day > #Config.Rewards then return { Success = false, Reason = "CycleComplete", State = self:BuildState(Player) } end
 	local CanClaim = Data.ClaimedDays == 0 or CurrentTime >= Data.NextClaimAt
 	if not CanClaim then return { Success = false, Reason = "NotReady", State = self:BuildState(Player) } end
-	local Granted = self:GrantReward(Player, Day, Data)
-	if not Granted then return { Success = false, Reason = "RewardFailed", State = self:BuildState(Player) } end
+	local PreviousNextClaimAt = Data.NextClaimAt
 	Data.ClaimedDays = Day
 	Data.NextClaimAt = CurrentTime + (tonumber(Config.ClaimIntervalSeconds) or 0)
+	if not self:GrantReward(Player, Day, Data) then
+		Data.ClaimedDays = Day - 1
+		Data.NextClaimAt = PreviousNextClaimAt
+		return { Success = false, Reason = "RewardFailed", State = self:BuildState(Player) }
+	end
 	self:SavePlayer(Player)
 	self:PushState(Player)
 	if Config.Rewards[Day].Type == "SaleBoost" then Core:GetService("InventoryService"):PushItems(Player) end
@@ -264,6 +267,10 @@ function DailyRewardService:Init()
 		return self:BuildState(Player)
 	end)
 	RemoteManager:OnServerInvoke(self.Name, "ClaimReward", function(Player)
+		Core:GetService("DataService"):WaitForLoad(Player)
+		if not Player.Parent then
+			return { Success = false, Reason = "DataUnavailable" }
+		end
 		return self:ClaimNextReward(Player)
 	end)
 	game:BindToClose(function()

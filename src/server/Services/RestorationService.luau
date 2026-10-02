@@ -405,9 +405,7 @@ local function Returnsessionitem(Player: Player, Object: RestorationObject?)
 		return
 	end
 	Applyratiotoitem(Item, if Object then Getcompletionratio(Object) else Item.RestorationPercent / 100, Object)
-	local Inventoryservice = Core:GetService("InventoryService")
-	Inventoryservice:ReturnRestoredItem(Player, Item)
-	Inventoryservice:PushItems(Player)
+	Core:GetService("InventoryService"):ReturnRestoredItem(Player, Item)
 end
 
 local function Cleanupactiveobjectifidle()
@@ -731,13 +729,10 @@ function Restorationservice:PrepareObject(
 	return Object
 end
 
-function Restorationservice:GrantObject(Player: Player, Objectname: string, OnReady: (() -> ())?): (boolean, boolean)
-	if Config.Object[Objectname] == nil then return false, false end
+function Restorationservice:GrantObject(Player: Player, Objectname: string): boolean
+	if Config.Object[Objectname] == nil then return false end
 	Core:GetService("InventoryService"):AddPurchasedItem(Player, Objectname, Generateobjectmaximums(Objectname), 0)
-	if OnReady then
-		OnReady()
-	end
-	return true, true
+	return true
 end
 
 function Restorationservice:HasActiveSession(): boolean

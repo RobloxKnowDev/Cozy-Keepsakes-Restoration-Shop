@@ -58,13 +58,13 @@ local function ApplyCard(Controller, UpgradeName: string, State)
 		then FormatValue(State.CurrentValue)
 		elseif State.MaxLevel then string.format("%d/%d", State.Level, State.MaxLevel)
 		else string.format("%d/∞", State.Level)
-	CardData.CashPriceText.Text = if IsMax then "MAX" else Shared.FormatCurrency(State.CashPrice or 0)
+	CardData.CashPriceText.Text = if IsMax then "Max" else Shared.FormatCurrency(State.CashPrice or 0)
 	CardData.SecondText.Visible = SecondTexts[UpgradeName] ~= nil and not IsMax
 	local ProductId = tonumber(State.DeveloperProductId) or 0
 	CardData.ProductId = ProductId
 	if IsMax then
 		CardData.ProductRequestId += 1
-		CardData.RobuxPriceText.Text = "MAX"
+		CardData.RobuxPriceText.Text = "Max"
 	elseif WasMax or CardData.LastProductId ~= ProductId then
 		CardData.LastProductId = ProductId
 		LoadRobuxPrice(CardData, ProductId)

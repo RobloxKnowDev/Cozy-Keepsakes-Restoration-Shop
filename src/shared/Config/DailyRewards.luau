@@ -9,8 +9,8 @@ return {
 		},
 		{
 			Type = "Item",
-			Rarity = "Epic",
-			ValueText = "Epic Item",
+			ObjectKey = "Television",
+			ValueText = "Television",
 		},
 		{
 			Type = "Cash",
@@ -35,8 +35,8 @@ return {
 		},
 		{
 			Type = "Item",
-			Rarity = "Legendary",
-			ValueText = "Legendary Item",
+			ObjectKey = "RoyalCrown",
+			ValueText = "Royal crown",
 		},
 	},
 }

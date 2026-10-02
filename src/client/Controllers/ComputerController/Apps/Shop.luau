@@ -3,194 +3,131 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local BoostConfig = require(ReplicatedStorage.Shared.Config.Boosts)
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
-local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
 local MonetizationConfig = require(ReplicatedStorage.Shared.Config.Monetization)
+local ObjectConfig = require(ReplicatedStorage.Shared.Config.Object)
+local RarityConfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.Shared)
 
 local Shop = {}
 local Player = Players.LocalPlayer
-local RobuxIcon = ""
+local RobuxIcon = "\u{E002}"
 
-local function SetEnabled(Button: GuiButton, Enabled: boolean)
-	Button.Active = true
-	Button.Interactable = true
-	Button.AutoButtonColor = Enabled
-	Button:SetAttribute("CanPurchase", Enabled)
+local function NewCard(Card: Instance)
+	local Button = Card:WaitForChild("RobuxButton") :: GuiButton
+	return {
+		Button = Button,
+		PriceText = Button:WaitForChild("PriceText") :: TextLabel,
+		RequestId = 0,
+		Owned = false,
+	}
 end
 
-local function SetPrice(Button: GuiButton, Text: string)
-	Button:WaitForChild("PriceText").Text = Text
+local function SetPriceText(Card, Text: string)
+	Card.RequestId += 1
+	Card.PriceText.Text = Text
 end
 
-local function LoadPrice(Button: GuiButton, Id: number, InfoType: Enum.InfoType)
-	SetPrice(Button, "...")
+local function LoadPrice(Card, Id: number, InfoType: Enum.InfoType)
+	if Id <= 0 then
+		SetPriceText(Card, "N/A")
+		return
+	end
+	SetPriceText(Card, "...")
+	local RequestId = Card.RequestId
 	task.spawn(function()
-		local Info = MarketplaceService:GetProductInfo(Id, InfoType)
-		local Price = Info.PriceInRobux
-		SetPrice(Button, if Price then string.format("%s%d", RobuxIcon, Price) else "N/A")
+		local Success, Info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, Id, InfoType)
+		if Card.RequestId ~= RequestId then return end
+		local Price = if Success then tonumber(Info.PriceInRobux) else nil
+		Card.PriceText.Text = if Price then string.format("%s%d", RobuxIcon, Price) else "N/A"
 	end)
 end
 
-local function BindGamePass(Button: GuiButton, Id: number, PassName: string)
-	SetEnabled(Button, true)
-	Shared.AnimateButton(Button, function() return Button:GetAttribute("CanPurchase") ~= true end)
-	LoadPrice(Button, Id, Enum.InfoType.GamePass)
-	Core:GetController("GamepadController"):OnActivated(Button, function()
+local function BindGamePass(Controller, Card, PassName: string, Id: number)
+	Controller.shopPasses[PassName] = Card
+	Shared.AnimateButton(Card.Button, function() return false end)
+	LoadPrice(Card, Id, Enum.InfoType.GamePass)
+	Core:GetController("GamepadController"):OnActivated(Card.Button, function()
+		if Card.Owned then return end
 		if RunService:IsStudio() then
 			RemoteManager:InvokeServer("MonetizationService", "TestGamePass", PassName)
 			return
 		end
-		if not Button:GetAttribute("CanPurchase") then return end
 		MarketplaceService:PromptGamePassPurchase(Player, Id)
 	end)
 end
 
-local function BindProduct(Button: GuiButton, Id: number)
-	SetEnabled(Button, true)
-	Shared.AnimateButton(Button, function() return false end)
-	LoadPrice(Button, Id, Enum.InfoType.Product)
-	Core:GetController("GamepadController"):OnActivated(Button, function()
-		if not Button:GetAttribute("CanPurchase") then return end
+local function BindProduct(Card, Id: number)
+	Shared.AnimateButton(Card.Button, function() return false end)
+	LoadPrice(Card, Id, Enum.InfoType.Product)
+	Core:GetController("GamepadController"):OnActivated(Card.Button, function()
 		MarketplaceService:PromptProductPurchase(Player, Id)
 	end)
 end
 
 function Shop.ApplyState(Controller, State)
-	Controller.shopState = State
-
-	if State.OwnsVIP then
-		SetPrice(Controller.vipButton, "OWNED")
-		SetEnabled(Controller.vipButton, false)
+	for PassName, Card in pairs(Controller.shopPasses) do
+		if State["Owns" .. PassName] and not Card.Owned then
+			Card.Owned = true
+			SetPriceText(Card, "Owned")
+		end
 	end
-
-	if State.OwnsDoubleMoney then
-		SetPrice(Controller.doubleMoneyButton, "OWNED")
-		SetEnabled(Controller.doubleMoneyButton, false)
-	end
-
-	if State.OwnsStarterPack then
-		SetPrice(Controller.starterPackButton, "OWNED")
-		SetEnabled(Controller.starterPackButton, false)
-	end
-
-	Controller.currentLuckText.Text = tostring(State.ServerLuckMultiplier) .. "x"
-	Controller.nextLuckText.Text = if State.ServerLuckNextMultiplier then tostring(State.ServerLuckNextMultiplier) .. "x" else "MAX"
-	Controller.minutesText.Text = FormatDuration(State.ServerLuckEndsAt - workspace:GetServerTimeNow())
-	Controller.minutesText.Visible = true
 	local IsMax = State.ServerLuckNextMultiplier == nil
-	Controller.currentLuckText.Visible = not IsMax
-	Controller.nextLuckText.Visible = not IsMax
-	Controller.luckArrowText.Text = if IsMax then "MAX" else Controller.luckArrowDefaultText
-	Controller.luckArrowText.TextColor3 = if IsMax then Controller.nextLuckColor else Controller.luckArrowDefaultColor
-	Controller.luckArrowScale.Scale = if IsMax then 2 else 1
-	Controller.serverLuckProductId = State.ServerLuckNextProductId
-
-	if Controller.serverLuckProductId > 0 then
-		SetEnabled(Controller.serverLuckButton, true)
-		LoadPrice(Controller.serverLuckButton, Controller.serverLuckProductId, Enum.InfoType.Product)
+	Controller.serverLuckFirstText.Text = tostring(State.ServerLuckMultiplier) .. "x"
+	Controller.serverLuckMiddleText.Text = if IsMax then "Max" else Controller.serverLuckMiddleDefaultText
+	Controller.serverLuckSecondText.Text = tostring(State.ServerLuckNextMultiplier or State.ServerLuckMultiplier) .. "x"
+	local ProductId = State.ServerLuckNextProductId
+	if ProductId == Controller.serverLuckProductId then return end
+	Controller.serverLuckProductId = ProductId
+	if ProductId > 0 then
+		LoadPrice(Controller.serverLuckCard, ProductId, Enum.InfoType.Product)
 	else
-		SetPrice(Controller.serverLuckButton, "MAX")
-		SetEnabled(Controller.serverLuckButton, false)
+		SetPriceText(Controller.serverLuckCard, "Max")
 	end
 end
 
 function Shop.Init(Controller)
-	Controller.shopScrollingFrame = Controller.shopFrame:WaitForChild("ScrollingFrame")
-	Controller.shopGridLayout = Controller.shopScrollingFrame:WaitForChild("UIGridLayout")
+	Controller.shopScrollingFrame = Controller.shopPage:WaitForChild("ScrollingFrame")
+	Controller.shopPasses = {}
+	Controller.serverLuckProductId = -1
 
-	local GamePasses = Controller.shopScrollingFrame:WaitForChild("GamePasses"):WaitForChild("Button")
-	local Money = Controller.shopScrollingFrame:WaitForChild("Money"):WaitForChild("Button")
-	local Money2 = Controller.shopScrollingFrame:WaitForChild("Money2"):WaitForChild("Button")
-	local ServerLuck = Controller.shopScrollingFrame:WaitForChild("ServerReputationLuck"):WaitForChild("Button")
-	local StarterPack = Controller.shopScrollingFrame:WaitForChild("StarterPack"):WaitForChild("Button")
+	local Scrolling = Controller.shopScrollingFrame
+	local GamePasses = Scrolling:WaitForChild("GamePasses")
+	local Cash1 = Scrolling:WaitForChild("Cash1")
+	local Cash2 = Scrolling:WaitForChild("Cash2")
+	BindGamePass(Controller, NewCard(GamePasses:WaitForChild("2xCash")), "DoubleMoney", MonetizationConfig.GamePasses.DoubleMoney)
+	BindGamePass(Controller, NewCard(GamePasses:WaitForChild("2xReputation")), "DoubleReputation", MonetizationConfig.GamePasses.DoubleReputation)
+	BindGamePass(Controller, NewCard(Scrolling:WaitForChild("VIP")), "VIP", MonetizationConfig.GamePasses.VIP)
+	BindGamePass(Controller, NewCard(Scrolling:WaitForChild("StarterPack")), "StarterPack", MonetizationConfig.StarterPack.Id)
+	BindProduct(NewCard(Cash1:WaitForChild("Pack1")), MonetizationConfig.CashProducts.Cash1.Id)
+	BindProduct(NewCard(Cash1:WaitForChild("Pack2")), MonetizationConfig.CashProducts.Cash2.Id)
+	BindProduct(NewCard(Cash2:WaitForChild("Pack3")), MonetizationConfig.CashProducts.Cash3.Id)
+	BindProduct(NewCard(Cash2:WaitForChild("Pack4")), MonetizationConfig.CashProducts.Cash4.Id)
 
-	GamePasses.AutoButtonColor = false
-	Money.AutoButtonColor = false
-	Money2.AutoButtonColor = false
-	ServerLuck.AutoButtonColor = false
-	StarterPack.AutoButtonColor = false
-	GamePasses.Interactable = true
-	Money.Interactable = true
-	Money2.Interactable = true
-	ServerLuck.Interactable = true
-	StarterPack.Interactable = true
-	GamePasses.Active = true
-	Money.Active = true
-	Money2.Active = true
-	ServerLuck.Active = true
-	StarterPack.Active = true
-
-	Controller.doubleMoneyButton = GamePasses:WaitForChild("Cash"):WaitForChild("RobuxButton")
-	Controller.vipButton = GamePasses:WaitForChild("Vip"):WaitForChild("RobuxButton")
-	Controller.cash1Button = Money:WaitForChild("Cash1"):WaitForChild("RobuxButton")
-	Controller.cash2Button = Money:WaitForChild("Cash2"):WaitForChild("RobuxButton")
-	Controller.cash3Button = Money:WaitForChild("Cash3"):WaitForChild("RobuxButton")
-	Controller.cash4Button = Money2:WaitForChild("Cash4"):WaitForChild("RobuxButton")
-	Controller.serverLuckButton = ServerLuck:WaitForChild("RobuxButton")
-	Controller.starterPackButton = StarterPack:WaitForChild("RobuxButton")
-	Controller.currentLuckText = ServerLuck:WaitForChild("CurrentLuckText")
-	Controller.nextLuckText = ServerLuck:WaitForChild("NextLuckText")
-	Controller.minutesText = ServerLuck:WaitForChild("MinutesText")
-	Controller.luckArrowText = ServerLuck:WaitForChild(">Label")
-	Controller.luckArrowScale = Shared.EnsureScale(Controller.luckArrowText)
-	Controller.luckArrowDefaultText = Controller.luckArrowText.Text
-	Controller.luckArrowDefaultColor = Controller.luckArrowText.TextColor3
-	Controller.nextLuckColor = Controller.nextLuckText.TextColor3
-	StarterPack:WaitForChild("Reputation"):WaitForChild("Icon").Image = BoostConfig.StarterReputation.Icon
-	ServerLuck:WaitForChild("Icon").Image = BoostConfig.ServerReputationLuck.Icon
-	for _, Button in ipairs({
-		Controller.doubleMoneyButton,
-		Controller.vipButton,
-		Controller.cash1Button,
-		Controller.cash2Button,
-		Controller.cash3Button,
-		Controller.cash4Button,
-		Controller.serverLuckButton,
-		Controller.starterPackButton,
-	}) do
-		Button.ZIndex = 10
-		Button:WaitForChild("PriceText").ZIndex = 11
-	end
-	BindGamePass(Controller.doubleMoneyButton, MonetizationConfig.GamePasses.DoubleMoney, "DoubleMoney")
-	BindGamePass(Controller.vipButton, MonetizationConfig.GamePasses.VIP, "VIP")
-	BindProduct(Controller.cash1Button, MonetizationConfig.CashProducts.Cash1.Id)
-	BindProduct(Controller.cash2Button, MonetizationConfig.CashProducts.Cash2.Id)
-	BindProduct(Controller.cash3Button, MonetizationConfig.CashProducts.Cash3.Id)
-	BindProduct(Controller.cash4Button, MonetizationConfig.CashProducts.Cash4.Id)
-	BindGamePass(Controller.starterPackButton, MonetizationConfig.StarterPack.Id, "StarterPack")
-
-	Shared.AnimateButton(Controller.serverLuckButton, function()
-		return Controller.serverLuckButton:GetAttribute("CanPurchase") ~= true
-	end)
-	Core:GetController("GamepadController"):OnActivated(Controller.serverLuckButton, function()
-		if not Controller.serverLuckButton:GetAttribute("CanPurchase") then return end
-		MarketplaceService:PromptProductPurchase(Player, Controller.serverLuckProductId)
+	local ServerLuck = Scrolling:WaitForChild("ServerReputationLuck")
+	Controller.serverLuckCard = NewCard(ServerLuck)
+	Controller.serverLuckFirstText = ServerLuck:WaitForChild("FirstText") :: TextLabel
+	Controller.serverLuckMiddleText = ServerLuck:WaitForChild("MiddleText") :: TextLabel
+	Controller.serverLuckSecondText = ServerLuck:WaitForChild("SecondText") :: TextLabel
+	Controller.serverLuckMiddleDefaultText = Controller.serverLuckMiddleText.Text
+	Shared.AnimateButton(Controller.serverLuckCard.Button, function() return false end)
+	Core:GetController("GamepadController"):OnActivated(Controller.serverLuckCard.Button, function()
+		if Controller.serverLuckProductId > 0 then
+			MarketplaceService:PromptProductPurchase(Player, Controller.serverLuckProductId)
+		end
 	end)
 
 	Shop.ApplyState(Controller, RemoteManager:InvokeServer("MonetizationService", "GetShopState"))
 end
 
 function Shop.Start(Controller)
-	Controller.shopGridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		Controller.shopScrollingFrame.CanvasSize = UDim2.fromOffset(0, Controller.shopGridLayout.AbsoluteContentSize.Y)
-	end)
-
 	RemoteManager:OnClientEvent("MonetizationService", "ShopStateUpdated", function(State)
 		Shop.ApplyState(Controller, State)
 	end)
 	RemoteManager:OnClientEvent("MonetizationService", "StarterPackGranted", function()
-		Controller:Close()
-		Core:GetController("RestorationController"):Enter()
-	end)
-
-	task.spawn(function()
-		while true do
-			task.wait(1)
-			Controller.minutesText.Text = FormatDuration(Controller.shopState.ServerLuckEndsAt - workspace:GetServerTimeNow())
-		end
+		local Definition = ObjectConfig.Object[MonetizationConfig.StarterPack.ObjectKey]
+		Core:GetController("MessageController"):Show(Definition.Name .. " added to your inventory", RarityConfig[Definition.Rarity].Gradient)
 	end)
 end
 

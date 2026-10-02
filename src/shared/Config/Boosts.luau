@@ -24,4 +24,9 @@ return {
 		Title = "Index Sell Bonus",
 		Icon = "rbxassetid://88682218694776",
 	},
+
+	VIP = {
+		Title = "VIP",
+		Icon = "rbxassetid://105316064080717",
+	},
 }
