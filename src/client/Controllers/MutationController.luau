@@ -5,6 +5,8 @@ local Runservice = game:GetService("RunService")
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 
 local RainbowStops = 6
+local RainbowRotation = 90
+local Baserotations = setmetatable({}, { __mode = "k" })
 
 local Mutationcontroller = {
 	Name = "MutationController",
@@ -46,6 +48,15 @@ function Mutationcontroller:GetGradient(Mutation: string): ColorSequence?
 		return self.rainbowSequence
 	end
 	return Definition.Gradient
+end
+
+function Mutationcontroller:SetRainbowRotation(Gradient: UIGradient, Rainbow: boolean)
+	local Base = Baserotations[Gradient]
+	if Base == nil then
+		Base = Gradient.Rotation
+		Baserotations[Gradient] = Base
+	end
+	Gradient.Rotation = if Rainbow then Base + RainbowRotation else Base
 end
 
 function Mutationcontroller:Paint(Hue: number)

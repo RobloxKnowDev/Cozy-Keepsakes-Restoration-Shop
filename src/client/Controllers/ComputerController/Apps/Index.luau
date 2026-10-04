@@ -112,6 +112,7 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 		MutationGradient.Color = Mutation.Gradient
 		if Page == "Rainbow" then
 			table.insert(Controller.indexRainbowGradients, MutationGradient)
+			Core:GetController("MutationController"):SetRainbowRotation(MutationGradient, true)
 		end
 		Icon.Image = tostring(Entry.ImageId or "")
 		if IsUnlocked then
@@ -164,6 +165,7 @@ function Index.Init(Controller)
 	Controller.indexTemplate.Visible = false
 	Controller.indexMutationFrame = Page:WaitForChild("MutationButton")
 	Controller.indexRainbowGradient = Uigradient.Ensure(Controller.indexMutationFrame:WaitForChild("RainbowButton"):WaitForChild("Text"))
+	Core:GetController("MutationController"):SetRainbowRotation(Controller.indexRainbowGradient, true)
 	Controller.indexRainbowGradients = {}
 	Controller.indexMutation = "Normal"
 	Controller.indexMutationRefreshes = {}

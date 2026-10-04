@@ -112,9 +112,11 @@ function Inventory.ShowItemInfo(Controller, Item, Animate: boolean?)
 		then Mutation.BackgroundGradient
 		else Controller.inventoryInfoMutationFrameBaseGradient
 	Controller.inventoryInfoReputationText.Text = tostring(GetReputation(Item))
-	Controller.inventoryRainbowGradients = if HasMutation and Item.Mutation == "Rainbow"
+	local Rainbow = HasMutation and Item.Mutation == "Rainbow"
+	Controller.inventoryRainbowGradients = if Rainbow
 		then { Controller.inventoryInfoMutationGradient, Controller.inventoryInfoMutationFrameGradient }
 		else nil
+	Core:GetController("MutationController"):SetRainbowRotation(Controller.inventoryInfoMutationGradient, Rainbow)
 	Controller.inventoryBlackFrame.Visible = true
 	Controller.inventoryInfoFrame.Visible = true
 	if Animate then

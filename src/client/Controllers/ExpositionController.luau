@@ -160,7 +160,7 @@ end
 
 function Controller:UpdateButtonAvailability()
 	if self.isTransitioning then return end
-	local Currentbutton = if self.isOpen then self.reputationButtonL else self.reputationButtonR
+	local Currentbutton = if self.isOpen then self.reputationButtonR else self.reputationButtonL
 	local Canuse = self:CanUseButtons()
 	for _, Button in ipairs({ self.reputationButtonL, self.reputationButtonR }) do
 		local Enabled = Canuse and Button == Currentbutton and Button.Visible
@@ -206,7 +206,7 @@ function Controller:RefreshButtons()
 		return
 	end
 
-	local Button = if self.isOpen then self.reputationButtonL else self.reputationButtonR
+	local Button = if self.isOpen then self.reputationButtonR else self.reputationButtonL
 	Button.Visible = true
 	if Previousmode == "Hidden" then
 		self.buttonScales[Button].Scale = 0.82
@@ -325,9 +325,9 @@ function Controller:ShowItemInfo(Item, Animate: boolean?)
 	self.infoMutationGradient.Color = if Hasmutation then Mutation.Gradient else self.infoMutationBaseGradient
 	self.infoMutationFrameGradient.Color = if Hasmutation then Mutation.BackgroundGradient else self.infoMutationFrameBaseGradient
 	self.infoReputationText.Text = tostring(self:GetBaseReputation(Item))
-	self.selectRainbowGradients = if Hasmutation and Item.Mutation == "Rainbow"
-		then { self.infoMutationGradient, self.infoMutationFrameGradient }
-		else nil
+	local Rainbow = Hasmutation and Item.Mutation == "Rainbow"
+	self.selectRainbowGradients = if Rainbow then { self.infoMutationGradient, self.infoMutationFrameGradient } else nil
+	Core:GetController("MutationController"):SetRainbowRotation(self.infoMutationGradient, Rainbow)
 	self.blackFrame.Visible = true
 	self.infoFrame.Visible = true
 	if Animate then
@@ -692,7 +692,7 @@ function Controller:Open()
 	end
 	if not self.cameraController:ShowExpositionCamera(RevealSlots, RevealSlots) then return end
 	self.isOpen = true
-	self:SwapButtons(self.reputationButtonR, self.reputationButtonL)
+	self:SwapButtons(self.reputationButtonL, self.reputationButtonR)
 end
 
 function Controller:Close()
@@ -704,7 +704,7 @@ function Controller:Close()
 	self.slotsRevealReached = false
 	self.isOpen = false
 	self:HideSlotButtons()
-	self:SwapButtons(self.reputationButtonL, self.reputationButtonR)
+	self:SwapButtons(self.reputationButtonR, self.reputationButtonL)
 
 end
 
@@ -855,10 +855,10 @@ function Controller:Init()
 		self.hoveredButtons[Button] = false
 	end
 
-	self.reputationButtonL.Visible = false
+	self.reputationButtonL.Visible = true
 	self.reputationButtonL.Active = false
 	self.reputationButtonL.Interactable = false
-	self.reputationButtonR.Visible = true
+	self.reputationButtonR.Visible = false
 	self.reputationButtonR.Active = false
 	self.reputationButtonR.Interactable = false
 	self.selectGridLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -917,8 +917,8 @@ function Controller:Start()
 	for _, Button in ipairs(self.animatedButtons) do self:BindButtonAnimation(Button) end
 	Shared.AnimateButton(self.selectCloseButton, function() return not self.selectCloseButton.Active end)
 	Shared.AnimateButton(self.infoCloseButton, function() return not self.infoCloseButton.Active end)
-	Core:GetController("GamepadController"):OnActivated(self.reputationButtonR, function() self:Open() end)
-	Core:GetController("GamepadController"):OnActivated(self.reputationButtonL, function() self:Close() end)
+	Core:GetController("GamepadController"):OnActivated(self.reputationButtonL, function() self:Open() end)
+	Core:GetController("GamepadController"):OnActivated(self.reputationButtonR, function() self:Close() end)
 	Core:GetController("GamepadController"):OnActivated(self.selectCloseButton, function() self:CloseSelectionFrame(false) end)
 	Core:GetController("GamepadController"):OnActivated(self.infoCloseButton, function() self:CloseItemInfo() end)
 	for _, Slot in ipairs(self.slotButtons) do

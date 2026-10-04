@@ -453,7 +453,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 	local Color = Gradient.Keypoints[1].Value
 	local Buildup = MutationBuildupSeconds
 	local Camera = Workspace.CurrentCamera
-	local Fovorigin = Camera.FieldOfView
+	local Cameracontroller = Core:GetController("InspectionCameraController")
 	local Container = Instance.new("Frame")
 	Container.Name = "MutationReveal"
 	Container.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -540,7 +540,7 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 
 	if self:IsMotionEnabled() then
 		self:Tween("Fov", Camera, TweenInfo.new(Buildup, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-			FieldOfView = Fovorigin - 9,
+			FieldOfView = Cameracontroller:GetFieldOfView() - 9,
 		})
 	end
 
@@ -560,10 +560,10 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 	task.delay(Buildup, function()
 		if self:IsMotionEnabled() then
 			self:Tween("Fov", Camera, TweenInfo.new(0.09, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-				FieldOfView = Fovorigin + 9,
+				FieldOfView = Cameracontroller:GetFieldOfView() + 9,
 			}).Completed:Once(function()
 				self:Tween("Fov", Camera, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					FieldOfView = Fovorigin,
+					FieldOfView = Cameracontroller:GetFieldOfView(),
 				})
 			end)
 		end
@@ -642,6 +642,9 @@ function FeedbackController:MutationReveal(Name: string, Gradient: ColorSequence
 		Labelgradient = Instance.new("UIGradient")
 		Labelgradient.Color = Gradient
 		Labelgradient.Parent = Label
+		if Rainbow then
+			Core:GetController("MutationController"):SetRainbowRotation(Labelgradient, true)
+		end
 
 		local Shinelabel = Instance.new("TextLabel")
 		Shinelabel.Name = "Shine"
@@ -933,6 +936,7 @@ function FeedbackController:RewardPopup(TitleText: string, RewardText: string, T
 		Titlegradient.Rotation = 90
 		Titlegradient.Parent = Title
 		if Rainbow then
+			Core:GetController("MutationController"):SetRainbowRotation(Titlegradient, true)
 			local Connection
 			Connection = RunService.Heartbeat:Connect(function()
 				if not Container.Parent then
@@ -1030,9 +1034,9 @@ end
 function FeedbackController:FovPunch(Amount: number?)
 	if not self:IsMotionEnabled() then return end
 	local Camera = Workspace.CurrentCamera
-	local Origin = Camera.FieldOfView
-	self:Tween("Fov", Camera, TweenInfo.new(0.08, Enum.EasingStyle.Quad), { FieldOfView = Origin + (Amount or 2) }).Completed:Once(function()
-		self:Tween("Fov", Camera, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { FieldOfView = Origin })
+	local Cameracontroller = Core:GetController("InspectionCameraController")
+	self:Tween("Fov", Camera, TweenInfo.new(0.08, Enum.EasingStyle.Quad), { FieldOfView = Cameracontroller:GetFieldOfView() + (Amount or 2) }).Completed:Once(function()
+		self:Tween("Fov", Camera, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { FieldOfView = Cameracontroller:GetFieldOfView() })
 	end)
 end
 

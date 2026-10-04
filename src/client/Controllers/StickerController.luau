@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Playershop = require(Replicatedstorage.Shared.Utils.PlayerShop)
 
 local Stickercontroller = { Name = "StickerController", Priority = 9 }
 local Peeldistance = 200
@@ -28,7 +29,7 @@ end
 function Stickercontroller:Init()
 	self.gui = Players.LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("PackageUi")
 	self.camera = Workspace.CurrentCamera
-	self.generatedItems = Workspace:WaitForChild("Map"):WaitForChild("Slot1"):WaitForChild("GeneratedItems")
+	self.generatedItems = Playershop(Players.LocalPlayer):WaitForChild("GeneratedItems")
 	self.looseStickers = {}
 	self:Reset()
 end

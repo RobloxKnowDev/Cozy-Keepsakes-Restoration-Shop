@@ -141,13 +141,6 @@ function Customercontroller:IsVisible(): boolean
 	return self.gui.Enabled and self.frame.Visible
 end
 
-function Customercontroller:IsFrontCustomer(Customer: Model?): boolean
-	return Customer ~= nil
-		and Customer:GetAttribute("QueueCustomerInstance") == true
-		and Customer:GetAttribute("IsFrontCustomer") == true
-		and Customer:GetAttribute("ArrivedAtSlot1") == true
-end
-
 function Customercontroller:CanInteract(): boolean
 	local Computercontroller = Core:GetController("ComputerController")
 	local Cameracontroller = Core:GetController("InspectionCameraController")
@@ -171,8 +164,7 @@ end
 
 function Customercontroller:GetInteractionCustomer(): Model?
 	local Offer = self.pendingOffer
-	local Customer = if Offer then Offer.Customer else nil
-	return if self:IsFrontCustomer(Customer) then Customer else nil
+	return if Offer then Offer.Customer else nil
 end
 
 function Customercontroller:GetCustomerAtPosition(Screenposition: Vector2?, Expandtouch: boolean?): Model?
@@ -485,7 +477,7 @@ function Customercontroller:Start()
 		local Token = Offertoken
 		if Offer then
 
-			local Customer = Workspace:WaitForChild(Offer.CustomerName) :: Model
+			local Customer = Core:GetController("StreetCustomerController").visuals:WaitForChild(Offer.CustomerName) :: Model
 			if Token ~= Offertoken then
 				return
 			end

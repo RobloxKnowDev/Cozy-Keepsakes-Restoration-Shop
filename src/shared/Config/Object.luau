@@ -21,7 +21,7 @@ return {
 			Rarity = "Common",
 			Reputation = 3,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		AlarmClock = {
 			Name = "Alarm clock",
@@ -32,7 +32,7 @@ return {
 			Rarity = "Common",
 			Reputation = 3,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		Vase = {
 			Name = "Vase",
@@ -43,7 +43,7 @@ return {
 			Rarity = "Common",
 			Reputation = 3,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		ClothesIron = {
 			Name = "Clothes iron",
@@ -54,7 +54,7 @@ return {
 			Rarity = "Common",
 			Reputation = 3,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		Teapot = {
 			Name = "Teapot",
@@ -65,7 +65,7 @@ return {
 			Rarity = "Common",
 			Reputation = 3,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		ToyCar = {
 			Name = "Toy car",
@@ -76,7 +76,7 @@ return {
 			Rarity = "Common",
 			Reputation = 3,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		KitchenScale = {
 			Name = "Kitchen scale",
@@ -87,7 +87,7 @@ return {
 			Rarity = "Common",
 			Reputation = 3,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		RetroFan = {
 			Name = "Retro fan",
@@ -98,7 +98,7 @@ return {
 			Rarity = "Common",
 			Reputation = 3,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		AntiqueGlasses = {
 			Name = "Antique glasses",
@@ -109,7 +109,7 @@ return {
 			Rarity = "Common",
 			Reputation = 3,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		RotaryPhone = {
 			Name = "Rotary phone",
@@ -120,7 +120,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		ElectricTrain = {
 			Name = "Electric train",
@@ -131,7 +131,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		WallClock = {
 			Name = "Wall clock",
@@ -142,7 +142,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		Typewriter = {
 			Name = "Typewriter",
@@ -153,7 +153,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		RecordPlayer = {
 			Name = "Record player",
@@ -164,7 +164,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		SewingMachine = {
 			Name = "Sewing machine",
@@ -175,7 +175,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		VintageGuitar = {
 			Name = "Vintage guitar",
@@ -186,7 +186,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		FilmProjector = {
 			Name = "Film projector",
@@ -197,7 +197,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		MantelClock = {
 			Name = "Mantel clock",
@@ -208,7 +208,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		Television = {
 			Name = "Television",
@@ -219,7 +219,7 @@ return {
 			Rarity = "Epic",
 			Reputation = 50,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		SlotMachine = {
 			Name = "Slot machine",
@@ -230,7 +230,7 @@ return {
 			Rarity = "Epic",
 			Reputation = 50,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		CuckooClock = {
 			Name = "Cuckoo clock",
@@ -241,7 +241,7 @@ return {
 			Rarity = "Epic",
 			Reputation = 50,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		AntiqueSafe = {
 			Name = "Antique safe",
@@ -252,7 +252,7 @@ return {
 			Rarity = "Epic",
 			Reputation = 50,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		Jukebox = {
 			Name = "Jukebox",
@@ -263,7 +263,7 @@ return {
 			Rarity = "Legendary",
 			Reputation = 110,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		AntiqueTelescope = {
 			Name = "Antique telescope",
@@ -274,7 +274,7 @@ return {
 			Rarity = "Legendary",
 			Reputation = 110,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		CollectorSword = {
 			Name = "Collector's sword",
@@ -285,7 +285,7 @@ return {
 			Rarity = "Legendary",
 			Reputation = 110,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		RoyalCrown = {
 			Name = "Royal crown",
@@ -296,7 +296,7 @@ return {
 			Rarity = "Legendary",
 			Reputation = 110,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		AntiqueStatue = {
 			Name = "Antique statue",
@@ -307,7 +307,7 @@ return {
 			Rarity = "Legendary",
 			Reputation = 110,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		DinosaurSkull = {
 			Name = "Dinosaur skull",
@@ -318,7 +318,7 @@ return {
 			Rarity = "Mythic",
 			Reputation = 240,
 			Sticker = false,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		MeteoriteFragment = {
 			Name = "Meteorite fragment",
@@ -329,7 +329,7 @@ return {
 			Rarity = "Mythic",
 			Reputation = 240,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		MagicMirror = {
 			Name = "Magic mirror",
@@ -340,7 +340,7 @@ return {
 			Rarity = "Mythic",
 			Reputation = 240,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 		MagicMenhir = {
 			Name = "Magic menhir",
@@ -351,7 +351,7 @@ return {
 			Rarity = "Mythic",
 			Reputation = 240,
 			Sticker = true,
-			Rotation = Vector3.new(0, 180, 0),
+			Rotation = Vector3.new(0, 0, 0),
 		},
 	},
 }

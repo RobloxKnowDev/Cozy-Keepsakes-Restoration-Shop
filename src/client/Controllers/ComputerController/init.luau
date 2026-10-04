@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local PlayerShop = require(ReplicatedStorage.Shared.Utils.PlayerShop)
 local UiFade = require(ReplicatedStorage.Shared.Utils.UiFade)
 local DailyTasks = require(script.Apps.DailyTasks)
 local Home = require(script.Apps.Home)
@@ -112,7 +113,7 @@ function ComputerController:SetHudVisible(IsVisible: boolean)
 	UiFade.SetVisible(self.hudDayFrame, IsVisible)
 	UiFade.SetVisible(self.hudDayText, IsVisible)
 	UiFade.SetVisible(self.hudHourText, IsVisible)
-	self.hudCooldownFrame.Visible = IsVisible
+	Core:GetController("HudCustomerController"):SetHudVisible(IsVisible)
 end
 
 function ComputerController:SetSellLocked(Locked: boolean)
@@ -243,11 +244,7 @@ end
 
 function ComputerController:Init()
 	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-	self.computer = Workspace:WaitForChild("Map")
-		:WaitForChild("Slot1")
-		:WaitForChild("Work")
-		:WaitForChild("Utilities")
-		:WaitForChild("Ordi")
+	self.computer = PlayerShop(Players.LocalPlayer):WaitForChild("Ordi")
 	self.buttonModel = self.computer:WaitForChild("Button")
 	self.coreModel = self.computer:WaitForChild("Core"):WaitForChild("Model") :: BasePart
 	self.postitModel = self.computer:WaitForChild("Postit")
@@ -291,7 +288,6 @@ function ComputerController:Init()
 	self.hud = PlayerGui:WaitForChild("HUD")
 	self.hudCashFrame = self.hud:WaitForChild("CashFrame") :: GuiObject
 	self.hudDayFrame = self.hud:WaitForChild("DayFrame") :: GuiObject
-	self.hudCooldownFrame = self.hud:WaitForChild("CooldownFrame") :: GuiObject
 	self.hudCashText = self.hudCashFrame:WaitForChild("Text")
 	self.hudDayText = self.hudDayFrame:WaitForChild("DayText")
 	self.hudHourText = self.hudDayFrame:WaitForChild("HourText")

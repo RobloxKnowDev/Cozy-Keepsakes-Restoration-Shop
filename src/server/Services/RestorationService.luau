@@ -58,7 +58,7 @@ local Spothealth = { Sticker = 3 }
 local Toolpower = { CottonTip = 1, HeatGun = 1, Polish = 1, Solvent = 1, ToothBrush = 1, Tweezers = 1 }
 local Toolsforspot = { Sticker = "Tweezers" }
 type CoverageEntry = { Cells: { number }, Hits: number, Premarked: number, Passes: number }
-local Coverage: { [Instance]: CoverageEntry } = {}
+local Coverage: { [RestorationObject]: { [Instance]: CoverageEntry } } = {}
 
 type CoverageMask = { Blank: { boolean }, Premarked: number }
 local Maskcache: { [string]: CoverageMask } = {}
@@ -195,9 +195,6 @@ end
 
 type RestorationObject = Model | BasePart
 
-local Slot: Folder
-local Generateditems: Folder
-
 type ObjectMaximums = {
 	MaxValue: number,
 	MaxReputation: number,
@@ -212,7 +209,7 @@ local Lastclean: { [Player]: number } = {}
 local Lastscratchclean: { [Player]: number } = {}
 local Lastinkclean: { [Player]: number } = {}
 local Peeling: { [Player]: BasePart } = {}
-local Activeobject: RestorationObject? = nil
+local Activeobjects: { [Player]: RestorationObject } = {}
 local Randomgenerator = Random.new()
 
 local function Roundtwodecimals(Value: number): number
@@ -261,6 +258,7 @@ end
 local function Destroyobject(Object: RestorationObject?)
 	if Object and Object.Parent then
 		Mutationbyobject[Object] = nil
+		Coverage[Object] = nil
 		Object:Destroy()
 	end
 end
@@ -344,7 +342,7 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 			and Hideable[Entry.Kind] >= Entry.Units * Precleansnapratio
 		then
 			if Isdirt then
-				Coverage[Descendant] = nil
+				Coverage[Object][Descendant] = nil
 				Descendant:Destroy()
 			else
 				Descendant.Visible = false
@@ -408,11 +406,9 @@ local function Returnsessionitem(Player: Player, Object: RestorationObject?)
 	Core:GetService("InventoryService"):ReturnRestoredItem(Player, Item)
 end
 
-local function Cleanupactiveobjectifidle()
-	if next(Sessions) == nil then
-		Destroyobject(Activeobject)
-		Activeobject = nil
-	end
+local function Releaseactiveobject(Player: Player)
+	Destroyobject(Activeobjects[Player])
+	Activeobjects[Player] = nil
 end
 
 local function Validsessionspot(Player: Player, Spot: any): (RestorationObject?, boolean)
@@ -424,8 +420,8 @@ local function Validsessionspot(Player: Player, Spot: any): (RestorationObject?,
 	return Object, Spots ~= nil and Spot:IsDescendantOf(Spots)
 end
 
-local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximums?): RestorationObject
-	local Spawnattachment = Slot:WaitForChild("Spawn") :: Attachment
+local function Spawnconfiguredobject(Objectname: string, Shop: Model, Maximums: ObjectMaximums?): RestorationObject
+	local Spawnattachment = Shop:WaitForChild("Attachement"):WaitForChild("Spawn") :: Attachment
 	local Definition = Config.Object[Objectname]
 	local Asset = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object"):WaitForChild(Objectname)
 	local Object = Asset:Clone() :: RestorationObject
@@ -450,7 +446,7 @@ local function Spawnconfiguredobject(Objectname: string, Maximums: ObjectMaximum
 	Object:SetAttribute("Rarity", Definition.Rarity or Definition.Rarety or "Common")
 	Object:SetAttribute("ImageId", Definition.IdImage or "")
 	Object:SetAttribute("MaxReputation", Maxreputation)
-	Object.Parent = Generateditems
+	Object.Parent = Shop:WaitForChild("GeneratedItems")
 	local Spawncframe = Spawnattachment.WorldCFrame * CFrame.Angles(0, math.rad(90), 0) * Getobjectrotation(Objectname)
 	if Object:IsA("Model") then
 		Object:PivotTo(Spawncframe)
@@ -517,7 +513,7 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean, Se
 		local Entry = if Kept < Keptcount then Buildcoverageentry(Decal, Decal.Texture, Cleaningconfig.DirtPasses) else nil
 		if Entry and Premarkunreachable(Entry, Object, Decal) then
 			Kept += 1
-			Coverage[Decal] = Entry
+			Coverage[Object][Decal] = Entry
 			Decal:SetAttribute("Cleaned", false)
 			Totaldirt += 16
 		else
@@ -550,7 +546,7 @@ local function Initializescratches(Object: RestorationObject): number
 			Texture:SetAttribute("Remaining", 1)
 			Texture:SetAttribute("HasPolish", false)
 			Descendant:SetAttribute("Cleaned", false)
-			Coverage[Descendant] = Buildcoverageentry(Texture, Texture.Image, 1)
+			Coverage[Object][Descendant] = Buildcoverageentry(Texture, Texture.Image, 1)
 			Totalscratches += 1
 		end
 	end
@@ -576,7 +572,7 @@ local function Initializeink(Object: RestorationObject): number
 			Texture:SetAttribute("Remaining", 1)
 			Texture:SetAttribute("HasSolvent", false)
 			Descendant:SetAttribute("Cleaned", false)
-			Coverage[Descendant] = Buildcoverageentry(Texture, Texture.Image, 1)
+			Coverage[Object][Descendant] = Buildcoverageentry(Texture, Texture.Image, 1)
 			Totalink += 1
 		end
 	end
@@ -649,7 +645,7 @@ local function Iscovered(Entry: CoverageEntry): boolean
 end
 
 local function Createspots(Object: RestorationObject, Singleface: boolean, Seed: number)
-	table.clear(Coverage)
+	Coverage[Object] = {}
 	Warmmasks(Object)
 	local Old = Object:FindFirstChild("RestorationSpots")
 	if Old then
@@ -697,13 +693,13 @@ end
 
 function Restorationservice:PrepareObject(
 	Objectname: string,
-	Owner: Player?,
+	Owner: Player,
 	Maximums: ObjectMaximums?,
 	Percent: number?,
 	Progress: { [string]: number }?
 ): RestorationObject
-	Destroyobject(Activeobject)
-	local Object = Spawnconfiguredobject(Objectname, Maximums)
+	Releaseactiveobject(Owner)
+	local Object = Spawnconfiguredobject(Objectname, Core:GetService("ShopService"):GetShop(Owner), Maximums)
 	if Object:IsA("BasePart") then
 		Object.Anchored = true
 	else
@@ -714,8 +710,8 @@ function Restorationservice:PrepareObject(
 		end
 	end
 	Object:SetAttribute("RestorationObject", true)
-	Object:SetAttribute("AwardedUserId", if Owner then Owner.UserId else nil)
-	local Istutorial = Owner ~= nil and Core:GetService("TutorialService"):IsActive(Owner)
+	Object:SetAttribute("AwardedUserId", Owner.UserId)
+	local Istutorial = Core:GetService("TutorialService"):IsActive(Owner)
 	local Seed = if Progress and Progress.DirtSeed then Progress.DirtSeed else Randomgenerator:NextInteger(1, 2147483646)
 	local Success, Failure = pcall(function()
 		Createspots(Object, Istutorial, Seed)
@@ -725,7 +721,7 @@ function Restorationservice:PrepareObject(
 		Destroyobject(Object)
 		error(Failure, 0)
 	end
-	Activeobject = Object
+	Activeobjects[Owner] = Object
 	return Object
 end
 
@@ -735,21 +731,20 @@ function Restorationservice:GrantObject(Player: Player, Objectname: string): boo
 	return true
 end
 
-function Restorationservice:HasActiveSession(): boolean
-	return next(Sessions) ~= nil
+function Restorationservice:HasActiveSession(Player: Player): boolean
+	return Sessions[Player] ~= nil
 end
 
-function Restorationservice:HasActiveObject(): boolean
-	return Activeobject ~= nil and Activeobject.Parent ~= nil
+function Restorationservice:HasActiveObject(Player: Player): boolean
+	local Object = Activeobjects[Player]
+	return Object ~= nil and Object.Parent ~= nil
 end
 
 function Restorationservice:Init()
-	Slot = Workspace:WaitForChild("Map"):WaitForChild("Slot1") :: Folder
 	Core:GetService("DataService"):Register("Restoration", {
 		Load = function() end,
 		Save = function() return nil end,
 		Clear = function(Player)
-			local Sessionobject = Sessions[Player]
 			local Spot = Peeling[Player]
 			if Spot and Spot.Parent then
 				Spot:SetAttribute("PeelingBy", nil)
@@ -760,30 +755,26 @@ function Restorationservice:Init()
 			Lastclean[Player] = nil
 			Lastscratchclean[Player] = nil
 			Lastinkclean[Player] = nil
-			local Activeowneruserid = if Activeobject then tonumber(Activeobject:GetAttribute("AwardedUserId")) else nil
-			if next(Sessions) == nil and (Activeobject == Sessionobject or Activeowneruserid == Player.UserId) then
-				Destroyobject(Activeobject)
-				Activeobject = nil
-			end
+			Releaseactiveobject(Player)
 		end,
 	})
-	Generateditems = Instance.new("Folder")
-	Generateditems.Name = "GeneratedItems"
-	Generateditems.Parent = Slot
+	for _, Shop in ipairs(Core:GetService("ShopService"):GetShops()) do
+		local Generateditems = Instance.new("Folder")
+		Generateditems.Name = "GeneratedItems"
+		Generateditems.Parent = Shop
+	end
 	Remotemanager:OnServerInvoke(self.Name, "BeginSession", function(Player)
-		local Object = Activeobject
+		local Object = Activeobjects[Player]
 		if not Object or not Object.Parent then
 			return nil
 		end
 		if Object:GetAttribute("CompletingRestoration") then return nil end
-		local AwardedUserId = tonumber(Object:GetAttribute("AwardedUserId"))
-		if AwardedUserId and AwardedUserId ~= Player.UserId then return nil end
 		Sessions[Player] = Object
 		return Object
 	end)
 
 	Remotemanager:OnServerInvoke(self.Name, "BeginItem", function(Player, ItemId)
-		if Activeobject or Sessions[Player] or Sessionitem[Player] then
+		if Activeobjects[Player] or Sessions[Player] or Sessionitem[Player] then
 			return nil
 		end
 		local Item = Core:GetService("InventoryService"):TakeRestoredItem(Player, tonumber(ItemId) or 0)
@@ -799,6 +790,10 @@ function Restorationservice:Init()
 		if not Success then
 			Returnsessionitem(Player, nil)
 			error(Object, 0)
+		end
+		if not Player.Parent then
+			Releaseactiveobject(Player)
+			return nil
 		end
 		Object:SetAttribute("PurchasePrice", Item.PurchasePrice)
 		Object:SetAttribute("StartPercent", Item.RestorationPercent)
@@ -871,8 +866,8 @@ function Restorationservice:Init()
 			Applyratiotoitem(Sessioniteminstance, Completionratio, Sessionobject)
 		end
 
-		if Activeobject == Sessionobject then
-			Activeobject = nil
+		if Activeobjects[Player] == Sessionobject then
+			Activeobjects[Player] = nil
 		end
 		Destroyobject(Sessionobject)
 
@@ -944,7 +939,7 @@ function Restorationservice:Init()
 		if not Sessionobject or not Validinkimage(Sessionobject, Target) then return end
 		if Target:GetAttribute("HasSolvent") ~= true then return end
 		if not Validpoints(Points) then return end
-		local Entry = Coverage[Target.Parent]
+		local Entry = Coverage[Sessionobject][Target.Parent]
 		if not Entry then return end
 		local Now = os.clock()
 		if Now - (Lastinkclean[Player] or 0) < Inkcleaninterval then return end
@@ -974,7 +969,7 @@ function Restorationservice:Init()
 		if not Sessionobject or not Validscratchimage(Sessionobject, Target) then return end
 		if Target:GetAttribute("HasPolish") ~= true then return end
 		if not Validpoints(Points) then return end
-		local Entry = Coverage[Target.Parent]
+		local Entry = Coverage[Sessionobject][Target.Parent]
 		if not Entry then return end
 		local Now = os.clock()
 		if Now - (Lastscratchclean[Player] or 0) < Scratchcleaninterval then return end
@@ -1011,7 +1006,7 @@ function Restorationservice:Init()
 		local Seen = {}
 		for _, Stroke in ipairs(Strokes) do
 			local Target = if type(Stroke) == "table" then Stroke.Target else nil
-			local Entry = if typeof(Target) == "Instance" then Coverage[Target] else nil
+			local Entry = if typeof(Target) == "Instance" then Coverage[Sessionobject][Target] else nil
 			if
 				Entry
 				and not Seen[Target]
@@ -1116,7 +1111,7 @@ function Restorationservice:Init()
 		Lastscratchclean[Player] = nil
 		Lastinkclean[Player] = nil
 		Returnsessionitem(Player, Sessionobject)
-		if Sessionobject and Activeobject == Sessionobject then Cleanupactiveobjectifidle() end
+		if Sessionobject and Activeobjects[Player] == Sessionobject then Releaseactiveobject(Player) end
 	end)
 end
 

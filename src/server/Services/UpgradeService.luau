@@ -112,6 +112,9 @@ function UpgradeService:GetCashPrice(Player: Player, UpgradeName: string): numbe
 	if MaxLevel and Level >= MaxLevel then
 		return nil
 	end
+	if Definition.TutorialFree and Level == Definition.DefaultLevel and Core:GetService("TutorialService"):IsRunning(Player) then
+		return 0
+	end
 	local TargetLevel = Level + 1
 	local Growth = tonumber(Definition.PriceGrowth) or DefaultPriceGrowth
 	local BasePrice = math.max(tonumber(Definition.CashPriceLevel1) or 0, 0)

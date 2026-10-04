@@ -41,6 +41,9 @@ local function Loadplayer(Player: Player)
 		warn("TutorialService: could not read data for " .. Player.Name .. ": " .. tostring(Saved))
 	end
 	Loadedbyplayer[Player] = true
+	if Player.Parent and not Completedbyplayer[Player] then
+		Core:GetService("UpgradeService"):PushUpgrades(Player)
+	end
 end
 
 function Tutorialservice:Wipe(Userid: number)
@@ -80,6 +83,10 @@ function Tutorialservice:IsActive(Player: Player): boolean
 		task.wait()
 	end
 	return Completedbyplayer[Player] == false
+end
+
+function Tutorialservice:IsRunning(Player: Player): boolean
+	return Loadedbyplayer[Player] == true and Completedbyplayer[Player] == false
 end
 
 function Tutorialservice:MarkObjectBought(Player: Player)

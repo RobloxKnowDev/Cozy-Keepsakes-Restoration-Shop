@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
@@ -39,13 +38,17 @@ type DisplaySnapshot = {
 	Items: { DisplayEntry },
 }
 
+type ShopDisplay = {
+	DisplayedObjects: Folder,
+	SlotAttachments: { [number]: Attachment },
+	OccupiedSlots: { [number]: DisplayPlacement },
+	ReservedSlots: { [number]: Player },
+	Revision: number,
+}
+
 local Displayturndegrees = 90
-local Slotattachments: { [number]: Attachment } = {}
-local Occupiedslots: { [number]: DisplayPlacement } = {}
-local Reservedslots: { [number]: Player } = {}
+local Displaybyshop: { [Model]: ShopDisplay } = {}
 local Busyplayers: { [Player]: boolean } = {}
-local Displayrevision = 0
-local Displayedobjects: Folder
 local Objecttemplates: Folder
 local Vfxfolder: Folder
 local Placementparticle: Attachment
@@ -59,6 +62,10 @@ local Dirtsurfacenames = {
 	UiBack = true,
 }
 local Dirtdecalnames = Cleaningconfig.DirtDecals
+
+local function Getdisplay(Player: Player): ShopDisplay
+	return Displaybyshop[Core:GetService("ShopService"):GetShop(Player)]
+end
 
 local function Getanchorpart(Object: DisplayObject): BasePart
 	if Object:IsA("BasePart") then
@@ -102,7 +109,7 @@ local function Hidedisplayobject(Object: DisplayObject): { [BasePart]: number }
 	return Transparencies
 end
 
-local function Revealdisplayobject(Object: DisplayObject)
+local function Revealdisplayobject(Object: DisplayObject, Displayedobjects: Folder)
 	local Transparencies = Hidedisplayobject(Object);
 	(Object :: Instance).Parent = Displayedobjects
 	task.delay(0.1, function()
@@ -135,6 +142,7 @@ local function Anchordisplayobject(Object: DisplayObject)
 		Object.Anchored = true
 		return
 	end
+	Object.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("BasePart") then
 			Descendant.Anchored = true
@@ -174,16 +182,16 @@ local function Pivotdisplayobject(Object: DisplayObject, Pivot: CFrame)
 	end
 end
 
-local function Releasereservation(Player: Player, Slotindex: number)
+local function Releasereservation(Display: ShopDisplay, Player: Player, Slotindex: number)
 	Busyplayers[Player] = nil
-	if Reservedslots[Slotindex] == Player then
-		Reservedslots[Slotindex] = nil
+	if Display.ReservedSlots[Slotindex] == Player then
+		Display.ReservedSlots[Slotindex] = nil
 	end
 end
 
 local function Getdisplayreputation(Player: Player): number
 	local Reputation = 0
-	for _, Placement in pairs(Occupiedslots) do
+	for _, Placement in pairs(Getdisplay(Player).OccupiedSlots) do
 		if Placement.Player == Player then
 			Reputation += Placement.Item.Reputation
 		end
@@ -195,10 +203,10 @@ local function Refreshdisplayreputation(Player: Player): number
 	return Core:GetService("StatsService"):SetReputation(Player, Getdisplayreputation(Player))
 end
 
-local function Builddisplayitems(): { DisplayEntry }
+local function Builddisplayitems(Display: ShopDisplay): { DisplayEntry }
 	local Items = {}
 	for Slotindex = 1, 9 do
-		local Placement = Occupiedslots[Slotindex]
+		local Placement = Display.OccupiedSlots[Slotindex]
 		if Placement then
 			table.insert(Items, {
 				SlotIndex = Slotindex,
@@ -210,44 +218,40 @@ local function Builddisplayitems(): { DisplayEntry }
 	return Items
 end
 
-local function Buildsnapshot(): DisplaySnapshot
+local function Buildsnapshot(Display: ShopDisplay): DisplaySnapshot
 	return {
-		Revision = Displayrevision,
-		Items = Builddisplayitems(),
+		Revision = Display.Revision,
+		Items = Builddisplayitems(Display),
 	}
 end
 
-local function Commitdisplaychange(): DisplaySnapshot
-	Displayrevision += 1
-	local Snapshot = Buildsnapshot()
-	Remotemanager:FireAllClients(Expositionservice.Name, "DisplayItemsUpdated", Snapshot)
+local function Commitdisplaychange(Display: ShopDisplay, Player: Player): DisplaySnapshot
+	Display.Revision += 1
+	local Snapshot = Buildsnapshot(Display)
+	Remotemanager:FireClient(Expositionservice.Name, "DisplayItemsUpdated", Player, Snapshot)
 	return Snapshot
 end
 
 local function Cleanupplayer(Player: Player)
-	local Changed = false
+	local Display = Getdisplay(Player)
 	Busyplayers[Player] = nil
-	for Slotindex, Reservedplayer in pairs(Reservedslots) do
+	for Slotindex, Reservedplayer in pairs(Display.ReservedSlots) do
 		if Reservedplayer == Player then
-			Reservedslots[Slotindex] = nil
+			Display.ReservedSlots[Slotindex] = nil
 		end
 	end
-	for Slotindex, Placement in pairs(Occupiedslots) do
+	for Slotindex, Placement in pairs(Display.OccupiedSlots) do
 		if Placement.Player == Player then
 			if Placement.Object.Parent then
 				Placement.Object:Destroy()
 			end
-			Occupiedslots[Slotindex] = nil
-			Changed = true
+			Display.OccupiedSlots[Slotindex] = nil
 		end
-	end
-	if Changed then
-		Commitdisplaychange()
 	end
 end
 
-function Expositionservice:GetDisplayItems(): DisplaySnapshot
-	return Buildsnapshot()
+function Expositionservice:GetDisplayItems(Player: Player): DisplaySnapshot
+	return Buildsnapshot(Getdisplay(Player))
 end
 
 function Expositionservice:RefreshPlayerReputation(Player: Player): number
@@ -256,12 +260,15 @@ end
 
 function Expositionservice:RefreshAllReputations()
 	for _, Player in ipairs(Players:GetPlayers()) do
-		Refreshdisplayreputation(Player)
+		if Player.Parent then
+			Refreshdisplayreputation(Player)
+		end
 	end
 end
 
 function Expositionservice:RestoreDisplayItem(Player: Player, Slotindex: number, Item: any): boolean
-	if not Ispositiveinteger(Slotindex) or Slotindex > 9 or Occupiedslots[Slotindex] then
+	local Display = Getdisplay(Player)
+	if not Ispositiveinteger(Slotindex) or Slotindex > 9 or Display.OccupiedSlots[Slotindex] then
 		return false
 	end
 	local Template = Objecttemplates:FindFirstChild(tostring(Item.ObjectKey))
@@ -273,15 +280,15 @@ function Expositionservice:RestoreDisplayItem(Player: Player, Slotindex: number,
 	Attachmutationvfx(Object, Item)
 	Cleandisplayobject(Object)
 	Anchordisplayobject(Object)
-	local Slotcframe = Slotattachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
-	Pivotdisplayobject(Object, Slotcframe * Getobjectrotation(Item.ObjectKey))
 	Object.Name = "Display_" .. Player.UserId .. "_" .. Slotindex
 	Object:SetAttribute("OwnerUserId", Player.UserId)
 	Object:SetAttribute("SlotIndex", Slotindex)
 	Object:SetAttribute("ItemId", Item.Id)
 	Object:SetAttribute("ObjectKey", Item.ObjectKey)
-	Object.Parent = Displayedobjects
-	Occupiedslots[Slotindex] = { Player = Player, Object = Object, Item = Item }
+	local Slotcframe = Display.SlotAttachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
+	Pivotdisplayobject(Object, Slotcframe * Getobjectrotation(Item.ObjectKey))
+	Object.Parent = Display.DisplayedObjects
+	Display.OccupiedSlots[Slotindex] = { Player = Player, Object = Object, Item = Item }
 	return true
 end
 
@@ -300,10 +307,10 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 	if Slotindex > Displayspace then
 		return { Success = false, Reason = "SlotLocked" }
 	end
-	if Occupiedslots[Slotindex] or Reservedslots[Slotindex] then
+	local Display = Getdisplay(Player)
+	if Display.OccupiedSlots[Slotindex] or Display.ReservedSlots[Slotindex] then
 		return { Success = false, Reason = "SlotOccupied" }
 	end
-
 	local Inventoryservice = Core:GetService("InventoryService")
 	local Item = Inventoryservice:GetRestoredItem(Player, Itemid)
 	if not Item then
@@ -311,29 +318,29 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 	end
 
 	Busyplayers[Player] = true
-	Reservedslots[Slotindex] = Player
+	Display.ReservedSlots[Slotindex] = Player
 	local Template = Objecttemplates:WaitForChild(Item.ObjectKey)
 	if not Template:IsA("Model") and not Template:IsA("BasePart") then
-		Releasereservation(Player, Slotindex)
+		Releasereservation(Display, Player, Slotindex)
 		error("ExpositionService: model '" .. Item.ObjectKey .. "' must be a Model or a BasePart")
 	end
 	local Object = Template:Clone() :: DisplayObject
 	Attachmutationvfx(Object, Item)
 	Cleandisplayobject(Object)
 	Anchordisplayobject(Object)
-	local Slotcframe = Slotattachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
+	local Slotcframe = Display.SlotAttachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
 	Pivotdisplayobject(Object, Slotcframe * Getobjectrotation(Item.ObjectKey))
 
-	if not Player.Parent or Reservedslots[Slotindex] ~= Player then
+	if not Player.Parent or Display.ReservedSlots[Slotindex] ~= Player then
 		Object:Destroy()
-		Releasereservation(Player, Slotindex)
+		Releasereservation(Display, Player, Slotindex)
 		return { Success = false, Reason = "PlayerUnavailable" }
 	end
 
 	local Removeditem = Inventoryservice:TakeRestoredItem(Player, Itemid)
 	if not Removeditem then
 		Object:Destroy()
-		Releasereservation(Player, Slotindex)
+		Releasereservation(Display, Player, Slotindex)
 		return { Success = false, Reason = "ItemUnavailable" }
 	end
 
@@ -343,16 +350,16 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 	Object:SetAttribute("ItemId", Removeditem.Id)
 	Object:SetAttribute("ObjectKey", Removeditem.ObjectKey)
 	local Basereputation = math.max(tonumber(Removeditem.Reputation) or 0, 0)
-	Occupiedslots[Slotindex] = {
+	Display.OccupiedSlots[Slotindex] = {
 		Player = Player,
 		Object = Object,
 		Item = Removeditem,
 	}
-	Revealdisplayobject(Object)
+	Revealdisplayobject(Object, Display.DisplayedObjects)
 	Refreshdisplayreputation(Player)
-	Releasereservation(Player, Slotindex)
+	Releasereservation(Display, Player, Slotindex)
 
-	local Displaysnapshot = Commitdisplaychange()
+	local Displaysnapshot = Commitdisplaychange(Display, Player)
 	Core:GetService("DailyTaskService"):Record(Player, "Display", {
 		Rarity = Removeditem.Rarity,
 		Percent = Removeditem.RestorationPercent,
@@ -375,7 +382,8 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 		return { Success = false, Reason = "Busy" }
 	end
 
-	local Placement = Occupiedslots[Slotindex]
+	local Display = Getdisplay(Player)
+	local Placement = Display.OccupiedSlots[Slotindex]
 	if not Placement then
 		return { Success = false, Reason = "SlotEmpty" }
 	end
@@ -384,7 +392,7 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 	end
 
 	Busyplayers[Player] = true
-	Occupiedslots[Slotindex] = nil
+	Display.OccupiedSlots[Slotindex] = nil
 	local Basereputation = math.max(tonumber(Placement.Item.Reputation) or 0, 0)
 	if Placement.Object.Parent then
 		Removedisplayobject(Placement.Object)
@@ -394,7 +402,7 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 	Refreshdisplayreputation(Player)
 	Busyplayers[Player] = nil
 
-	local Displaysnapshot = Commitdisplaychange()
+	local Displaysnapshot = Commitdisplaychange(Display, Player)
 	return {
 		Success = true,
 		RemovedReputation = Basereputation,
@@ -403,25 +411,31 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 end
 
 function Expositionservice:Init()
-	local Etagere = Workspace:WaitForChild("Map")
-		:WaitForChild("Slot1")
-		:WaitForChild("Work")
-		:WaitForChild("Utilities")
-		:WaitForChild("Etagere")
-	local Slots = Etagere:WaitForChild("Slots")
-	for Slotindex = 1, 9 do
-		Slotattachments[Slotindex] = Slots:WaitForChild(tostring(Slotindex)) :: Attachment
+	for _, Shop in ipairs(Core:GetService("ShopService"):GetShops()) do
+		local Displayedobjects = Instance.new("Folder")
+		Displayedobjects.Name = "DisplayedObjects"
+		Displayedobjects.Parent = Shop
+		local Shelf = Shop:WaitForChild("Attachement"):WaitForChild("Shelf")
+		local Slotattachments = {}
+		for Slotindex = 1, 9 do
+			Slotattachments[Slotindex] = Shelf:WaitForChild(tostring(Slotindex)) :: Attachment
+		end
+		Displaybyshop[Shop] = {
+			DisplayedObjects = Displayedobjects,
+			SlotAttachments = Slotattachments,
+			OccupiedSlots = {},
+			ReservedSlots = {},
+			Revision = 0,
+		}
 	end
 
-	Displayedobjects = Instance.new("Folder")
-	Displayedobjects.Name = "DisplayedObjects"
-	Displayedobjects.Parent = Etagere
 	Objecttemplates = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object") :: Folder
 	Vfxfolder = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Vfx") :: Folder
 	Placementparticle = Vfxfolder:WaitForChild("PlacementParticle") :: Attachment
 
 	Core:GetService("DataService"):Register("Exposition", {
 		Load = function(Player, Saved)
+			local Display = Getdisplay(Player)
 			for Slotkey, Item in pairs(if type(Saved) == "table" then Saved else {}) do
 				local Slotindex = tonumber(Slotkey)
 				if Slotindex and type(Item) == "table" then
@@ -429,11 +443,11 @@ function Expositionservice:Init()
 				end
 			end
 			Refreshdisplayreputation(Player)
-			Commitdisplaychange()
+			Commitdisplaychange(Display, Player)
 		end,
 		Save = function(Player)
 			local Snapshot = {}
-			for Slotindex, Placement in pairs(Occupiedslots) do
+			for Slotindex, Placement in pairs(Getdisplay(Player).OccupiedSlots) do
 				if Placement.Player == Player then
 					Snapshot[tostring(Slotindex)] = Placement.Item
 				end
@@ -443,8 +457,8 @@ function Expositionservice:Init()
 		Clear = Cleanupplayer,
 	})
 
-	Remotemanager:OnServerInvoke(self.Name, "GetDisplayItems", function()
-		return self:GetDisplayItems()
+	Remotemanager:OnServerInvoke(self.Name, "GetDisplayItems", function(Player)
+		return self:GetDisplayItems(Player)
 	end)
 	Remotemanager:OnServerInvoke(self.Name, "PlaceDisplayItem", function(Player, Slotindex, Itemid)
 		return self:PlaceDisplayItem(Player, Slotindex, Itemid)

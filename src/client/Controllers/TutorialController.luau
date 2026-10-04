@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
+local Upgradesconfig = require(Replicatedstorage.Shared.Config.Upgrades)
 local Uvtorch = require(script.Parent.RestorationController.UvTorch)
 
 local Tutorialcontroller = {
@@ -652,6 +653,19 @@ local function Liquidcount(Name: string): number
 	return if Folder then #Folder:GetChildren() else 0
 end
 
+local function Displayspacebought(): boolean
+	local State = Core:GetController("ComputerController").upgradeState.DisplaySpace
+	return State.Level > Upgradesconfig.DisplaySpace.DefaultLevel
+end
+
+local function Showdisplayspacecard()
+	local Scrolling = Core:GetController("ComputerController").upgradesScrollingFrame
+	local Card = Scrolling:WaitForChild("DisplaySpace") :: GuiObject
+	local Top = Card.AbsolutePosition.Y - Scrolling.AbsolutePosition.Y + Scrolling.CanvasPosition.Y
+	local Bottom = Top + Card.AbsoluteSize.Y - Scrolling.AbsoluteWindowSize.Y
+	Scrolling.CanvasPosition = Vector2.new(0, math.min(math.max(Scrolling.CanvasPosition.Y, Bottom), Top))
+end
+
 function Tutorialcontroller:Buildsteps()
 	self.steps = {
 		{
@@ -942,10 +956,53 @@ function Tutorialcontroller:Buildsteps()
 			end,
 		},
 		{
+			Text = "This is your computer. Sell items and buy upgrades here!",
+			Checkpoint = true,
+			Target = function()
+				return Core:GetController("ComputerController").computer
+			end,
+			Done = function()
+				return Core:GetController("ComputerController"):IsOpen()
+			end,
+		},
+		{
+			Text = "Open your upgrades.",
+			Skip = Displayspacebought,
+			Target = function()
+				local Computer = Core:GetController("ComputerController")
+				if not Computer:IsOpen() then return Computer.computer end
+				return Computer.upgradesButton
+			end,
+			Done = function()
+				return Core:GetController("ComputerController").activePage == "Upgrades"
+			end,
+		},
+		{
+			Text = "Unlock your first shelf spot. It's free!",
+			Skip = Displayspacebought,
+			Target = function()
+				local Computer = Core:GetController("ComputerController")
+				if not Computer:IsOpen() then return Computer.computer end
+				if Computer.activePage ~= "Upgrades" then return Computer.upgradesButton end
+				Showdisplayspacecard()
+				return Computer.upgradeCards.DisplaySpace.CashButton
+			end,
+			Done = Displayspacebought,
+		},
+		{
+			Text = "Tap the arrow to go back.",
+			Target = function()
+				return Core:GetController("ComputerController").closeButton
+			end,
+			Done = function()
+				return not Core:GetController("ComputerController"):IsOpen()
+			end,
+		},
+		{
 			Text = "Open your shelf.",
 			Checkpoint = true,
 			Target = function()
-				return Core:GetController("ExpositionController").reputationButtonR
+				return Core:GetController("ExpositionController").reputationButtonL
 			end,
 			Done = function()
 				return Core:GetController("ExpositionController"):IsOpen()
@@ -986,28 +1043,10 @@ function Tutorialcontroller:Buildsteps()
 			Text = "Go back to your desk.",
 			Checkpoint = true,
 			Target = function()
-				return Core:GetController("ExpositionController").reputationButtonL
+				return Core:GetController("ExpositionController").reputationButtonR
 			end,
 			Done = function()
 				return not Core:GetController("ExpositionController"):IsOpen()
-			end,
-		},
-		{
-			Text = "This is your computer. Sell items and buy upgrades here!",
-			Target = function()
-				return Core:GetController("ComputerController").computer
-			end,
-			Done = function()
-				return Core:GetController("ComputerController"):IsOpen()
-			end,
-		},
-		{
-			Text = "Tap the arrow to go back.",
-			Target = function()
-				return Core:GetController("ComputerController").closeButton
-			end,
-			Done = function()
-				return not Core:GetController("ComputerController"):IsOpen()
 			end,
 		},
 		{

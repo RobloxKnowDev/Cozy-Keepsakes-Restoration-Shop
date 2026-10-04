@@ -1,7 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Pathfindingservice = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 
@@ -11,6 +11,7 @@ local Daynightconfig = require(ReplicatedStorage.Shared.Config.DayNight)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local Remotemanager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Streetroute = require(ReplicatedStorage.Shared.Utils.StreetRoute)
 
 local Customerservice = {
 	Name = "CustomerService",
@@ -23,14 +24,40 @@ local Customerservice = {
 	},
 }
 
-local QueueFolderName = "SpawnCustomer"
-local TurnTweenDuration = 0.35
-local SlotTurnDegrees = -90
-local WalkInStuds = 12
-local WalkInFadeDuration = 0.4
-local Verbosespawnlogs = false
 local MaxFriendProfiles = 60
+local Wardrobesize = 12
 local FallbackCustomerTemplate = "1"
+local Customerspershop = 3
+local Walkspeed = NumberRange.new(5.5, 8)
+local Spawngap = NumberRange.new(1.5, 4)
+local Streethalfwidth = 15
+local Lanecross = 2.5
+local Stepdistance = NumberRange.new(5, 11)
+local Lateraldrift = NumberRange.new(-2, 2)
+local Swervechance = 0.15
+local Swervedrift = NumberRange.new(-3.5, 3.5)
+local Glancechance = 0.025
+local Glancewait = NumberRange.new(0.5, 1.2)
+local Maxstops = 2
+local Detourchance = 0.12
+local Detourwait = NumberRange.new(3, 7)
+local Windowchance = 0.12
+local Windowwait = NumberRange.new(1.5, 4)
+local Windowlead = 3
+local Windowspread = NumberRange.new(-2, 2)
+local Windowinset = NumberRange.new(0.3, 1.2)
+local Approachdistance = NumberRange.new(6, 12)
+local Approachlateral = NumberRange.new(0.45, 0.75)
+local Hesitatechance = 0.4
+local Hesitatewait = NumberRange.new(0.8, 2)
+local Lookbackchance = 0.5
+local Lookbackwait = NumberRange.new(0.5, 1)
+local Overshootchance = 0.15
+local Overshootdistance = NumberRange.new(4, 7)
+local Overshootwait = NumberRange.new(0.4, 0.9)
+local Leavepause = 0.6
+local Instantspawndistance = 24
+local Exitdistance = 10
 type CustomerOffer = {
 	Id: number,
 	ObjectKey: string,
@@ -43,73 +70,89 @@ type CustomerOffer = {
 	Mutation: string,
 	Emergency: boolean,
 }
+type ShopStop = {
+	Shop: Instance,
+	Along: number,
+	Side: number,
+	Path: { Vector3 },
+	Door: number,
+	Facing: Vector3,
+}
+type Trip = {
+	Points: { Vector3 },
+	Holds: { number },
+	Looks: { [number]: Vector3 },
+}
+type PlannedVisit = {
+	Trip: Trip,
+	Speed: number,
+	Arrival: number,
+}
+type ShopState = {
+	Player: Player,
+	Shop: Model,
+	Visitor: Folder?,
+	FrontCustomer: Folder?,
+	PendingOffer: CustomerOffer?,
+	Plannedvisit: PlannedVisit?,
+	NextCustomerAt: number,
+	ArrivedToday: number,
+	NeedsInstantCustomer: boolean,
+}
+type Passerby = {
+	Direction: number,
+	Band: NumberRange,
+	To: number,
+	Detours: { [Instance]: number },
+	Despawn: thread,
+}
 
-local AttachmentsByIndex: { [number]: Attachment } = {}
-local OccupiedSlots: { [number]: Model } = {}
-local QueueIndexes: { number } = {}
-local HighestQueueIndex = 0
+local Shopsfolder: Folder
+local Streetfolder: Folder
+local Streetstart = Vector3.zero
+local Streetfinish = Vector3.zero
+local Streetlength = 0
+local Streetside = Vector3.zero
+local Forwardband = NumberRange.new(-Lanecross, Streethalfwidth)
+local Backwardband = NumberRange.new(-Streethalfwidth, Lanecross)
+local Fullband = NumberRange.new(-Streethalfwidth, Streethalfwidth)
+local Shopstops: { [string]: ShopStop } = {}
+local States: { [Player]: ShopState } = {}
+local Passerbys: { [Folder]: Passerby } = {}
+local Passersby = 0
 local CustomerSerial = 0
 local OfferSerial = 0
-local Customerfolder: Folder
+local Customertemplate: Model
+local Wardrobeworkshop: Folder
 local ObjectsByRarity: { [string]: { string } } = {}
-local PendingOffer: CustomerOffer? = nil
-local RefreshFrontCustomerAttribute: () -> ()
-local PresentFrontOffer: () -> ()
 local CurrentDay = 1
-local ArrivedCustomersToday = 0
-local NextCustomerAt = 0
-local NeedsInstantCustomer = true
-local FriendProfiles: { { Id: number, Name: string } } = {}
-local FriendCursor = 0
-local DescriptionsByUserId: { [number]: HumanoidDescription } = {}
-local ShopOpened = false
-local ReadyCustomers: { Model } = {}
-local PoolBuilding = false
-local Poolfolder: Folder
-local TemplateStandHeight = 0
 
-local function Spawnlog(Message: string)
-	if Verbosespawnlogs then
-		print("[Customer] " .. Message)
-	end
-end
-
-local function GetShopPlayer(): Player?
-	return Players:GetPlayers()[1]
-end
-
-local function GetMaxCustomersPerDay(): number
-	local Player = GetShopPlayer()
-	if not Player then
-		return 0
-	end
+local function GetMaxCustomersPerDay(Player: Player): number
 	return math.max(math.floor(Core:GetService("UpgradeService"):GetValue(Player, "DailyCustomers")), 0)
 end
 
-local function ReplicateCustomerCount()
-	Lighting:SetAttribute("CustomersToday", ArrivedCustomersToday)
-	Lighting:SetAttribute("MaxCustomersPerDay", GetMaxCustomersPerDay())
+local function ReplicateCustomerCount(State: ShopState)
+	State.Player:SetAttribute("CustomersToday", State.ArrivedToday)
+	State.Player:SetAttribute("MaxCustomersPerDay", GetMaxCustomersPerDay(State.Player))
 end
 
 local function SyncDayState()
 	local Day = Lighting:GetAttribute("Day") or 1
 	if Day ~= CurrentDay then
 		CurrentDay = Day
-		ArrivedCustomersToday = 0
-		NeedsInstantCustomer = true
+		for _, State in pairs(States) do
+			State.ArrivedToday = 0
+			State.NeedsInstantCustomer = true
+		end
 	end
-	ReplicateCustomerCount()
+	for _, State in pairs(States) do
+		ReplicateCustomerCount(State)
+	end
 end
 
-local function MarkCustomerArrivedAtSlot1(Customer: Model)
-	Customer:SetAttribute("ArrivedAtSlot1", true)
-	if Customer:GetAttribute("CountedAtSlot1") == true then
-		return
-	end
-
-	Customer:SetAttribute("CountedAtSlot1", true)
-	ArrivedCustomersToday += 1
-	ReplicateCustomerCount()
+local function CountArrivedCustomer(State: ShopState)
+	State.ArrivedToday += 1
+	ReplicateCustomerCount(State)
 end
 
 local function IsBusinessHours(): boolean
@@ -117,44 +160,9 @@ local function IsBusinessHours(): boolean
 	return ClockTime >= Daynightconfig.DayStartHour and ClockTime < Daynightconfig.NightStartHour
 end
 
-local function PendingCustomerCount(): number
-	local Count = 0
-	for _, Customer in pairs(OccupiedSlots) do
-		if Customer.Parent and Customer:GetAttribute("CountedAtSlot1") ~= true then
-			Count += 1
-		end
-	end
-	return Count
-end
-
-local function CanSpawnMoreCustomersToday(): boolean
+local function CanSpawnMoreCustomersToday(State: ShopState): boolean
 	SyncDayState()
-	return ArrivedCustomersToday + PendingCustomerCount() < GetMaxCustomersPerDay()
-end
-
-local function CollectQueueAttachments()
-	table.clear(AttachmentsByIndex)
-	table.clear(QueueIndexes)
-	HighestQueueIndex = 0
-
-	local Folder = Workspace:WaitForChild("Map"):WaitForChild("Slot1"):WaitForChild(QueueFolderName)
-
-	for _, Child in ipairs(Folder:GetChildren()) do
-		if Child:IsA("Attachment") then
-			local Index = tonumber(Child.Name)
-			if Index then
-				AttachmentsByIndex[Index] = Child
-				if Index > 0 then
-					table.insert(QueueIndexes, Index)
-					HighestQueueIndex = math.max(HighestQueueIndex, Index)
-				end
-			end
-		end
-	end
-
-	table.sort(QueueIndexes, function(Left, Right)
-		return Left > Right
-	end)
+	return State.ArrivedToday < GetMaxCustomersPerDay(State.Player)
 end
 
 local function CollectOfferObjects()
@@ -171,89 +179,304 @@ local function CollectOfferObjects()
 	end
 end
 
-local function GetTargetCFrame(Attachment: Attachment): CFrame
-	if (tonumber(Attachment.Name) :: number) >= 2 then
-		return Attachment.WorldCFrame * CFrame.Angles(0, math.pi, 0)
-	end
-	return Attachment.WorldCFrame
+local function Randomin(Range: NumberRange): number
+	return Range.Min + math.random() * (Range.Max - Range.Min)
 end
 
-local function GetStandHeight(Customer: Model): number
-	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid") :: Humanoid
-	local Root = Customer:FindFirstChild("HumanoidRootPart") :: BasePart
-	return Humanoid.HipHeight + Root.Size.Y / 2
+local function Floorpoint(Position: Vector3): Vector3
+	local Result = Workspace:Raycast(Position + Vector3.new(0, 2, 0), Vector3.new(0, -50, 0))
+	return if Result then Result.Position else Position
 end
 
-local function StandAt(Customer: Model, Base: CFrame)
-	Customer:PivotTo(Base + Vector3.new(0, Customer:GetAttribute("StandOffset"), 0))
+local function Streetposition(Along: number, Lateral: number): Vector3
+	return Streetstart:Lerp(Streetfinish, Along / Streetlength) + Streetside * Lateral
 end
 
-local function ArriveAt(Customer: Model, Target: CFrame)
-	local Height = Customer:GetPivot().Position.Y
-	Customer:PivotTo(Target.Rotation + Vector3.new(Target.Position.X, Height, Target.Position.Z))
+local function Alongof(Position: Vector3): number
+	return math.clamp((Position - Streetstart):Dot(Streetfinish - Streetstart) / Streetlength, 0, Streetlength)
 end
 
-local function FacePosition(Customer: Model, Position: Vector3)
-	local Pivot = Customer:GetPivot()
-	local CurrentPosition = Pivot.Position
-	local FlatTarget = Vector3.new(Position.X, CurrentPosition.Y, Position.Z)
-	local Direction = FlatTarget - CurrentPosition
-	if Direction.Magnitude <= 0.001 then
-		return
-	end
-
-	Customer:PivotTo(CFrame.lookAt(CurrentPosition, FlatTarget))
+local function Lateralof(Position: Vector3): number
+	return (Position - Streetposition(Alongof(Position), 0)):Dot(Streetside)
 end
 
-local function TweenCustomerTurn(Customer: Model, Degrees: number, Duration: number, OnComplete: (() -> ())?)
-	local StartCFrame = Customer:GetPivot()
-	local Angle = Instance.new("NumberValue")
-	local Connection = Angle:GetPropertyChangedSignal("Value"):Connect(function()
-		if Customer.Parent then
-			Customer:PivotTo(StartCFrame * CFrame.Angles(0, math.rad(Angle.Value), 0))
+local function Newtrip(): Trip
+	return { Points = {}, Holds = {}, Looks = {} }
+end
+
+local function Go(Trip: Trip, Point: Vector3, Hold: number, Look: Vector3?)
+	table.insert(Trip.Points, Point)
+	table.insert(Trip.Holds, Hold)
+	Trip.Looks[#Trip.Points] = Look
+end
+
+local function Walkto(Trip: Trip, From: number, To: number, Direction: number, Lateral: number, Band: NumberRange, Goal: number?): number
+	local Along = From
+	local Limit = if Goal then Fullband else Band
+	while (To - Along) * Direction > Stepdistance.Max do
+		local Step = Randomin(Stepdistance)
+		Along += Direction * Step
+		if Goal then
+			Lateral += (Goal - Lateral) * Step / ((To - Along) * Direction + Step)
 		end
+		local Drift = if math.random() < Swervechance then Swervedrift else Lateraldrift
+		Lateral = math.clamp(Lateral + Randomin(Drift), Limit.Min, Limit.Max)
+		local Point = Streetposition(Along, Lateral)
+		if math.random() < Glancechance then
+			local Side = if math.random(2) == 1 then 1 else -1
+			Go(Trip, Point, Randomin(Glancewait), Streetposition(Along + Direction * 3, Side * (Streethalfwidth + 6)))
+		else
+			Go(Trip, Point, 0)
+		end
+	end
+	return Lateral
+end
+
+local function Finishroute(Trip: Trip, To: number, Direction: number, Lateral: number)
+	Go(Trip, Streetposition(To, Lateral), 0)
+	Go(Trip, Streetposition(To + Direction * Exitdistance, Lateral), 0)
+end
+
+local function Buildshopstop(Shop: Instance): ShopStop
+	local Counter = Floorpoint((Shop:WaitForChild("Attachement"):WaitForChild("Customer") :: Attachment).WorldPosition)
+	local Along = Alongof(Counter)
+	local Street = Streetposition(Along, 0)
+	local Side = math.sign(Lateralof(Counter))
+	local Path = Pathfindingservice:CreatePath({ AgentRadius = 1.5, AgentHeight = 5, AgentCanJump = false })
+	local Computed = pcall(function()
+		Path:ComputeAsync(Street, Counter)
 	end)
-	local Tween = TweenService:Create(Angle, TweenInfo.new(Duration, Enum.EasingStyle.Linear), {
-		Value = Degrees,
-	})
-	Tween.Completed:Once(function()
-		Connection:Disconnect()
-		if Customer.Parent then
-			Customer:PivotTo(StartCFrame * CFrame.Angles(0, math.rad(Degrees), 0))
-			if OnComplete then
-				OnComplete()
+	local Points = { Counter }
+	if Computed and Path.Status == Enum.PathStatus.Success then
+		Points = {}
+		for Index, Waypoint in ipairs(Path:GetWaypoints()) do
+			if Index > 1 then
+				table.insert(Points, Waypoint.Position)
 			end
 		end
-		Angle:Destroy()
-	end)
-	Tween:Play()
+	else
+		warn("CustomerService: no walking path into " .. Shop.Name .. ", customers walk straight to the counter")
+	end
+	local Door = #Points
+	for Index, Point in ipairs(Points) do
+		if Lateralof(Point) * Side >= Streethalfwidth * Approachlateral.Max then
+			Door = Index
+			break
+		end
+	end
+	local Camera = (Shop:WaitForChild("Camera"):WaitForChild("CamPart") :: BasePart).Position
+	return {
+		Shop = Shop,
+		Along = Along,
+		Side = Side,
+		Path = Points,
+		Door = Door,
+		Facing = Vector3.new(Camera.X, Counter.Y, Camera.Z),
+	}
 end
 
-local function NormalizeCustomerParts(Customer: Model)
-	for _, Descendant in ipairs(Customer:GetDescendants()) do
-		if Descendant:IsA("BasePart") then
-			Descendant.Anchored = false
-			Descendant.CanCollide = false
+local function Stopsalong(Direction: number): { ShopStop }
+	local Stops = {}
+	for _, Stop in pairs(Shopstops) do
+		table.insert(Stops, Stop)
+	end
+	table.sort(Stops, function(Left, Right)
+		return Left.Along * Direction < Right.Along * Direction
+	end)
+	return Stops
+end
+
+local function Windowstop(Trip: Trip, Stop: ShopStop, Direction: number): (number, number)
+	local Along = math.clamp(Stop.Along + Randomin(Windowspread), 0, Streetlength)
+	local Lateral = Stop.Side * (Streethalfwidth - Randomin(Windowinset))
+	local Point = Streetposition(Along, Lateral)
+	Go(Trip, Point, Randomin(Windowwait), Stop.Facing)
+	if math.random() < Lookbackchance then
+		Go(Trip, Point - Streetside * (Stop.Side * 0.3), Randomin(Lookbackwait), Streetposition(Along + Direction * 12, Lateral))
+	end
+	return Along, Lateral
+end
+
+local function Entershop(Trip: Trip, Stop: ShopStop, From: number, Direction: number, Hesitate: boolean, Overshoot: boolean)
+	local Approach = math.min(Randomin(Approachdistance), math.abs(Stop.Along - From) * 0.6)
+	Go(Trip, Streetposition(Stop.Along - Direction * Approach, Stop.Side * Streethalfwidth * Randomin(Approachlateral)), 0)
+	if Overshoot then
+		local Past = math.clamp(Stop.Along + Direction * Randomin(Overshootdistance), 0, Streetlength)
+		Go(Trip, Streetposition(Past, Stop.Side * Streethalfwidth * Randomin(Approachlateral)), Randomin(Overshootwait), Stop.Facing)
+	end
+	if Hesitate then
+		local Front = Streetposition(Stop.Along + Randomin(Windowspread) * 0.5, Stop.Side * Streethalfwidth * Randomin(Approachlateral))
+		Go(Trip, Front, Randomin(Hesitatewait), Stop.Facing)
+		if math.random() < Lookbackchance then
+			Go(Trip, Front - Streetside * (Stop.Side * 0.3), Randomin(Lookbackwait), Streetposition(Stop.Along - Direction * 12, 0))
+		end
+	end
+	for Index = Stop.Door, #Stop.Path do
+		Go(Trip, Stop.Path[Index], 0)
+	end
+end
+
+local function Leaveshop(Trip: Trip, Stop: ShopStop, Direction: number): (number, number)
+	for Index = #Stop.Path - 1, Stop.Door, -1 do
+		Go(Trip, Stop.Path[Index], 0)
+	end
+	local Along = math.clamp(Stop.Along + Direction * Randomin(Approachdistance), 0, Streetlength)
+	local Lateral = Stop.Side * Streethalfwidth * Randomin(Approachlateral)
+	Go(Trip, Streetposition(Along, Lateral), 0)
+	return Along, Lateral
+end
+
+local function Createcustomer(Speed: number): Folder
+	CustomerSerial += 1
+	local Customer = Instance.new("Folder")
+	Customer.Name = string.format("Customer_%d", CustomerSerial)
+	Customer:SetAttribute("Speed", Speed)
+	return Customer
+end
+
+local function Route(Customer: Folder, Trip: Trip, Start: number)
+	Customer:SetAttribute("Route", Streetroute.Encode(Trip.Points, Trip.Holds, Trip.Looks))
+	Customer:SetAttribute("RouteStart", Start)
+end
+
+local function Despawnatend(Customer: Folder, Trip: Trip, Start: number, Speed: number, Onremoved: (() -> ())?): thread
+	local Delay = Start + Streetroute.TimeTo(Trip.Points, Trip.Holds, Speed, #Trip.Points - 1) - Workspace:GetServerTimeNow()
+	return task.delay(Delay, function()
+		if Onremoved then
+			Onremoved()
+		end
+		Customer:Destroy()
+	end)
+end
+
+local function Forgetpasserby(Customer: Folder)
+	Passersby -= 1
+	Passerbys[Customer] = nil
+end
+
+local function Spawnpasserby()
+	local Forward = math.random(2) == 1
+	local Direction = if Forward then 1 else -1
+	local Band = if Forward then Forwardband else Backwardband
+	local From = if Forward then 0 else Streetlength
+	local To = Streetlength - From
+	local Lateral = Randomin(Band)
+	local Trip = Newtrip()
+	Go(Trip, Streetposition(From, Lateral), 0)
+	local Shopservice = Core:GetService("ShopService")
+	local Detours: { [Instance]: number } = {}
+	local Stops = 0
+	for _, Stop in ipairs(Stopsalong(Direction)) do
+		if Stops < Maxstops and (Stop.Along - From) * Direction > Windowlead then
+			local Roll = math.random()
+			if Roll < Detourchance and not Shopservice:GetOwner(Stop.Shop) then
+				Lateral = Walkto(Trip, From, Stop.Along - Direction * Approachdistance.Max, Direction, Lateral, Band, Stop.Side * Streethalfwidth * Approachlateral.Min)
+				Detours[Stop.Shop] = #Trip.Points + 1
+				Entershop(Trip, Stop, From, Direction, math.random() < Hesitatechance, false)
+				Trip.Holds[#Trip.Points] = Randomin(Detourwait)
+				Trip.Looks[#Trip.Points] = Stop.Facing
+				From, Lateral = Leaveshop(Trip, Stop, Direction)
+				Stops += 1
+			elseif Roll < Detourchance + Windowchance then
+				Lateral = Walkto(Trip, From, Stop.Along - Direction * Windowlead, Direction, Lateral, Band, Stop.Side * (Streethalfwidth - Windowinset.Max))
+				From, Lateral = Windowstop(Trip, Stop, Direction)
+				Stops += 1
+			end
+		end
+	end
+	Lateral = Walkto(Trip, From, To, Direction, Lateral, Band, if Stops > 0 then Randomin(Band) else nil)
+	Finishroute(Trip, To, Direction, Lateral)
+	local Speed = Randomin(Walkspeed)
+	local Start = Workspace:GetServerTimeNow()
+	local Customer = Createcustomer(Speed)
+	Route(Customer, Trip, Start)
+	Customer.Parent = Streetfolder
+	Passersby += 1
+	for Shop, Index in pairs(Detours) do
+		Detours[Shop] = Start + Streetroute.TimeTo(Trip.Points, Trip.Holds, Speed, Index)
+	end
+	Passerbys[Customer] = {
+		Direction = Direction,
+		Band = Band,
+		To = To,
+		Detours = Detours,
+		Despawn = Despawnatend(Customer, Trip, Start, Speed, function()
+			Forgetpasserby(Customer)
+		end),
+	}
+end
+
+local function Skipdetours(Shop: Instance)
+	local Now = Workspace:GetServerTimeNow()
+	for Customer, Passerby in pairs(Passerbys) do
+		local Enter = Passerby.Detours[Shop]
+		if Enter and Enter > Now then
+			local Speed = Customer:GetAttribute("Speed")
+			local Points, Holds, Looks = Streetroute.Decode(Customer:GetAttribute("Route"))
+			local Position = Streetroute.Sample(Points, Holds, Looks, Speed, Now - Customer:GetAttribute("RouteStart"))
+			local Trip = Newtrip()
+			Go(Trip, Position, 0)
+			local Lateral = Walkto(
+				Trip,
+				Alongof(Position),
+				Passerby.To,
+				Passerby.Direction,
+				Lateralof(Position),
+				Passerby.Band,
+				Randomin(Passerby.Band)
+			)
+			Finishroute(Trip, Passerby.To, Passerby.Direction, Lateral)
+			Route(Customer, Trip, Now)
+			task.cancel(Passerby.Despawn)
+			Passerby.Detours = {}
+			Passerby.Despawn = Despawnatend(Customer, Trip, Now, Speed, function()
+				Forgetpasserby(Customer)
+			end)
 		end
 	end
 end
 
-local function GetFriendDescription(UserId: number): HumanoidDescription?
-	local Cached = DescriptionsByUserId[UserId]
-	if Cached then
-		return Cached
+local function Runtraffic()
+	while true do
+		task.wait(Randomin(Spawngap))
+		local Occupiedshops = 0
+		for _ in pairs(States) do
+			Occupiedshops += 1
+		end
+		if IsBusinessHours() and Passersby < Customerspershop * Occupiedshops then
+			Spawnpasserby()
+		end
 	end
-	local Success, Description = pcall(function()
-		return Players:GetHumanoidDescriptionFromUserId(UserId)
-	end)
-	if not Success then
-		return nil
-	end
-	DescriptionsByUserId[UserId] = Description
-	return Description
 end
 
-local function LoadFriendProfiles(Player: Player)
+local function Planvisit(State: ShopState, Instant: boolean): PlannedVisit
+	local Stop = Shopstops[State.Shop.Name]
+	local Forward = math.random(2) == 1
+	local Direction = if Forward then 1 else -1
+	local Band = if Forward then Forwardband else Backwardband
+	local From = if Forward then 0 else Streetlength
+	if Instant then
+		From = math.clamp(Stop.Along - Direction * Instantspawndistance, 0, Streetlength)
+	end
+	local Trip = Newtrip()
+	local Lateral = Randomin(Band)
+	Go(Trip, Streetposition(From, Lateral), 0)
+	Walkto(Trip, From, Stop.Along - Direction * Approachdistance.Max, Direction, Lateral, Band, Stop.Side * Streethalfwidth * Approachlateral.Min)
+	Entershop(Trip, Stop, From, Direction, math.random() < Hesitatechance, math.random() < Overshootchance)
+	Trip.Looks[#Trip.Points] = Stop.Facing
+	local Speed = Randomin(Walkspeed)
+	return {
+		Trip = Trip,
+		Speed = Speed,
+		Arrival = Streetroute.TimeTo(Trip.Points, Trip.Holds, Speed, #Trip.Points),
+	}
+end
+
+local function Buildwardrobe(Player: Player)
+	local Wardrobe = Instance.new("ScreenGui")
+	Wardrobe.Name = "CustomerWardrobe"
+	Wardrobe.ResetOnSpawn = false
+	Wardrobe.Parent = Player:WaitForChild("PlayerGui")
 	local Success, Pages = pcall(function()
 		return Players:GetFriendsAsync(Player.UserId)
 	end)
@@ -261,346 +484,69 @@ local function LoadFriendProfiles(Player: Player)
 		return
 	end
 
-	local Profiles = {}
-	while #Profiles < MaxFriendProfiles do
+	local Friends = {}
+	while #Friends < MaxFriendProfiles do
 		for _, Entry in ipairs(Pages:GetCurrentPage()) do
-			table.insert(Profiles, { Id = Entry.Id, Name = tostring(Entry.DisplayName or Entry.Username) })
+			table.insert(Friends, Entry.Id)
 		end
-		if Pages.IsFinished then
-			break
-		end
-		if not pcall(function() Pages:AdvanceToNextPageAsync() end) then
+		if Pages.IsFinished or not pcall(function() Pages:AdvanceToNextPageAsync() end) then
 			break
 		end
 	end
-
-	for Index = #Profiles, 2, -1 do
+	for Index = #Friends, 2, -1 do
 		local Swap = math.random(Index)
-		Profiles[Index], Profiles[Swap] = Profiles[Swap], Profiles[Index]
+		Friends[Index], Friends[Swap] = Friends[Swap], Friends[Index]
 	end
-	FriendProfiles = Profiles
-	FriendCursor = 0
-end
 
-local function BuildDressedCustomer(): Model
-	FriendCursor = FriendCursor % #FriendProfiles + 1
-	local Profile = FriendProfiles[FriendCursor]
-	local Customer = (Customerfolder:WaitForChild(FallbackCustomerTemplate) :: Model):Clone()
-	Customer:SetAttribute("FriendUserId", Profile.Id)
-	Customer:SetAttribute("FriendName", Profile.Name)
-	for _, Child in ipairs(Customer:GetChildren()) do
-		if Child:IsA("Clothing") or Child:IsA("ShirtGraphic") or Child:IsA("Accessory") then
-			Child:Destroy()
-		end
-	end
-	Customer.Parent = Poolfolder
-
-	local Description = GetFriendDescription(Profile.Id)
-	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
-	if Description and Humanoid then
-		local Success, Error = pcall(function()
-			Humanoid:ApplyDescription(Description:Clone())
+	for Index = 1, math.min(#Friends, Wardrobesize) do
+		local Described, Description = pcall(function()
+			return Players:GetHumanoidDescriptionFromUserIdAsync(Friends[Index])
 		end)
-		Spawnlog(string.format("dressed %s: %s", Profile.Name, if Success then "ok" else tostring(Error)))
-	else
-		Spawnlog(string.format("dressed %s: no description, template kept", Profile.Name))
-	end
-	return Customer
-end
-
-local function RefillPool()
-	if PoolBuilding then
-		return
-	end
-	PoolBuilding = true
-	while #FriendProfiles > 0 and #ReadyCustomers < math.max(HighestQueueIndex, 1) do
-		table.insert(ReadyCustomers, BuildDressedCustomer())
-	end
-	PoolBuilding = false
-end
-
-local function ClearPool()
-	for _, Customer in ipairs(ReadyCustomers) do
-		Customer:Destroy()
-	end
-	table.clear(ReadyCustomers)
-end
-
-local function CreateCustomerInstance(): Model
-	local Customer = table.remove(ReadyCustomers, 1)
-	if not Customer then
-		Spawnlog("pool empty, using template")
-		Customer = (Customerfolder:WaitForChild(FallbackCustomerTemplate) :: Model):Clone()
-	end
-	task.spawn(RefillPool)
-
-	CustomerSerial += 1
-	Customer.Name = string.format("Customer_%d", CustomerSerial)
-	Customer:SetAttribute("QueueCustomerInstance", true)
-	Customer:SetAttribute("IsFrontCustomer", false)
-	Customer:SetAttribute("ArrivedAtSlot1", false)
-	Customer.Parent = Workspace
-
-	if not Customer.PrimaryPart then
-		local Root = Customer:FindFirstChild("HumanoidRootPart")
-		if Root and Root:IsA("BasePart") then
-			Customer.PrimaryPart = Root
-		else
-			local FirstPart = Customer:FindFirstChildWhichIsA("BasePart", true)
-			if FirstPart then
-				Customer.PrimaryPart = FirstPart
+		if not Player.Parent then
+			return
+		end
+		if Described then
+			local Customer = Customertemplate:Clone()
+			for _, Child in ipairs(Customer:GetChildren()) do
+				if Child:IsA("Clothing") or Child:IsA("ShirtGraphic") or Child:IsA("Accessory") or Child:IsA("LocalScript") then
+					Child:Destroy()
+				end
+			end
+			Customer.Parent = Wardrobeworkshop
+			local Applied = pcall(function()
+				(Customer:WaitForChild("Humanoid") :: Humanoid):ApplyDescriptionAsync(Description:Clone())
+			end)
+			if Applied then
+				Customer.Parent = Wardrobe
+			else
+				Customer:Destroy()
 			end
 		end
 	end
-
-	NormalizeCustomerParts(Customer)
-
-	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
-	if Humanoid then
-		Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-		Humanoid.BreakJointsOnDeath = false
-	end
-
-	Customer:SetAttribute("StandOffset", GetStandHeight(Customer) - TemplateStandHeight)
-
-	return Customer
 end
 
-local function MoveCustomerTo(Customer: Model, Attachment: Attachment, OnComplete: (() -> ())?)
-	local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
-	local ShouldTurnAtArrival = Attachment.Name == "1"
-	Customer:SetAttribute("ArrivedAtSlot1", false)
-	local function FinishArrival()
-		ArriveAt(Customer, GetTargetCFrame(Attachment))
-		if Humanoid then
-			Humanoid:Move(Vector3.zero)
-			Humanoid.AutoRotate = not ShouldTurnAtArrival
-		end
-		if ShouldTurnAtArrival then
-			TweenCustomerTurn(Customer, SlotTurnDegrees, TurnTweenDuration, function()
-				Customer:SetAttribute("TurnedAtSlot1", true)
-				MarkCustomerArrivedAtSlot1(Customer)
-				if OnComplete then
-					OnComplete()
-				end
-			end)
-		elseif OnComplete then
-			OnComplete()
-		end
-	end
-	if not Humanoid then
-		warn(string.format("CustomerService: %s has no Humanoid, teleporting instead", Customer.Name))
-		FinishArrival()
-		return
-	end
-
-	local function StartMove()
-		local TargetPosition = Attachment.WorldPosition
-		Humanoid.AutoRotate = true
-		FacePosition(Customer, TargetPosition)
-		Humanoid:MoveTo(TargetPosition)
-
-		task.spawn(function()
-			local Reached = false
-			local Connection
-			Connection = Humanoid.MoveToFinished:Connect(function()
-				Reached = true
-				Connection:Disconnect()
-				if Customer.Parent then
-					FinishArrival()
-				end
-			end)
-
-			task.wait(4)
-			if not Reached and Customer.Parent then
-				Connection:Disconnect()
-				FinishArrival()
-			end
-		end)
-	end
-
-	StartMove()
-end
-
-local function GetEntryCFrame(): CFrame
-	local Back = AttachmentsByIndex[HighestQueueIndex]
-	local Ahead = AttachmentsByIndex[HighestQueueIndex - 1]
-	if not Ahead then
-		return Back.WorldCFrame
-	end
-	local Direction = Back.WorldPosition - Ahead.WorldPosition
-	if Direction.Magnitude <= 0.001 then
-		return Back.WorldCFrame
-	end
-	return Back.WorldCFrame + Direction.Unit * WalkInStuds
-end
-
-local function FadeCustomerIn(Customer: Model)
-	local Transparencies: { [Instance]: number } = {}
-	for _, Descendant in ipairs(Customer:GetDescendants()) do
-		if Descendant:IsA("BasePart") or Descendant:IsA("Decal") then
-			Transparencies[Descendant] = Descendant.Transparency
-			Descendant.Transparency = 1
-		end
-	end
-	for Descendant, Transparency in pairs(Transparencies) do
-		TweenService:Create(Descendant, TweenInfo.new(WalkInFadeDuration), { Transparency = Transparency }):Play()
-	end
-end
-
-local function SpawnCustomerAt(Index: number, Direct: boolean?)
-	local Attachment = AttachmentsByIndex[Index]
-	if not Attachment then
-		Spawnlog(string.format("spawn %d REFUSED: no attachment (highest=%d)", Index, HighestQueueIndex))
-		return
-	end
-	if OccupiedSlots[Index] then
-		Spawnlog(string.format("spawn %d REFUSED: slot occupied", Index))
-		return
-	end
-	if not IsBusinessHours() then
-		Spawnlog(string.format("spawn %d REFUSED: closed (clock=%.2f)", Index, Lighting.ClockTime))
-		return
-	end
-	if not CanSpawnMoreCustomersToday() then
-		Spawnlog(string.format(
-			"spawn %d REFUSED: daily cap (arrived=%d pending=%d max=%d)",
-			Index,
-			ArrivedCustomersToday,
-			PendingCustomerCount(),
-			GetMaxCustomersPerDay()
-		))
-		return
-	end
-
-	Spawnlog(string.format("spawn %d accepted", Index))
-	local Customer = CreateCustomerInstance()
-	Spawnlog(string.format("spawn %d instance ready: %s", Index, Customer.Name))
-	OccupiedSlots[Index] = Customer
-
-	if Index == 1 and Direct then
-		StandAt(Customer, GetTargetCFrame(Attachment) * CFrame.Angles(0, math.rad(SlotTurnDegrees), 0))
-		Customer:SetAttribute("ArrivedAtSlot1", true)
-		Customer:SetAttribute("TurnedAtSlot1", true)
-		local Humanoid = Customer:FindFirstChildWhichIsA("Humanoid")
-		if Humanoid then
-			Humanoid.AutoRotate = false
-		end
-		MarkCustomerArrivedAtSlot1(Customer)
-		RefreshFrontCustomerAttribute()
-		task.defer(function()
-			PresentFrontOffer()
-		end)
-		return
-	end
-
-	if Direct then
-		StandAt(Customer, GetTargetCFrame(Attachment))
-		RefreshFrontCustomerAttribute()
-		return
-	end
-
-	StandAt(Customer, GetEntryCFrame())
-	FadeCustomerIn(Customer)
-	RefreshFrontCustomerAttribute()
-	MoveCustomerTo(Customer, Attachment, function()
-		if Index == 1 then
-			PresentFrontOffer()
-		end
-	end)
-end
-
-local function GetSpawnInterval(): number
-	local Player = GetShopPlayer()
-	if not Player then
-		return Customerconfig.SpawnIntervalSeconds
-	end
+local function GetSpawnInterval(Player: Player): number
 	return Customerconfig.GetInterval(Core:GetService("UpgradeService"):GetValue(Player, "CooldownReduction"))
 end
 
-local function SetNextCustomerAt(Timestamp: number)
-	NextCustomerAt = Timestamp
-	Lighting:SetAttribute("NextCustomerAt", Timestamp)
+local function SetNextCustomerAt(State: ShopState, Timestamp: number)
+	State.NextCustomerAt = Timestamp
+	State.Player:SetAttribute("NextCustomerAt", Timestamp)
 end
 
-local function ArmCustomerTimer()
-	local Interval = GetSpawnInterval()
-	Lighting:SetAttribute("CustomerInterval", Interval)
-	SetNextCustomerAt(Workspace:GetServerTimeNow() + Interval)
+local function ArmCustomerTimer(State: ShopState)
+	local Interval = GetSpawnInterval(State.Player)
+	State.Player:SetAttribute("CustomerInterval", Interval)
+	State.Plannedvisit = Planvisit(State, false)
+	SetNextCustomerAt(State, Workspace:GetServerTimeNow() + Interval)
 end
 
-local function UpdateCustomerTimer()
-	if not ShopOpened or not IsBusinessHours() or not CanSpawnMoreCustomersToday() then
-		SetNextCustomerAt(0)
-		return
-	end
-	if NeedsInstantCustomer then
-		NeedsInstantCustomer = false
-		if not next(OccupiedSlots) then
-			SpawnCustomerAt(1, true)
-			SetNextCustomerAt(0)
-			return
-		end
-	end
-	if next(OccupiedSlots) then
-		SetNextCustomerAt(0)
-		return
-	end
-	if NextCustomerAt <= 0 then
-		ArmCustomerTimer()
-		return
-	end
-	local Interval = GetSpawnInterval()
-	Lighting:SetAttribute("CustomerInterval", Interval)
-	local Now = Workspace:GetServerTimeNow()
-	if NextCustomerAt > Now + Interval then
-		SetNextCustomerAt(Now + Interval)
-	end
-	if Now < NextCustomerAt then
-		return
-	end
-	Spawnlog("timer: spawning front customer")
-	SpawnCustomerAt(1)
-	SetNextCustomerAt(0)
-end
-
-local function OpenShop(Player: Player)
-	Core:GetService("DataService"):WaitForLoad(Player)
-	LoadFriendProfiles(Player)
-	RefillPool()
-	if not Player.Parent then
-		return
-	end
-	ShopOpened = true
-	Spawnlog(string.format("shop opened (friends=%d, dressed=%d)", #FriendProfiles, #ReadyCustomers))
-	if next(OccupiedSlots) then
-		return
-	end
-	NeedsInstantCustomer = true
-	UpdateCustomerTimer()
-end
-
-local function DespawnCustomer(Customer: Model)
-	Customer:Destroy()
-end
-
-local function GetFrontCustomer(): Model?
-	return OccupiedSlots[1]
-end
-
-RefreshFrontCustomerAttribute = function()
-	for Index, Customer in pairs(OccupiedSlots) do
-		if Customer and Customer.Parent then
-			Customer:SetAttribute("IsFrontCustomer", Index == 1)
-		end
-	end
-end
-
-local function GetOfferPayload(Offer: CustomerOffer?)
+local function GetOfferPayload(State: ShopState)
+	local Offer = State.PendingOffer
 	if not Offer then
 		return nil
 	end
-	local Customer = GetFrontCustomer() :: Model
+	local Customer = State.FrontCustomer :: Folder
 	return {
 		Id = Offer.Id,
 		CustomerName = Customer.Name,
@@ -612,8 +558,8 @@ local function GetOfferPayload(Offer: CustomerOffer?)
 	}
 end
 
-local function BroadcastOffer(Offer: CustomerOffer?)
-	Remotemanager:FireAllClients(Customerservice.Name, "OfferUpdated", GetOfferPayload(Offer))
+local function BroadcastOffer(State: ShopState)
+	Remotemanager:FireClient(Customerservice.Name, "OfferUpdated", State.Player, GetOfferPayload(State))
 end
 
 local function GetOfferLuck(Reputation: number): number
@@ -728,142 +674,173 @@ local function GetAffordableOfferThreshold(Player: Player): number
 end
 
 function Customerservice:RefreshPendingOfferPrice(Player: Player)
-	if not PendingOffer then
+	local State = States[Player]
+	if not State or not State.PendingOffer then
 		return
 	end
+	local Offer = State.PendingOffer :: CustomerOffer
 	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
 	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
 	local DiscountPercent = math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
-	PendingOffer.Price = math.max(math.round(PendingOffer.BasePrice * (1 - DiscountPercent / 100)), 0)
-	BroadcastOffer(PendingOffer)
+	Offer.Price = math.max(math.round(Offer.BasePrice * (1 - DiscountPercent / 100)), 0)
+	BroadcastOffer(State)
 end
 
-local function AdvanceQueue()
-	if HighestQueueIndex <= 0 or not AttachmentsByIndex[0] then
+local function ClearPendingOffer(State: ShopState)
+	State.PendingOffer = nil
+	BroadcastOffer(State)
+end
+
+local function CanPresentOffer(State: ShopState): boolean
+	local Restorationservice = Core:GetService("RestorationService")
+	return not State.PendingOffer
+		and not Restorationservice:HasActiveSession(State.Player)
+		and not Restorationservice:HasActiveObject(State.Player)
+end
+
+local function PresentFrontOffer(State: ShopState)
+	if not CanPresentOffer(State) or not State.FrontCustomer then
 		return
 	end
-
-	local NewOccupiedSlots: { [number]: Model } = {}
-	local FrontCustomer = OccupiedSlots[1]
-	local QueueReady = true
-	local QueuedMoves: { () -> () } = {}
-	if FrontCustomer and FrontCustomer:GetAttribute("TurnedAtSlot1") == true then
-		FrontCustomer:SetAttribute("TurnedAtSlot1", false)
-		QueueReady = false
-		TweenCustomerTurn(FrontCustomer, -SlotTurnDegrees, TurnTweenDuration, function()
-			QueueReady = true
-			for _, Callback in ipairs(QueuedMoves) do
-				Callback()
-			end
-		end)
+	if not Core:GetService("TutorialService"):CanTakeNewObject(State.Player) or States[State.Player] ~= State then
+		return
 	end
+	State.PendingOffer = ChooseCustomerRequest(State.Player)
+	BroadcastOffer(State)
+end
 
-	local function StartQueueMove(Callback: () -> ())
-		if not QueueReady then
-			table.insert(QueuedMoves, Callback)
+local function Dispatchvisitor(State: ShopState, Visit: PlannedVisit, Arrival: number)
+	local Customer = Createcustomer(Visit.Speed)
+	Route(Customer, Visit.Trip, Arrival - Visit.Arrival)
+	Customer.Parent = Streetfolder
+	State.Visitor = Customer
+	CountArrivedCustomer(State)
+	SetNextCustomerAt(State, Arrival)
+	task.delay(Arrival - Workspace:GetServerTimeNow(), function()
+		if State.Visitor ~= Customer then
 			return
 		end
-		Callback()
-	end
-
-	for _, Index in ipairs(QueueIndexes) do
-		local Customer = OccupiedSlots[Index]
-		if not Customer then
-			continue
-		end
-
-		local NextIndex = Index - 1
-		local TargetAttachment = AttachmentsByIndex[NextIndex]
-		if not TargetAttachment then
-			NewOccupiedSlots[Index] = Customer
-			continue
-		end
-
-		if NextIndex == 0 then
-			StartQueueMove(function()
-				MoveCustomerTo(Customer, TargetAttachment, function()
-					DespawnCustomer(Customer)
-				end)
-			end)
-		else
-			NewOccupiedSlots[NextIndex] = Customer
-			StartQueueMove(function()
-				MoveCustomerTo(Customer, TargetAttachment, function()
-					if NextIndex == 1 then
-						PresentFrontOffer()
-					end
-				end)
-			end)
-		end
-	end
-
-	OccupiedSlots = NewOccupiedSlots
-	RefreshFrontCustomerAttribute()
+		State.FrontCustomer = Customer
+		SetNextCustomerAt(State, 0)
+		PresentFrontOffer(State)
+	end)
 end
 
-local function ClearPendingOffer()
-	PendingOffer = nil
-	BroadcastOffer(nil)
+local function Walkaway(State: ShopState)
+	local Customer = State.FrontCustomer :: Folder
+	State.FrontCustomer = nil
+	State.Visitor = nil
+	local Stop = Shopstops[State.Shop.Name]
+	local Forward = math.random(2) == 1
+	local Direction = if Forward then 1 else -1
+	local Band = if Forward then Forwardband else Backwardband
+	local To = if Forward then Streetlength else 0
+	local Trip = Newtrip()
+	Go(Trip, Stop.Path[#Stop.Path], Leavepause, Stop.Facing)
+	local From, Lateral = Leaveshop(Trip, Stop, Direction)
+	Lateral = Walkto(Trip, From, To, Direction, Lateral, Band, Randomin(Band))
+	Finishroute(Trip, To, Direction, Lateral)
+	local Start = Workspace:GetServerTimeNow()
+	Route(Customer, Trip, Start)
+	Despawnatend(Customer, Trip, Start, Customer:GetAttribute("Speed"))
 end
 
-local function CanPresentOffer(): boolean
-	local Restorationservice = Core:GetService("RestorationService")
-	return not PendingOffer and not Restorationservice:HasActiveSession() and not Restorationservice:HasActiveObject()
+local function UpdateCustomerTimer(State: ShopState)
+	if State.Visitor then
+		return
+	end
+	if not IsBusinessHours() or not CanSpawnMoreCustomersToday(State) then
+		SetNextCustomerAt(State, 0)
+		return
+	end
+	if State.NeedsInstantCustomer then
+		State.NeedsInstantCustomer = false
+		local Visit = Planvisit(State, true)
+		Dispatchvisitor(State, Visit, Workspace:GetServerTimeNow() + Visit.Arrival)
+		return
+	end
+	if State.NextCustomerAt <= 0 then
+		ArmCustomerTimer(State)
+		return
+	end
+	local Interval = GetSpawnInterval(State.Player)
+	State.Player:SetAttribute("CustomerInterval", Interval)
+	local Now = Workspace:GetServerTimeNow()
+	if State.NextCustomerAt > Now + Interval then
+		SetNextCustomerAt(State, Now + Interval)
+	end
+	local Visit = State.Plannedvisit :: PlannedVisit
+	if Now < State.NextCustomerAt - Visit.Arrival then
+		return
+	end
+	Dispatchvisitor(State, Visit, State.NextCustomerAt)
 end
 
-PresentFrontOffer = function()
-	if not CanPresentOffer() then
+local function OpenShop(Player: Player)
+	Skipdetours(Core:GetService("ShopService"):GetShop(Player))
+	Core:GetService("DataService"):WaitForLoad(Player)
+	if not Player.Parent then
 		return
 	end
-	local FrontCustomer = GetFrontCustomer()
-	if not FrontCustomer or FrontCustomer:GetAttribute("ArrivedAtSlot1") ~= true then
-		return
-	end
+	local State: ShopState = {
+		Player = Player,
+		Shop = Core:GetService("ShopService"):GetShop(Player),
+		NextCustomerAt = 0,
+		ArrivedToday = 0,
+		NeedsInstantCustomer = true,
+	}
+	States[Player] = State
+	ReplicateCustomerCount(State)
+end
 
-	local Player = GetShopPlayer()
-	if not Player then
+local function Closeshop(Player: Player)
+	local State = States[Player]
+	if not State then
 		return
 	end
-	if not Core:GetService("TutorialService"):CanTakeNewObject(Player) then
-		return
-	end
-	PendingOffer = ChooseCustomerRequest(Player)
-	if PendingOffer then
-		BroadcastOffer(PendingOffer)
+	States[Player] = nil
+	State.PendingOffer = nil
+	if State.FrontCustomer then
+		Walkaway(State)
+	elseif State.Visitor then
+		State.Visitor:Destroy()
+		State.Visitor = nil
 	end
 end
 
 function Customerservice:Init()
-	CollectQueueAttachments()
+	local Map = Workspace:WaitForChild("Map")
+	local Spawns = Map:WaitForChild("SpawnCustomers")
+	Streetstart = Floorpoint((Spawns:WaitForChild("1") :: Attachment).WorldPosition)
+	Streetfinish = Floorpoint((Spawns:WaitForChild("2") :: Attachment).WorldPosition)
+	local Axis = Streetfinish - Streetstart
+	Streetlength = Axis.Magnitude
+	Streetside = Vector3.new(Axis.X, 0, Axis.Z).Unit:Cross(Vector3.yAxis)
+	Shopsfolder = Map:WaitForChild("Shops") :: Folder
+	Streetfolder = Instance.new("Folder")
+	Streetfolder.Name = "StreetCustomers"
+	Streetfolder.Parent = ReplicatedStorage
 	CollectOfferObjects()
-	Customerfolder = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Customer") :: Folder
-	Poolfolder = Instance.new("Folder")
-	Poolfolder.Name = "DressedCustomerPool"
-	Poolfolder.Parent = ServerStorage
-	TemplateStandHeight = GetStandHeight(Customerfolder:WaitForChild(FallbackCustomerTemplate) :: Model)
+	Customertemplate = ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Customer"):WaitForChild(FallbackCustomerTemplate) :: Model
+	Wardrobeworkshop = Instance.new("Folder")
+	Wardrobeworkshop.Name = "CustomerWardrobeWorkshop"
+	Wardrobeworkshop.Parent = ServerStorage
 	SyncDayState()
 	Lighting:GetAttributeChangedSignal("Day"):Connect(SyncDayState)
 	for _, Player in ipairs(Players:GetPlayers()) do
 		task.spawn(OpenShop, Player)
+		task.spawn(Buildwardrobe, Player)
 	end
 	Players.PlayerAdded:Connect(function(Player)
 		task.spawn(OpenShop, Player)
-		task.defer(function()
-			self:RefreshCustomerLimit()
-		end)
+		task.spawn(Buildwardrobe, Player)
 	end)
-	Players.PlayerRemoving:Connect(function()
-		ShopOpened = false
-		FriendProfiles = {}
-		FriendCursor = 0
-		ClearPool()
-		task.defer(function()
-			self:RefreshCustomerLimit()
-		end)
-	end)
+	Players.PlayerRemoving:Connect(Closeshop)
 
 	Remotemanager:OnServerInvoke(self.Name, "RequestPriceEstimate", function(Player, OfferId)
-		if not PendingOffer or PendingOffer.Id ~= tonumber(OfferId) then
+		local State = States[Player]
+		local Offer = if State then State.PendingOffer else nil
+		if not Offer or Offer.Id ~= tonumber(OfferId) then
 			return { Success = false, Reason = "OfferUnavailable" }
 		end
 		if not Core:GetService("UpgradeService"):ConsumePriceEstimate(Player) then
@@ -871,23 +848,20 @@ function Customerservice:Init()
 		end
 		return {
 			Success = true,
-			MaxPrice = PendingOffer.MaxValue,
-			Mutation = PendingOffer.Mutation,
+			MaxPrice = Offer.MaxValue,
+			Mutation = Offer.Mutation,
 		}
 	end)
 
-	Remotemanager:OnServerInvoke(self.Name, "GetPendingOffer", function()
-		return GetOfferPayload(PendingOffer)
+	Remotemanager:OnServerInvoke(self.Name, "GetPendingOffer", function(Player)
+		local State = States[Player]
+		return if State then GetOfferPayload(State) else nil
 	end)
 
 	Remotemanager:OnServerInvoke(self.Name, "RespondToOffer", function(Player, OfferId, Decision)
-		local FrontCustomer = GetFrontCustomer()
-		if
-			not PendingOffer
-			or PendingOffer.Id ~= OfferId
-			or not FrontCustomer
-			or FrontCustomer:GetAttribute("ArrivedAtSlot1") ~= true
-		then
+		local State = States[Player]
+		local Offer = if State then State.PendingOffer else nil
+		if not State or not Offer or Offer.Id ~= OfferId or not State.FrontCustomer then
 			return {
 				Success = false,
 				Reason = "OfferUnavailable",
@@ -897,66 +871,43 @@ function Customerservice:Init()
 		local NormalizedDecision = string.lower(tostring(Decision))
 		if NormalizedDecision == "accept" then
 			local Cashservice = Core:GetService("CashService")
-			if not Cashservice:SpendCash(Player, PendingOffer.Price) then
+			if not Cashservice:SpendCash(Player, Offer.Price) then
 				if Cashservice:CanSpendCash(Player, GetAffordableOfferThreshold(Player)) then
 					return {
 						Success = false,
 						Reason = "NotEnoughCash",
 					}
 				end
-				PendingOffer = ChooseEmergencyRequest()
-				BroadcastOffer(PendingOffer)
+				State.PendingOffer = ChooseEmergencyRequest()
+				BroadcastOffer(State)
 				return {
 					Success = false,
 					Reason = "EmergencyOfferPresented",
 				}
 			end
-			Core:GetService("InventoryService"):AddPurchasedItem(Player, PendingOffer.ObjectKey, {
-				MaxValue = PendingOffer.MaxValue,
-				MaxReputation = PendingOffer.MaxReputation,
-				Mutation = PendingOffer.Mutation,
-			}, PendingOffer.Price)
+			Core:GetService("InventoryService"):AddPurchasedItem(Player, Offer.ObjectKey, {
+				MaxValue = Offer.MaxValue,
+				MaxReputation = Offer.MaxReputation,
+				Mutation = Offer.Mutation,
+			}, Offer.Price)
 			Core:GetService("TutorialService"):MarkObjectBought(Player)
-			if not PendingOffer.Emergency then
+			if not Offer.Emergency then
 				Core:GetService("DailyTaskService"):Record(Player, "Buy", {
-					ObjectKey = PendingOffer.ObjectKey,
-					Rarity = Objectconfig.Object[PendingOffer.ObjectKey].Rarity,
-					Value = PendingOffer.Price,
+					ObjectKey = Offer.ObjectKey,
+					Rarity = Objectconfig.Object[Offer.ObjectKey].Rarity,
+					Value = Offer.Price,
 				})
 			end
-			local ExitAttachment = AttachmentsByIndex[0]
-			OccupiedSlots[1] = nil
-			FrontCustomer:SetAttribute("IsFrontCustomer", false)
-			FrontCustomer:SetAttribute("ArrivedAtSlot1", false)
-			RefreshFrontCustomerAttribute()
-			ClearPendingOffer()
-			if ExitAttachment then
-				MoveCustomerTo(FrontCustomer, ExitAttachment, function()
-					DespawnCustomer(FrontCustomer)
-				end)
-			else
-				DespawnCustomer(FrontCustomer)
-			end
+			ClearPendingOffer(State)
+			Walkaway(State)
 			return {
 				Success = true,
 			}
 		end
 
 		if NormalizedDecision == "decline" then
-			local ExitAttachment = AttachmentsByIndex[0]
-			OccupiedSlots[1] = nil
-			FrontCustomer:SetAttribute("IsFrontCustomer", false)
-			FrontCustomer:SetAttribute("ArrivedAtSlot1", false)
-			RefreshFrontCustomerAttribute()
-			ClearPendingOffer()
-			if ExitAttachment then
-				MoveCustomerTo(FrontCustomer, ExitAttachment, function()
-					DespawnCustomer(FrontCustomer)
-				end)
-			else
-				DespawnCustomer(FrontCustomer)
-			end
-			AdvanceQueue()
+			ClearPendingOffer(State)
+			Walkaway(State)
 			return {
 				Success = true,
 			}
@@ -970,18 +921,22 @@ function Customerservice:Init()
 end
 
 function Customerservice:RefreshCustomerLimit()
-	ReplicateCustomerCount()
+	for _, State in pairs(States) do
+		ReplicateCustomerCount(State)
+	end
 end
 
 function Customerservice:Start()
-	if HighestQueueIndex <= 0 or not AttachmentsByIndex[0] then
-		return
-	end
-
 	task.spawn(function()
+		for _, Shop in ipairs(Shopsfolder:GetChildren()) do
+			Shopstops[Shop.Name] = Buildshopstop(Shop)
+		end
+		task.spawn(Runtraffic)
 		while true do
+			for _, State in pairs(table.clone(States)) do
+				UpdateCustomerTimer(State)
+			end
 			task.wait(1)
-			UpdateCustomerTimer()
 		end
 	end)
 
@@ -989,22 +944,10 @@ function Customerservice:Start()
 		while true do
 			task.wait(5)
 			SyncDayState()
-			if PendingOffer then
-				continue
-			end
-			if not IsBusinessHours() then
-				continue
-			end
-
-			local Restorationservice = Core:GetService("RestorationService")
-			if Restorationservice:HasActiveSession() or Restorationservice:HasActiveObject() then
-				continue
-			end
-
-			if GetFrontCustomer() then
-				PresentFrontOffer()
-			else
-				AdvanceQueue()
+			if IsBusinessHours() then
+				for _, State in pairs(table.clone(States)) do
+					PresentFrontOffer(State)
+				end
 			end
 		end
 	end)

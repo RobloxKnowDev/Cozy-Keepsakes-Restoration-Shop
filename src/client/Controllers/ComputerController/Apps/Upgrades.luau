@@ -58,7 +58,11 @@ local function ApplyCard(Controller, UpgradeName: string, State)
 		then FormatValue(State.CurrentValue)
 		elseif State.MaxLevel then string.format("%d/%d", State.Level, State.MaxLevel)
 		else string.format("%d/∞", State.Level)
-	CardData.CashPriceText.Text = if IsMax then "Max" else Shared.FormatCurrency(State.CashPrice or 0)
+	CardData.CashPriceText.Text = if IsMax
+		then "Max"
+		elseif State.CashPrice == 0 then "Free"
+		else Shared.FormatCurrency(State.CashPrice or 0)
+	CardData.RobuxButton.Visible = State.CashPrice ~= 0
 	CardData.SecondText.Visible = SecondTexts[UpgradeName] ~= nil and not IsMax
 	local ProductId = tonumber(State.DeveloperProductId) or 0
 	CardData.ProductId = ProductId
@@ -98,6 +102,7 @@ local function BindCard(Controller, UpgradeName: string)
 		ProductId = 0,
 		LastProductId = nil,
 		IsMaxLevel = false,
+		IsBuying = false,
 		ProductRequestId = 0,
 	}
 	Controller.upgradeCards[UpgradeName] = CardData
@@ -109,6 +114,9 @@ local function BindCard(Controller, UpgradeName: string)
 	end)
 	CashButton:SetAttribute("SilentClick", true)
 	Core:GetController("GamepadController"):OnActivated(CashButton, function()
+		if CardData.IsBuying then
+			return
+		end
 		local Feedback = Core:GetController("FeedbackController")
 		if CardData.IsMaxLevel then
 			Feedback:UiClick()
@@ -121,7 +129,9 @@ local function BindCard(Controller, UpgradeName: string)
 		else
 			Feedback:UiClick()
 		end
+		CardData.IsBuying = true
 		local Response = RemoteManager:InvokeServer("UpgradeService", "PurchaseWithCash", UpgradeName)
+		CardData.IsBuying = false
 		if type(Response) == "table" and Response.Success == true then
 			return
 		end

@@ -1,17 +1,20 @@
 local Players = game:GetService("Players")
+local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
 local Tweenservice = game:GetService("TweenService")
 local Userinputservice = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local Playershop = require(Replicatedstorage.Shared.Utils.PlayerShop)
+
 local Controller = { Name = "InspectionCameraController", Priority = 5 }
 
 local Player = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
-local Slot = Workspace:WaitForChild("Map"):WaitForChild("Slot1")
-local Mapcamera = Slot:WaitForChild("Camera")
-local Generateditems = Slot:WaitForChild("GeneratedItems")
-local Planwork = Slot:WaitForChild("Work"):WaitForChild("PlanWork", 10)
+local Shop = Playershop(Player)
+local Mapcamera = Shop:WaitForChild("Camera")
+local Generateditems = Shop:WaitForChild("GeneratedItems")
+local Planwork = Shop:WaitForChild("Work")
 type InspectionTarget = Model | BasePart
 local Target: InspectionTarget? = nil
 local Yaw = 0
@@ -57,10 +60,14 @@ local Cameratransitionlooktarget = Vector3.zero
 local Staticcameraduration = 0.45
 local Expositioncameraduration = 0.45
 local Expositionbuttonleadtime = 0.1
+local Defaultfieldofview = Camera.FieldOfView
+local Expositionfieldofview = 80
+local Fieldofview = Defaultfieldofview
 
 type CameraPartOptions = {
 	Duration: number?,
 	LeadTime: number?,
+	FieldOfView: number?,
 	OnLead: (() -> ())?,
 	OnArrived: (() -> ())?,
 }
@@ -198,6 +205,10 @@ function Controller:GetOrbitTravel(): number
 	return Orbittravel
 end
 
+function Controller:GetFieldOfView(): number
+	return Fieldofview
+end
+
 function Controller:NudgeZoom(Direction: number)
 	if not Target or Completionview or Cameratransitionactive then return end
 	Targetdistance = math.clamp(Targetdistance * (1 - Direction * 0.18), Mindistance, Maxdistance)
@@ -231,6 +242,16 @@ local function CancelIntroCameraTween()
 	Tween:Destroy()
 end
 
+local function Setfieldofview(Value: number, Duration: number)
+	if Fieldofview == Value then
+		return
+	end
+	Fieldofview = Value
+	Tweenservice:Create(Camera, TweenInfo.new(Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		FieldOfView = Value,
+	}):Play()
+end
+
 local function ShowCameraPart(CameraPart: BasePart, Options: CameraPartOptions?): boolean
 	if Target then
 		return false
@@ -244,6 +265,7 @@ local function ShowCameraPart(CameraPart: BasePart, Options: CameraPartOptions?)
 	Camera.CameraType = Enum.CameraType.Scriptable
 	CancelIntroCameraTween()
 	local Duration = if Options and Options.Duration then Options.Duration else Staticcameraduration
+	Setfieldofview(if Options and Options.FieldOfView then Options.FieldOfView else Defaultfieldofview, Duration)
 
 	local Newtween = Tweenservice:Create(
 		Camera,
@@ -286,6 +308,7 @@ function Controller:ShowExpositionCamera(OnLead: (() -> ())?, OnArrived: (() -> 
 	return ShowCameraPart(Mapcamera:WaitForChild("CamPartExposition") :: BasePart, {
 		Duration = Expositioncameraduration,
 		LeadTime = Expositionbuttonleadtime,
+		FieldOfView = Expositionfieldofview,
 		OnLead = OnLead,
 		OnArrived = OnArrived,
 	})
@@ -307,7 +330,8 @@ function Controller:Begin(Object: InspectionTarget)
 	Objectrotationgoal = nil
 	Completionview = false
 	Groundy = Object:GetAttribute("SpawnFloorY") or Findgroundy(Object)
-	Yaw = math.pi
+	local Look = (Mapcamera:WaitForChild("CamPart") :: BasePart).CFrame.LookVector
+	Yaw = math.atan2(-Look.X, -Look.Z)
 	Pitch = math.rad(-38)
 	Orbittravel = 0
 
@@ -329,6 +353,7 @@ function Controller:Begin(Object: InspectionTarget)
 	Cameratransitionlooktarget = Camera.CFrame.Position + Camera.CFrame.LookVector * 10
 	Introcameraactive = false
 	Camera.CameraType = Enum.CameraType.Scriptable
+	Setfieldofview(Defaultfieldofview, Cameratransitionduration)
 end
 
 function Controller:PrepareCompletion()

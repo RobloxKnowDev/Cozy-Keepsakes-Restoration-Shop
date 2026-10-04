@@ -337,8 +337,8 @@ function MonetizationService:Init()
 			else
 				for _, Player in ipairs(ExpiredPersonalBoosts) do
 					if Player.Parent then
-						self:PushState(Player)
 						Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
+						self:PushState(Player)
 					end
 				end
 				if ServerLuckEndsAt > CurrentTime then self:PushAllStates() end
