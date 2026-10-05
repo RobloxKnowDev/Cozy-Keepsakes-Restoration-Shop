@@ -18,6 +18,7 @@ local CrossfadeSeconds = 1.4
 local CrossfadeTweenInfo = TweenInfo.new(CrossfadeSeconds, Enum.EasingStyle.Linear)
 local ClapFadeSeconds = 0.9
 local ClapVolumeScale = 0.6
+local Maximumpitch = math.rad(82)
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Restorationpercent = require(Replicatedstorage.Shared.Utils.RestorationPercent)
@@ -96,6 +97,7 @@ end
 function Completioncontroller:Init()
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.gui = Playergui:WaitForChild("CompleteUi") :: ScreenGui
+	self.gui.ClipToDeviceSafeArea = false
 	self.frame = self.gui:WaitForChild("CompleteFrame") :: GuiObject
 	self.preview = self.frame:WaitForChild("ObjectPreview")
 	self.viewport = if self.preview:IsA("ViewportFrame") then self.preview else nil
@@ -205,7 +207,7 @@ function Completioncontroller:Hide()
 	self.onContinue = nil
 	self.frame.Position = self.frameShownPosition
 	self.transition.Visible = false
-	self.transition.Size = UDim2.new(1, 0, 1, 0)
+	self.transition.Size = UDim2.fromScale(3, 3)
 	self.transition.BackgroundTransparency = 1
 	for _, Child in self.frame:GetChildren() do
 		if Child.Name == "Confetti" then
@@ -237,7 +239,7 @@ function Completioncontroller:PlayAppearanceAnimation()
 	self.frame.Position = self.frameShownPosition
 	self.transition.Visible = true
 	self.transition.BackgroundTransparency = 1
-	self.transition.Size = UDim2.new(1, 0, 1, 0)
+	self.transition.Size = UDim2.fromScale(3, 3)
 	local Transitionin = Tweenservice:Create(
 		self.transition,
 		TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -439,7 +441,7 @@ function Completioncontroller:PlayExitAnimation(Onfinished: () -> ())
 	end
 	self.transition.Visible = true
 	self.transition.BackgroundTransparency = 1
-	self.transition.Size = UDim2.new(1, 0, 1, 0)
+	self.transition.Size = UDim2.fromScale(3, 3)
 	local Transitionin = Tweenservice:Create(
 		self.transition,
 		TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -536,7 +538,7 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 		end
 
 		local Objectkey = tostring(Object:GetAttribute("ObjectKey"))
-		Pivotto(Clone, CFrame.Angles(math.rad(90), math.rad(-90), math.rad(90)) * Getobjectrotation(Objectkey))
+		Pivotto(Clone, CFrame.Angles(0, math.rad(90), 0) * Getobjectrotation(Objectkey))
 		Clone.Parent = self.world
 		self.displayObject = Clone
 		self.basePivot = Pivotof(Clone)
@@ -607,14 +609,14 @@ function Completioncontroller:InputChanged(Input: InputObject)
 	local Width = math.max(Viewport.X, 1)
 	local Height = math.max(Viewport.Y, 1)
 	self.rotation = math.clamp(
-		self.dragOffset - (Input.Position.X - self.dragStart) / Width * math.rad(360),
+		self.dragOffset + (Input.Position.X - self.dragStart) / Width * math.rad(360),
 		math.rad(-180),
 		math.rad(180)
 	)
 	self.pitch = math.clamp(
-		self.pitchOffset - (Input.Position.Y - self.dragStartY) / Height * math.rad(360),
-		math.rad(-180),
-		math.rad(180)
+		self.pitchOffset + (Input.Position.Y - self.dragStartY) / Height * math.rad(360),
+		-Maximumpitch,
+		Maximumpitch
 	)
 end
 
@@ -636,8 +638,8 @@ function Completioncontroller:Update(Deltatime: number)
 	local Stick = self.stick
 	if not self.closing and Stick.Magnitude > 0.18 then
 		local Turn = math.rad(200) * Deltatime
-		self.rotation = math.clamp(self.rotation - Stick.X * Turn, math.rad(-180), math.rad(180))
-		self.pitch = math.clamp(self.pitch + Stick.Y * Turn, math.rad(-180), math.rad(180))
+		self.rotation = math.clamp(self.rotation + Stick.X * Turn, math.rad(-180), math.rad(180))
+		self.pitch = math.clamp(self.pitch - Stick.Y * Turn, -Maximumpitch, Maximumpitch)
 	elseif not self.dragging then
 		local Decay = math.exp(-9 * Deltatime)
 		self.rotation *= Decay

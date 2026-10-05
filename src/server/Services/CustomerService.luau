@@ -95,9 +95,11 @@ type ShopState = {
 	FrontCustomer: Folder?,
 	PendingOffer: CustomerOffer?,
 	Plannedvisit: PlannedVisit?,
+	Arrivaltask: thread?,
 	NextCustomerAt: number,
 	ArrivedToday: number,
 	NeedsInstantCustomer: boolean,
+	Directcustomer: boolean,
 }
 type Passerby = {
 	Direction: number,
@@ -118,6 +120,7 @@ local Backwardband = NumberRange.new(-Streethalfwidth, Lanecross)
 local Fullband = NumberRange.new(-Streethalfwidth, Streethalfwidth)
 local Shopstops: { [string]: ShopStop } = {}
 local States: { [Player]: ShopState } = {}
+local Pendingskips: { [Player]: number } = {}
 local Passerbys: { [Folder]: Passerby } = {}
 local Passersby = 0
 local CustomerSerial = 0
@@ -126,6 +129,12 @@ local Customertemplate: Model
 local Wardrobeworkshop: Folder
 local ObjectsByRarity: { [string]: { string } } = {}
 local CurrentDay = 1
+local Stopsready = false
+
+local function Setpendingskips(Player: Player, Count: number)
+	Pendingskips[Player] = Count
+	Player:SetAttribute("PendingSkips", Count)
+end
 
 local function GetMaxCustomersPerDay(Player: Player): number
 	return math.max(math.floor(Core:GetService("UpgradeService"):GetValue(Player, "DailyCustomers")), 0)
@@ -709,21 +718,46 @@ local function PresentFrontOffer(State: ShopState)
 	BroadcastOffer(State)
 end
 
+local function Arrive(State: ShopState, Customer: Folder)
+	State.Arrivaltask = nil
+	if State.Visitor ~= Customer then
+		return
+	end
+	State.FrontCustomer = Customer
+	SetNextCustomerAt(State, 0)
+	PresentFrontOffer(State)
+end
+
+local function Schedulearrival(State: ShopState, Customer: Folder, Arrival: number)
+	if State.Arrivaltask then
+		task.cancel(State.Arrivaltask)
+	end
+	SetNextCustomerAt(State, Arrival)
+	State.Arrivaltask = task.delay(Arrival - Workspace:GetServerTimeNow(), Arrive, State, Customer)
+end
+
 local function Dispatchvisitor(State: ShopState, Visit: PlannedVisit, Arrival: number)
 	local Customer = Createcustomer(Visit.Speed)
 	Route(Customer, Visit.Trip, Arrival - Visit.Arrival)
 	Customer.Parent = Streetfolder
 	State.Visitor = Customer
 	CountArrivedCustomer(State)
-	SetNextCustomerAt(State, Arrival)
-	task.delay(Arrival - Workspace:GetServerTimeNow(), function()
-		if State.Visitor ~= Customer then
-			return
-		end
-		State.FrontCustomer = Customer
-		SetNextCustomerAt(State, 0)
-		PresentFrontOffer(State)
-	end)
+	Schedulearrival(State, Customer, Arrival)
+end
+
+local function Skipwait(State: ShopState): boolean
+	local Arrival = Workspace:GetServerTimeNow() + Customerconfig.SkipArrivalSeconds
+	if State.FrontCustomer or State.NextCustomerAt <= Arrival + Customerconfig.SkipMarginSeconds then
+		return false
+	end
+	local Visitor = State.Visitor
+	if Visitor then
+		Visitor:SetAttribute("RouteStart", Visitor:GetAttribute("RouteStart") - (State.NextCustomerAt - Arrival))
+		Schedulearrival(State, Visitor, Arrival)
+	else
+		Dispatchvisitor(State, State.Plannedvisit :: PlannedVisit, Arrival)
+	end
+	return true
 end
 
 local function Walkaway(State: ShopState)
@@ -749,6 +783,13 @@ local function UpdateCustomerTimer(State: ShopState)
 	if State.Visitor then
 		return
 	end
+	if State.Directcustomer then
+		local Visit = Planvisit(State, true)
+		State.Directcustomer = false
+		State.NeedsInstantCustomer = false
+		Dispatchvisitor(State, Visit, Workspace:GetServerTimeNow())
+		return
+	end
 	if not IsBusinessHours() or not CanSpawnMoreCustomersToday(State) then
 		SetNextCustomerAt(State, 0)
 		return
@@ -761,6 +802,9 @@ local function UpdateCustomerTimer(State: ShopState)
 	end
 	if State.NextCustomerAt <= 0 then
 		ArmCustomerTimer(State)
+		if Pendingskips[State.Player] > 0 and Skipwait(State) then
+			Setpendingskips(State.Player, Pendingskips[State.Player] - 1)
+		end
 		return
 	end
 	local Interval = GetSpawnInterval(State.Player)
@@ -779,6 +823,7 @@ end
 local function OpenShop(Player: Player)
 	Skipdetours(Core:GetService("ShopService"):GetShop(Player))
 	Core:GetService("DataService"):WaitForLoad(Player)
+	local Intutorial = Core:GetService("TutorialService"):IsActive(Player)
 	if not Player.Parent then
 		return
 	end
@@ -788,9 +833,14 @@ local function OpenShop(Player: Player)
 		NextCustomerAt = 0,
 		ArrivedToday = 0,
 		NeedsInstantCustomer = true,
+		Directcustomer = Intutorial,
 	}
 	States[Player] = State
+	Setpendingskips(Player, Pendingskips[Player] or 0)
 	ReplicateCustomerCount(State)
+	if Stopsready then
+		UpdateCustomerTimer(State)
+	end
 end
 
 local function Closeshop(Player: Player)
@@ -827,6 +877,19 @@ function Customerservice:Init()
 	Wardrobeworkshop.Parent = ServerStorage
 	SyncDayState()
 	Lighting:GetAttributeChangedSignal("Day"):Connect(SyncDayState)
+	Core:GetService("DataService"):Register("Customer", {
+		Load = function(Player, Saved)
+			local Count = tonumber(Saved.PendingSkips) or 0
+			Pendingskips[Player] = if Count == Count and math.abs(Count) ~= math.huge then math.max(math.floor(Count), 0) else 0
+		end,
+		Save = function(Player)
+			return { PendingSkips = Pendingskips[Player] or 0 }
+		end,
+		Clear = function(Player)
+			Closeshop(Player)
+			Pendingskips[Player] = nil
+		end,
+	})
 	for _, Player in ipairs(Players:GetPlayers()) do
 		task.spawn(OpenShop, Player)
 		task.spawn(Buildwardrobe, Player)
@@ -835,7 +898,6 @@ function Customerservice:Init()
 		task.spawn(OpenShop, Player)
 		task.spawn(Buildwardrobe, Player)
 	end)
-	Players.PlayerRemoving:Connect(Closeshop)
 
 	Remotemanager:OnServerInvoke(self.Name, "RequestPriceEstimate", function(Player, OfferId)
 		local State = States[Player]
@@ -920,10 +982,25 @@ function Customerservice:Init()
 	end)
 end
 
+function Customerservice:PresentOffer(Player: Player)
+	local State = States[Player]
+	if State then
+		PresentFrontOffer(State)
+	end
+end
+
 function Customerservice:RefreshCustomerLimit()
 	for _, State in pairs(States) do
 		ReplicateCustomerCount(State)
 	end
+end
+
+function Customerservice:SkipCooldown(Player: Player): boolean
+	local State = States[Player]
+	if not State or not Skipwait(State) then
+		Setpendingskips(Player, (Pendingskips[Player] or 0) + 1)
+	end
+	return true
 end
 
 function Customerservice:Start()
@@ -931,6 +1008,7 @@ function Customerservice:Start()
 		for _, Shop in ipairs(Shopsfolder:GetChildren()) do
 			Shopstops[Shop.Name] = Buildshopstop(Shop)
 		end
+		Stopsready = true
 		task.spawn(Runtraffic)
 		while true do
 			for _, State in pairs(table.clone(States)) do

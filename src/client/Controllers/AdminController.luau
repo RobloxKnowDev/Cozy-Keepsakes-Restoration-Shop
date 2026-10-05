@@ -213,7 +213,11 @@ function Admincontroller:Submit()
 		if not self.gui.Enabled then
 			return
 		end
-		self:Showrows({ { Text = tostring(Result), Color = Color3.new(1, 1, 1) } })
+		local Lines = {}
+		for Line in string.gmatch(tostring(Result), "[^\n]+") do
+			table.insert(Lines, { Text = Line, Color = Color3.new(1, 1, 1) })
+		end
+		self:Showrows(Lines)
 	end)
 end
 

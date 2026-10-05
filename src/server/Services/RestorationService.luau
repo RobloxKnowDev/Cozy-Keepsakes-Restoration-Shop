@@ -64,6 +64,7 @@ type CoverageMask = { Blank: { boolean }, Premarked: number }
 local Maskcache: { [string]: CoverageMask } = {}
 local Textureframenames = { Ink = true, ScratchesFrame = true }
 local Frontfacerank = { Front = 1, Back = 2, Top = 3, Left = 4, Right = 5, Bottom = 6 }
+local Workbenchturndegrees = -90
 
 local function Buildmask(Image: string, Shape): CoverageMask
 	local Key = Image .. "|" .. Roundedtexture.GetKey(Shape)
@@ -422,6 +423,7 @@ end
 
 local function Spawnconfiguredobject(Objectname: string, Shop: Model, Maximums: ObjectMaximums?): RestorationObject
 	local Spawnattachment = Shop:WaitForChild("Attachement"):WaitForChild("Spawn") :: Attachment
+	local Camerapart = Shop:WaitForChild("Camera"):WaitForChild("CamPart") :: BasePart
 	local Definition = Config.Object[Objectname]
 	local Asset = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object"):WaitForChild(Objectname)
 	local Object = Asset:Clone() :: RestorationObject
@@ -447,7 +449,10 @@ local function Spawnconfiguredobject(Objectname: string, Shop: Model, Maximums: 
 	Object:SetAttribute("ImageId", Definition.IdImage or "")
 	Object:SetAttribute("MaxReputation", Maxreputation)
 	Object.Parent = Shop:WaitForChild("GeneratedItems")
-	local Spawncframe = Spawnattachment.WorldCFrame * CFrame.Angles(0, math.rad(90), 0) * Getobjectrotation(Objectname)
+	local Spawnposition = Spawnattachment.WorldPosition
+	local Cameralook = Camerapart.CFrame.LookVector
+	local Facing = CFrame.lookAt(Spawnposition, Spawnposition - Vector3.new(Cameralook.X, 0, Cameralook.Z))
+	local Spawncframe = Facing * CFrame.Angles(0, math.rad(Workbenchturndegrees), 0) * Getobjectrotation(Objectname)
 	if Object:IsA("Model") then
 		Object:PivotTo(Spawncframe)
 	else
@@ -890,6 +895,7 @@ function Restorationservice:Init()
 		if Completionratio >= 0.5 and Player.Parent then
 			Inventoryservice:UnlockIndexEntry(Player, Objectkey, Itemdata.Mutation)
 		end
+		Core:GetService("CustomerService"):PresentOffer(Player)
 
 		return Restoreditem
 	end)
@@ -1112,6 +1118,7 @@ function Restorationservice:Init()
 		Lastinkclean[Player] = nil
 		Returnsessionitem(Player, Sessionobject)
 		if Sessionobject and Activeobjects[Player] == Sessionobject then Releaseactiveobject(Player) end
+		Core:GetService("CustomerService"):PresentOffer(Player)
 	end)
 end
 

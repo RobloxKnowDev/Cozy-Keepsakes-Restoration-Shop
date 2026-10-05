@@ -105,6 +105,7 @@ function Tutorialcontroller:Buildgui()
 	self.gui.Name = "TutorialUi"
 	self.gui.DisplayOrder = 5000
 	self.gui.IgnoreGuiInset = true
+	self.gui.ClipToDeviceSafeArea = false
 	self.gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	self.gui.ResetOnSpawn = false
 	self.gui.Enabled = false
@@ -359,7 +360,7 @@ end
 
 function Tutorialcontroller:Applyspotlight(Position: Vector2?, Size: Vector2?)
 	local Viewport = self.gui.AbsoluteSize
-	local Bleed = 4
+	local Bleed = math.max(Viewport.X, Viewport.Y)
 	if not Position or not Size then
 		self.shades[1].Position = UDim2.fromOffset(-Bleed, -Bleed)
 		self.shades[1].Size = UDim2.fromOffset(Viewport.X + Bleed * 2, Viewport.Y + Bleed * 2)

@@ -21,6 +21,13 @@ local Defaults = {
 
 local Settingsbyplayer: { [Player]: { [string]: any } } = {}
 
+local function Finitenumber(Value: any): number?
+	if type(Value) ~= "number" or Value ~= Value or math.abs(Value) == math.huge then
+		return nil
+	end
+	return Value
+end
+
 function Settingsservice:EnsurePlayer(Player: Player): { [string]: any }
 	local Settings = Settingsbyplayer[Player]
 	if not Settings then
@@ -40,7 +47,10 @@ function Settingsservice:SetSetting(Player: Player, Name: string, Value: any)
 	if type(Default) == "boolean" then
 		Settings[Name] = Value == true
 	elseif type(Default) == "number" then
-		Settings[Name] = math.clamp(tonumber(Value) or Default, 0, 1)
+		local Number = Finitenumber(Value)
+		if Number then
+			Settings[Name] = math.clamp(Number, 0, 1)
+		end
 	end
 end
 
@@ -52,7 +62,7 @@ function Settingsservice:Init()
 				if type(Default) == "boolean" then
 					Settings[Name] = if Saved[Name] == nil then Default else Saved[Name] == true
 				else
-					Settings[Name] = math.clamp(tonumber(Saved[Name]) or Default, 0, 1)
+					Settings[Name] = math.clamp(Finitenumber(Saved[Name]) or Default, 0, 1)
 				end
 			end
 		end,

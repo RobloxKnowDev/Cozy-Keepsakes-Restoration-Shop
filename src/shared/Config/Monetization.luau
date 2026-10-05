@@ -13,6 +13,7 @@ return {
 	},
 
 	SkipDayProductId = 3709374250,
+	SkipCooldownProductId = 3716684136,
 
 	StarterPack = {
 		Id = 1949649693,

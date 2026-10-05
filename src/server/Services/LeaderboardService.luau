@@ -5,6 +5,7 @@ local Replicatedstorage = game:GetService("ReplicatedStorage")
 local UserService = game:GetService("UserService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Datastorerequest = require(script.Parent.Parent.Utils.Datastorerequest)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
 local Leaderboardservice = {
@@ -24,9 +25,16 @@ local Statbyboard = {
 	ItemSold = "ItemsSold",
 	Donation = "RobuxDonated",
 }
+local Growingboards = {
+	ItemSold = true,
+	Donation = true,
+}
 local Maxentries = 50
 local Refreshinterval = 120
 local Pushdelay = 1
+local Writeattempts = 3
+local Refreshattempts = 2
+local Shutdowndeadline = 27
 local Topic = "LeaderboardScores"
 
 local Stores: { [string]: OrderedDataStore } = {}
@@ -111,32 +119,42 @@ local function Schedulepush()
 	end)
 end
 
-local function Writescore(Player: Player, Board: string, Value: number)
-	local Userid = Player.UserId
+local function Writescore(Userid: number, Written: { [string]: number }?, Board: string, Value: number, Replace: boolean)
 	Pendingwrites += 1
-	local Success = pcall(function()
+	local Success, Result = Datastorerequest.Run(Writeattempts, function()
+		if Growingboards[Board] and not Replace then
+			return Stores[Board]:UpdateAsync(tostring(Userid), function(Current)
+				return math.max(Current or 0, Value)
+			end)
+		end
 		Stores[Board]:SetAsync(tostring(Userid), Value)
+		return Value
 	end)
 	Pendingwrites -= 1
 	if not Success then
-		local Written = Lastwritten[Player]
+		warn("LeaderboardService: could not write " .. Board .. " for " .. Userid .. ": " .. tostring(Result))
 		if Written and Written[Board] == Value then
 			Written[Board] = nil
 		end
 		return
 	end
-	Mergescore(Board, Userid, Value)
+	local Stored = tonumber(Result) or Value
+	if Written and Written[Board] == Value then
+		Written[Board] = Stored
+	end
+	Mergescore(Board, Userid, Stored)
 	Schedulepush()
 	pcall(function()
-		MessagingService:PublishAsync(Topic, { B = Board, U = Userid, V = Value })
+		MessagingService:PublishAsync(Topic, { B = Board, U = Userid, V = Stored })
 	end)
 end
 
 local function Refreshboard(Board: string)
-	local Success, Pages = pcall(function()
+	local Success, Pages = Datastorerequest.Run(Refreshattempts, function()
 		return Stores[Board]:GetSortedAsync(false, Maxentries)
 	end)
 	if not Success then
+		warn("LeaderboardService: could not refresh " .. Board .. ": " .. tostring(Pages))
 		return
 	end
 	local List = {}
@@ -169,7 +187,7 @@ function Leaderboardservice:Wipe(Userid: number)
 		task.wait()
 	end
 	for _, Board in ipairs(Boardorder) do
-		local Success, Error = pcall(function()
+		local Success, Error = Datastorerequest.Run(Writeattempts, function()
 			Stores[Board]:RemoveAsync(tostring(Userid))
 		end)
 		if not Success then
@@ -183,25 +201,68 @@ function Leaderboardservice:Wipe(Userid: number)
 	Schedulepush()
 end
 
+function Leaderboardservice:Overwrite(Userid: number, Stats: any)
+	local Player = Players:GetPlayerByUserId(Userid)
+	if Player then
+		Lastwritten[Player] = nil
+	end
+	while Pendingwrites > 0 do
+		task.wait()
+	end
+	for _, Board in ipairs(Boardorder) do
+		local Value = if type(Stats) == "table" then math.floor(tonumber(Stats[Statbyboard[Board]]) or 0) else 0
+		if Value ~= Value then
+			Value = 0
+		end
+		Pendingwrites += 1
+		local Success, Error = Datastorerequest.Run(Writeattempts, function()
+			if Value > 0 then
+				Stores[Board]:SetAsync(tostring(Userid), Value)
+			else
+				Stores[Board]:RemoveAsync(tostring(Userid))
+			end
+		end)
+		Pendingwrites -= 1
+		if not Success then
+			warn("LeaderboardService: could not overwrite " .. Board .. " for " .. Userid .. ": " .. tostring(Error))
+		end
+		Mergescore(Board, Userid, math.max(Value, 0))
+		pcall(function()
+			MessagingService:PublishAsync(Topic, { B = Board, U = Userid, V = math.max(Value, 0) })
+		end)
+	end
+	Schedulepush()
+end
+
 function Leaderboardservice:Init()
 	Core:GetService("DataService"):Register("Leaderboard", {
 		Load = function() end,
-		Save = function(Player)
-			local Stats = Core:GetService("StatsService"):GetStats(Player)
-			local Written = Lastwritten[Player] or {}
-			Lastwritten[Player] = Written
-			for _, Board in ipairs(Boardorder) do
-				local Value = math.floor(Stats[Statbyboard[Board]])
-				local Previous = Written[Board]
-				if Value ~= Previous and (Previous ~= nil or Value > 0) then
-					Written[Board] = Value
-					task.spawn(Writescore, Player, Board, Value)
-				end
-			end
+		Save = function()
 			return nil
 		end,
 		Clear = function(Player)
 			Lastwritten[Player] = nil
+		end,
+		Committed = function(Player, Snapshot, Release)
+			local Stats = Snapshot.Stats
+			if type(Stats) ~= "table" then
+				return
+			end
+			local Written = if Release then {} else Lastwritten[Player] or {}
+			if not Release then
+				Lastwritten[Player] = Written
+			end
+			for _, Board in ipairs(Boardorder) do
+				local Value = math.floor(tonumber(Stats[Statbyboard[Board]]) or 0)
+				local Previous = Written[Board]
+				local Needswrite = if Growingboards[Board]
+					then Value > (Previous or 0)
+					else Value ~= Previous and (Previous ~= nil or Value > 0)
+				if Needswrite then
+					Written[Board] = Value
+					task.spawn(Writescore, Player.UserId, if Release then nil else Written, Board, Value, Previous == nil)
+				end
+			end
 		end,
 	})
 
@@ -232,7 +293,9 @@ function Leaderboardservice:Start()
 	end)
 
 	game:BindToClose(function()
-		while Pendingwrites > 0 do
+		local Dataservice = Core:GetService("DataService")
+		local Deadline = os.clock() + Shutdowndeadline
+		while (Dataservice:IsReleasing() or Pendingwrites > 0) and os.clock() < Deadline do
 			task.wait()
 		end
 	end)

@@ -6,12 +6,17 @@ local RunService = game:GetService("RunService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Dailytasksconfig = require(ReplicatedStorage.Shared.Config.DailyTasks)
+local Datastorerequest = require(script.Parent.Parent.Utils.Datastorerequest)
 local Monetizationconfig = require(ReplicatedStorage.Shared.Config.Monetization)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Remotemanager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Upgradesconfig = require(ReplicatedStorage.Shared.Config.Upgrades)
 
 local Banstore = DataStoreService:GetDataStore("Bans_v1")
+local Banattempts = 3
+local Versioncount = 8
+local Maximumnumber = 1e12
+local Listings: { [Player]: { Userid: number, Versions: { any } } } = {}
 local Broadcasttopic = "AdminBroadcast"
 local Resettopic = "AdminResetData"
 
@@ -67,6 +72,14 @@ local function Findkey(Container: { [string]: any }, Name: string?): string?
 	return nil
 end
 
+local function Parsenumber(Text: string?): number?
+	local Value = tonumber(Text)
+	if not Value or Value ~= Value or math.abs(Value) > Maximumnumber then
+		return nil
+	end
+	return Value
+end
+
 local function Giveitem(Target: Player, Objectkey: string, Percent: number)
 	local Definition = Objectconfig.Object[Objectkey]
 	local Ratio = Percent / 100
@@ -92,8 +105,8 @@ local function Giveitem(Target: Player, Objectkey: string, Percent: number)
 	end
 end
 
-local function Setban(Userid: number, Entry: any): boolean
-	local Success, Error = pcall(function()
+local function Setban(Userid: number, Entry: any): (boolean, string)
+	local Success, Error = Datastorerequest.Run(Banattempts, function()
 		if Entry then
 			Banstore:SetAsync(tostring(Userid), Entry)
 		else
@@ -102,12 +115,13 @@ local function Setban(Userid: number, Entry: any): boolean
 	end)
 	if not Success then
 		warn("AdminService: could not write the ban: " .. tostring(Error))
+		return false, tostring(Error)
 	end
-	return Success
+	return true, "saved"
 end
 
 local function Getban(Userid: number): any
-	local Success, Entry = pcall(function()
+	local Success, Entry = Datastorerequest.Run(Banattempts, function()
 		return Banstore:GetAsync(tostring(Userid))
 	end)
 	if not Success then
@@ -142,8 +156,15 @@ end
 
 local function Wipeuser(Userid: number): (boolean, string)
 	local Erased, Reason = Core:GetService("DataService"):Wipe(Userid)
-	Core:GetService("TutorialService"):Wipe(Userid)
-	Core:GetService("DailyRewardService"):Wipe(Userid)
+	local Failures = {}
+	local Tutorialerased, Tutorialreason = Core:GetService("TutorialService"):Wipe(Userid)
+	if not Tutorialerased then
+		table.insert(Failures, "tutorial erase failed: " .. tostring(Tutorialreason))
+	end
+	local Dailyerased, Dailyreason = Core:GetService("DailyRewardService"):Wipe(Userid)
+	if not Dailyerased then
+		table.insert(Failures, "daily rewards erase failed: " .. tostring(Dailyreason))
+	end
 	Core:GetService("LeaderboardService"):Wipe(Userid)
 	local Target = Players:GetPlayerByUserId(Userid)
 	if Target then
@@ -153,7 +174,14 @@ local function Wipeuser(Userid: number): (boolean, string)
 			end
 		end)
 	end
+	if #Failures > 0 then
+		return Erased, Reason .. " (" .. table.concat(Failures, ", ") .. ")"
+	end
 	return Erased, Reason
+end
+
+local function Formattime(Milliseconds: number): string
+	return os.date("!%Y-%m-%d %H:%M UTC", math.floor(Milliseconds / 1000))
 end
 
 local Commands = {
@@ -180,6 +208,65 @@ local Commands = {
 		end,
 	},
 	{
+		Name = "dataversions",
+		Usage = "dataversions <username|userid>",
+		Description = "List the last saves of a player (newest first)",
+		Arguments = { "player" },
+		Run = function(Caller: Player, Arguments: { string }): string
+			if #Arguments ~= 1 then
+				return "Usage: dataversions <username|userid>"
+			end
+			local Userid, Name = Finduser(Arguments[1])
+			local Listed, Versions = Core:GetService("DataService"):ListVersions(Userid, Versioncount)
+			if not Listed then
+				return string.format("%s (%d): could not list the saves, %s", Name, Userid, tostring(Versions))
+			end
+			if #Versions == 0 then
+				return string.format("%s (%d): no save found", Name, Userid)
+			end
+			Listings[Caller] = { Userid = Userid, Versions = Versions }
+			local Lines = { string.format("%s (%d), newest first:", Name, Userid) }
+			for Index, Entry in ipairs(Versions) do
+				table.insert(Lines, string.format("%d. %s%s", Index, Formattime(Entry.Time), if Entry.Deleted then " (deleted)" else ""))
+			end
+			return table.concat(Lines, "\n")
+		end,
+	},
+	{
+		Name = "restoredata",
+		Usage = "restoredata <username|userid> <number>",
+		Description = "Put back a save listed by dataversions",
+		Arguments = { "player", "number" },
+		Run = function(Caller: Player, Arguments: { string }): string
+			if #Arguments ~= 2 then
+				return "Usage: restoredata <username|userid> <number>"
+			end
+			local Index = Parsenumber(Arguments[2])
+			if not Index or Index < 1 or Index ~= math.floor(Index) then
+				return "Invalid number: " .. tostring(Arguments[2])
+			end
+			local Userid, Name = Finduser(Arguments[1])
+			local Listing = Listings[Caller]
+			if not Listing or Listing.Userid ~= Userid then
+				return string.format("%s (%d): run dataversions first", Name, Userid)
+			end
+			local Entry = Listing.Versions[Index]
+			if not Entry then
+				return string.format("%s (%d): no save number %d, see dataversions", Name, Userid, Index)
+			end
+			if Entry.Deleted then
+				return string.format("%s (%d): save %d is deleted, pick another one", Name, Userid, Index)
+			end
+			local Restored, Reason, Value = Core:GetService("DataService"):Restore(Userid, Entry.Version)
+			if not Restored then
+				return string.format("%s (%d): restore failed, %s", Name, Userid, tostring(Reason))
+			end
+			Listings[Caller] = nil
+			Core:GetService("LeaderboardService"):Overwrite(Userid, Value.Stats)
+			return string.format("%s (%d): restored save %d from %s", Name, Userid, Index, Formattime(Entry.Time))
+		end,
+	},
+	{
 		Name = "resettutorial",
 		Usage = "resettutorial <player>",
 		Description = "Play the tutorial again on next join",
@@ -189,7 +276,10 @@ local Commands = {
 			if not Target then
 				return "Player not found: " .. tostring(Arguments[1])
 			end
-			Core:GetService("TutorialService"):Wipe(Target.UserId)
+			local Erased, Reason = Core:GetService("TutorialService"):Wipe(Target.UserId)
+			if not Erased then
+				return "Tutorial reset failed for " .. Target.Name .. ": " .. tostring(Reason)
+			end
 			return "Tutorial reset for " .. Target.Name
 		end,
 	},
@@ -203,7 +293,7 @@ local Commands = {
 			if not Target then
 				return "Player not found: " .. tostring(Arguments[1])
 			end
-			local Amount = tonumber(Arguments[2])
+			local Amount = Parsenumber(Arguments[2])
 			if not Amount then
 				return "Invalid amount: " .. tostring(Arguments[2])
 			end
@@ -244,8 +334,11 @@ local Commands = {
 			end
 			local Name = Target.Name
 			local Userid = Target.UserId
-			Setban(Userid, { Reason = Reason, By = Caller.Name, Time = os.time() })
+			local Saved, Error = Setban(Userid, { Reason = Reason, By = Caller.Name, Time = os.time() })
 			Target:Kick(Reason)
+			if not Saved then
+				return string.format("Kicked %s (%d), Ban NOT saved: %s", Name, Userid, Error)
+			end
 			return string.format("Banned: %s (%d)", Name, Userid)
 		end,
 	},
@@ -254,11 +347,14 @@ local Commands = {
 		Usage = "unban <userid>",
 		Description = "Lift a ban",
 		Run = function(_Caller: Player, Arguments: { string }): string
-			local Userid = tonumber(Arguments[1])
+			local Userid = Parsenumber(Arguments[1])
 			if not Userid then
 				return "Invalid user id: " .. tostring(Arguments[1])
 			end
-			Setban(Userid, nil)
+			local Lifted, Error = Setban(Userid, nil)
+			if not Lifted then
+				return "Unban failed: " .. Error
+			end
 			return "Ban lifted: " .. Userid
 		end,
 	},
@@ -295,7 +391,11 @@ local Commands = {
 			if not Target then
 				return "Player not found: " .. tostring(Arguments[1])
 			end
-			local Percent = math.clamp(tonumber(Arguments[3]) or 100, 0, 100)
+			local Parsed = if Arguments[3] then Parsenumber(Arguments[3]) else 100
+			if not Parsed then
+				return "Invalid percent: " .. tostring(Arguments[3])
+			end
+			local Percent = math.clamp(Parsed, 0, 100)
 			if string.lower(tostring(Arguments[2])) == "all" then
 				local Count = 0
 				for Objectkey in pairs(Objectconfig.Object) do
@@ -326,11 +426,15 @@ local Commands = {
 			if not Upgradename then
 				return "Unknown upgrade: " .. tostring(Arguments[2])
 			end
-			local Level = math.floor(tonumber(Arguments[3]) or 0)
+			local Parsed = Parsenumber(Arguments[3])
+			if not Parsed then
+				return "Invalid level: " .. tostring(Arguments[3])
+			end
+			local Level = math.max(math.floor(Parsed), 0)
 			local Upgradeservice = Core:GetService("UpgradeService")
-			Upgradeservice:EnsurePlayer(Target).Levels[Upgradename] = math.max(Level, 0)
+			Upgradeservice:EnsurePlayer(Target).Levels[Upgradename] = Level
 			Upgradeservice:PushUpgrades(Target)
-			return string.format("%s: %s level %d", Target.Name, Upgradename, math.max(Level, 0))
+			return string.format("%s: %s level %d", Target.Name, Upgradename, Level)
 		end,
 	},
 	{
@@ -344,7 +448,11 @@ local Commands = {
 				return "Player not found: " .. tostring(Arguments[1])
 			end
 			local Kind = string.lower(tostring(Arguments[2]))
-			local Value = math.max(tonumber(Arguments[3]) or 0, 0)
+			local Parsed = Parsenumber(Arguments[3])
+			if not Parsed then
+				return "Invalid value: " .. tostring(Arguments[3])
+			end
+			local Value = math.max(Parsed, 0)
 			if Kind == "reputation" then
 				Core:GetService("MonetizationService"):GrantReputationBoost(Target, Value)
 				return string.format("%s: double reputation for %d s", Target.Name, Value)
@@ -420,6 +528,9 @@ function Adminservice:Init()
 	for _, Player in ipairs(Players:GetPlayers()) do
 		task.spawn(Enforceban, Player)
 	end
+	Players.PlayerRemoving:Connect(function(Player)
+		Listings[Player] = nil
+	end)
 
 	task.spawn(function()
 		local Subscribed = pcall(function()

@@ -2,6 +2,8 @@ local Customer = {
 	SpawnIntervalSeconds = 90,
 	MinimumIntervalSeconds = 30,
 	SecondsPerCooldownLevel = 6,
+	SkipArrivalSeconds = 4,
+	SkipMarginSeconds = 6,
 }
 
 function Customer.GetInterval(Level: number): number

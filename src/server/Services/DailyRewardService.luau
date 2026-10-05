@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Config = require(ReplicatedStorage.Shared.Config.DailyRewards)
+local Datastorerequest = require(script.Parent.Parent.Utils.Datastorerequest)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 
 local DailyRewardService = {
@@ -25,14 +26,29 @@ type DailyRewardData = {
 }
 
 local Store = DataStoreService:GetDataStore("DailyRewards_v2")
+local GetOptions = Instance.new("DataStoreGetOptions")
+GetOptions.UseCache = false
 local DataByPlayer: { [Player]: DailyRewardData } = {}
 local LoadedByPlayer: { [Player]: boolean } = {}
 local ActiveBoostByPlayer: { [Player]: boolean } = {}
 local BlockedByPlayer: { [Player]: boolean } = {}
+local ErroredByPlayer: { [Player]: boolean } = {}
+local ExistedByPlayer: { [Player]: boolean } = {}
+local WritingByUserId: { [number]: boolean } = {}
+local ActiveWrites = 0
 local MaximumStoredPurchases = 50
+local LoadAttempts = 5
+local SaveAttempts = 3
+local ShutdownTimeout = 25
 
 local function Now(): number
 	return workspace:GetServerTimeNow()
+end
+
+local function FiniteNumber(Value: any): number
+	local Number = tonumber(Value) or 0
+	if Number ~= Number or Number == math.huge or Number == -math.huge then return 0 end
+	return Number
 end
 
 local function NewData(): DailyRewardData
@@ -47,9 +63,9 @@ end
 local function NormalizeData(Saved): DailyRewardData
 	local Data = NewData()
 	if type(Saved) ~= "table" then return Data end
-	Data.ClaimedDays = math.clamp(math.floor(tonumber(Saved.ClaimedDays) or 0), 0, #Config.Rewards)
-	Data.NextClaimAt = math.max(tonumber(Saved.NextClaimAt) or 0, 0)
-	Data.SaleBoostEndsAt = math.max(tonumber(Saved.SaleBoostEndsAt) or 0, 0)
+	Data.ClaimedDays = math.clamp(math.floor(FiniteNumber(Saved.ClaimedDays)), 0, #Config.Rewards)
+	Data.NextClaimAt = math.max(FiniteNumber(Saved.NextClaimAt), 0)
+	Data.SaleBoostEndsAt = math.max(FiniteNumber(Saved.SaleBoostEndsAt), 0)
 	if type(Saved.ProcessedPurchases) == "table" then
 		for _, PurchaseId in ipairs(Saved.ProcessedPurchases) do
 			if type(PurchaseId) == "string" then table.insert(Data.ProcessedPurchases, PurchaseId) end
@@ -85,9 +101,11 @@ local function AddProcessedPurchase(Data: DailyRewardData, PurchaseId: string)
 end
 
 function DailyRewardService:LoadPlayer(Player: Player)
+	local UserId = Player.UserId
 	DataByPlayer[Player] = NewData()
-	local Success, Saved = pcall(function()
-		return Store:GetAsync(tostring(Player.UserId))
+	while WritingByUserId[UserId] do task.wait() end
+	local Success, Saved = Datastorerequest.Run(LoadAttempts, function()
+		return Store:GetAsync(tostring(UserId), GetOptions)
 	end)
 	if not Player.Parent then
 		DataByPlayer[Player] = nil
@@ -95,8 +113,10 @@ function DailyRewardService:LoadPlayer(Player: Player)
 	end
 	if Success then
 		DataByPlayer[Player] = NormalizeData(Saved)
+		ExistedByPlayer[Player] = Saved ~= nil
 	else
-		warn("DailyRewardService: failed to load data for " .. Player.Name .. ": " .. tostring(Saved))
+		ErroredByPlayer[Player] = true
+		warn("DailyRewardService: failed to load data for " .. Player.Name .. ", saving is disabled for this session: " .. tostring(Saved))
 	end
 	LoadedByPlayer[Player] = true
 	ActiveBoostByPlayer[Player] = DataByPlayer[Player].SaleBoostEndsAt > Now()
@@ -110,35 +130,76 @@ function DailyRewardService:WaitForData(Player: Player): DailyRewardData?
 	return DataByPlayer[Player]
 end
 
-function DailyRewardService:Wipe(UserId: number)
+function DailyRewardService:Wipe(UserId: number): (boolean, string)
 	local Player = Players:GetPlayerByUserId(UserId)
 	if Player then
 		BlockedByPlayer[Player] = true
 		DataByPlayer[Player] = NewData()
 	end
-	local Success, Error = pcall(function()
-		Store:RemoveAsync(tostring(UserId))
+	ActiveWrites += 1
+	while WritingByUserId[UserId] do task.wait() end
+	WritingByUserId[UserId] = true
+	local Success, Result = Datastorerequest.Run(SaveAttempts, function()
+		return Store:RemoveAsync(tostring(UserId))
 	end)
+	WritingByUserId[UserId] = nil
+	ActiveWrites -= 1
 	if not Success then
-		warn("DailyRewardService: could not erase data for " .. UserId .. ": " .. tostring(Error))
+		warn("DailyRewardService: could not erase data for " .. UserId .. ": " .. tostring(Result))
+		return false, tostring(Result)
 	end
+	return true, if Result == nil then "no save found" else "save erased"
 end
 
 function DailyRewardService:SavePlayer(Player: Player): boolean
-	if not LoadedByPlayer[Player] or BlockedByPlayer[Player] then return false end
+	local UserId = Player.UserId
+	ActiveWrites += 1
+	while WritingByUserId[UserId] do task.wait() end
+	if
+		not LoadedByPlayer[Player]
+		or BlockedByPlayer[Player]
+		or ErroredByPlayer[Player]
+		or Core:GetService("DataService"):IsLost(Player)
+	then
+		ActiveWrites -= 1
+		return false
+	end
 	local Snapshot = SerializeData(DataByPlayer[Player])
-	local Success, Error = pcall(function()
-		Store:SetAsync(tostring(Player.UserId), Snapshot)
+	local Existed = ExistedByPlayer[Player] == true
+	local Erased = false
+	WritingByUserId[UserId] = true
+	local Success, Error = Datastorerequest.Run(SaveAttempts, function()
+		Store:UpdateAsync(tostring(UserId), function(Current)
+			if Current == nil and Existed then
+				Erased = true
+				return nil
+			end
+			Erased = false
+			return Snapshot, { UserId }
+		end)
 	end)
-	if not Success then warn("DailyRewardService: failed to save data for " .. Player.Name .. ": " .. tostring(Error)) end
-	return Success
+	WritingByUserId[UserId] = nil
+	ActiveWrites -= 1
+	if not Success then
+		warn("DailyRewardService: failed to save data for " .. Player.Name .. ": " .. tostring(Error))
+		return false
+	end
+	if Erased then
+		BlockedByPlayer[Player] = true
+		warn("DailyRewardService: " .. Player.Name .. "'s daily reward data was erased elsewhere, saving stopped")
+		return false
+	end
+	if LoadedByPlayer[Player] then
+		ExistedByPlayer[Player] = true
+	end
+	return true
 end
 
 function DailyRewardService:BuildState(Player: Player)
 	local Data = self:WaitForData(Player)
 	if not Data then return nil end
 	local CurrentTime = Now()
-	if ResetCycleIfNeeded(Data, CurrentTime) then task.spawn(function() self:SavePlayer(Player) end) end
+	if ResetCycleIfNeeded(Data, CurrentTime) and not ErroredByPlayer[Player] then task.spawn(function() self:SavePlayer(Player) end) end
 	local CurrentDay = if Data.ClaimedDays < #Config.Rewards then Data.ClaimedDays + 1 else 0
 	return {
 		ClaimedDays = Data.ClaimedDays,
@@ -155,7 +216,7 @@ function DailyRewardService:PushState(Player: Player)
 	if State then RemoteManager:FireClient(self.Name, "StateUpdated", Player, State) end
 end
 
-function DailyRewardService:GrantReward(Player: Player, Day: number, Data: DailyRewardData): boolean
+function DailyRewardService:GrantReward(Player: Player, Day: number): boolean
 	local Reward = Config.Rewards[Day]
 	if Reward.Type == "Cash" then
 		Core:GetService("CashService"):AddCash(Player, tonumber(Reward.Amount) or 0, false, false)
@@ -165,7 +226,6 @@ function DailyRewardService:GrantReward(Player: Player, Day: number, Data: Daily
 		return (Core:GetService("RestorationService"):GrantObject(Player, Reward.ObjectKey))
 	end
 	if Reward.Type == "SaleBoost" then
-		Data.SaleBoostEndsAt = math.max(Data.SaleBoostEndsAt, Now()) + (tonumber(Reward.DurationSeconds) or 0)
 		ActiveBoostByPlayer[Player] = true
 		return true
 	end
@@ -174,52 +234,67 @@ end
 
 function DailyRewardService:ClaimNextReward(Player: Player)
 	local Data = self:WaitForData(Player)
-	if not Data then return { Success = false, Reason = "DataUnavailable" } end
+	local DataService = Core:GetService("DataService")
+	if not Data or ErroredByPlayer[Player] or not DataService:CanSave(Player) then return { Success = false, Reason = "DataUnavailable" } end
 	local CurrentTime = Now()
 	ResetCycleIfNeeded(Data, CurrentTime)
 	local Day = Data.ClaimedDays + 1
 	if Day > #Config.Rewards then return { Success = false, Reason = "CycleComplete", State = self:BuildState(Player) } end
 	local CanClaim = Data.ClaimedDays == 0 or CurrentTime >= Data.NextClaimAt
 	if not CanClaim then return { Success = false, Reason = "NotReady", State = self:BuildState(Player) } end
+	local Reward = Config.Rewards[Day]
+	local PreviousClaimedDays = Data.ClaimedDays
 	local PreviousNextClaimAt = Data.NextClaimAt
+	local PreviousSaleBoostEndsAt = Data.SaleBoostEndsAt
+	local function RevertClaim()
+		Data.ClaimedDays = PreviousClaimedDays
+		Data.NextClaimAt = PreviousNextClaimAt
+		if Reward.Type == "SaleBoost" then Data.SaleBoostEndsAt = PreviousSaleBoostEndsAt end
+	end
 	Data.ClaimedDays = Day
 	Data.NextClaimAt = CurrentTime + (tonumber(Config.ClaimIntervalSeconds) or 0)
-	if not self:GrantReward(Player, Day, Data) then
-		Data.ClaimedDays = Day - 1
-		Data.NextClaimAt = PreviousNextClaimAt
+	if Reward.Type == "SaleBoost" then
+		Data.SaleBoostEndsAt = math.max(Data.SaleBoostEndsAt, CurrentTime) + (tonumber(Reward.DurationSeconds) or 0)
+	end
+	if not self:SavePlayer(Player) then
+		RevertClaim()
+		return { Success = false, Reason = "SaveFailed", State = self:BuildState(Player) }
+	end
+	if not DataService:CanSave(Player) or not self:GrantReward(Player, Day) then
+		RevertClaim()
+		self:SavePlayer(Player)
 		return { Success = false, Reason = "RewardFailed", State = self:BuildState(Player) }
 	end
-	self:SavePlayer(Player)
+	task.spawn(function() DataService:Save(Player) end)
 	self:PushState(Player)
-	if Config.Rewards[Day].Type == "SaleBoost" then Core:GetService("InventoryService"):PushItems(Player) end
+	if Reward.Type == "SaleBoost" then Core:GetService("InventoryService"):PushItems(Player) end
 	return {
 		Success = true,
 		Day = Day,
-		RewardType = Config.Rewards[Day].Type,
-		RewardText = Config.Rewards[Day].ValueText,
+		RewardType = Reward.Type,
+		RewardText = Reward.ValueText,
 		State = self:BuildState(Player),
 	}
 end
 
 function DailyRewardService:UnlockNextReward(Player: Player, PurchaseId: string?)
 	local Data = self:WaitForData(Player)
-	if not Data then return { Success = false, Reason = "DataUnavailable" } end
+	if not Data or ErroredByPlayer[Player] then return { Success = false, Reason = "DataUnavailable" } end
 	if PurchaseId and HasProcessedPurchase(Data, PurchaseId) then
 		return { Success = true, State = self:BuildState(Player) }
 	end
-	local Previous = SerializeData(Data)
 	local CurrentTime = Now()
 	ResetCycleIfNeeded(Data, CurrentTime)
 	local Day = Data.ClaimedDays + 1
 	if Day > #Config.Rewards then return { Success = false, Reason = "CycleComplete", State = self:BuildState(Player) } end
+	local PreviousNextClaimAt = Data.NextClaimAt
 	Data.NextClaimAt = 0
 	if PurchaseId then AddProcessedPurchase(Data, PurchaseId) end
 	local Saved = self:SavePlayer(Player)
 	if PurchaseId and not Saved and not RunService:IsStudio() then
-		Data.ClaimedDays = Previous.ClaimedDays
-		Data.NextClaimAt = Previous.NextClaimAt
-		Data.SaleBoostEndsAt = Previous.SaleBoostEndsAt
-		Data.ProcessedPurchases = Previous.ProcessedPurchases
+		if Data.NextClaimAt == 0 then Data.NextClaimAt = PreviousNextClaimAt end
+		local Index = table.find(Data.ProcessedPurchases, PurchaseId)
+		if Index then table.remove(Data.ProcessedPurchases, Index) end
 		return { Success = false, Reason = "SaveFailed", State = self:BuildState(Player) }
 	end
 	self:PushState(Player)
@@ -231,7 +306,8 @@ function DailyRewardService:GrantSaleBoost(Player: Player, Seconds: number)
 	if not Data then
 		return
 	end
-	Data.SaleBoostEndsAt = math.max(Data.SaleBoostEndsAt, Now()) + Seconds
+	Data.SaleBoostEndsAt = math.max(Data.SaleBoostEndsAt, Now()) + math.max(FiniteNumber(Seconds), 0)
+	task.spawn(function() self:SavePlayer(Player) end)
 	self:PushState(Player)
 	Core:GetService("InventoryService"):PushItems(Player)
 end
@@ -261,6 +337,8 @@ function DailyRewardService:Init()
 		LoadedByPlayer[Player] = nil
 		ActiveBoostByPlayer[Player] = nil
 		BlockedByPlayer[Player] = nil
+		ErroredByPlayer[Player] = nil
+		ExistedByPlayer[Player] = nil
 	end)
 
 	RemoteManager:OnServerInvoke(self.Name, "GetState", function(Player)
@@ -274,7 +352,11 @@ function DailyRewardService:Init()
 		return self:ClaimNextReward(Player)
 	end)
 	game:BindToClose(function()
-		for _, Player in ipairs(Players:GetPlayers()) do self:SavePlayer(Player) end
+		for _, Player in ipairs(Players:GetPlayers()) do
+			task.spawn(function() self:SavePlayer(Player) end)
+		end
+		local Deadline = os.clock() + ShutdownTimeout
+		while ActiveWrites > 0 and os.clock() < Deadline do task.wait() end
 	end)
 end
 
@@ -283,7 +365,7 @@ function DailyRewardService:Start()
 		while true do
 			task.wait(1)
 			local CurrentTime = Now()
-			for Player, Data in pairs(DataByPlayer) do
+			for Player, Data in pairs(table.clone(DataByPlayer)) do
 				if LoadedByPlayer[Player] and Player.Parent then
 					local Changed = ResetCycleIfNeeded(Data, CurrentTime)
 					local BoostActive = Data.SaleBoostEndsAt > CurrentTime
@@ -294,7 +376,7 @@ function DailyRewardService:Start()
 					end
 					ActiveBoostByPlayer[Player] = BoostActive
 					if Changed then
-						self:SavePlayer(Player)
+						task.spawn(function() self:SavePlayer(Player) end)
 						self:PushState(Player)
 					end
 				end
