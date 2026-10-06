@@ -1,3 +1,4 @@
+local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
@@ -24,6 +25,9 @@ local Distance = 8
 local Targetdistance = 8
 local Mindistance = 4
 local Maxdistance = 16
+local Pinching = false
+local Pinchstartdistance = 8
+local Touches: { [InputObject]: boolean } = {}
 local Dragging = false
 local Enabled = false
 local Transformmode = "Orbit"
@@ -181,7 +185,7 @@ function Controller:FlipObject()
 end
 
 function Controller:IsDragging(): boolean
-	return Dragging or Stickdragging
+	return Dragging or Stickdragging or Pinching
 end
 
 function Controller:IsIntroCameraReady(): boolean
@@ -337,8 +341,8 @@ function Controller:Begin(Object: InspectionTarget)
 
 	local Radius = math.max(Objectsize(Object).Magnitude * 0.5, 1)
 	Panlimit = math.max(Radius * 0.65, 1)
-	Mindistance = math.max(Radius * 0.85, 2.5)
-	Maxdistance = math.max(Radius * 3.2, Mindistance + 1)
+	Mindistance = math.max(Radius * 1.1, 2.5)
+	Maxdistance = math.max(Radius * 2.5, Mindistance + 1)
 	Targetdistance = math.clamp(Radius * 1.65, Mindistance, Maxdistance)
 	Distance = Targetdistance
 	Safecameradistance = Distance
@@ -417,7 +421,8 @@ function Controller:Start()
 			or Userinputservice:IsKeyDown(Enum.KeyCode.RightShift)
 
 		if Istouch then
-			if Dragging then
+			Touches[Input] = true
+			if Dragging or Pinching then
 				return
 			end
 			local Ontarget = Ispointerontarget(Position)
@@ -508,7 +513,38 @@ function Controller:Start()
 		end
 	end)
 
+	local function Resettouches()
+		table.clear(Touches)
+		Pinching = false
+		if Dragging then
+			Enddrag()
+		end
+	end
+	Userinputservice.WindowFocusReleased:Connect(Resettouches)
+	Guiservice.MenuOpened:Connect(Resettouches)
+
+	Userinputservice.TouchPinch:Connect(function(_, Scale, _, State, Processed)
+		if State == Enum.UserInputState.Begin then
+			local Count = 0
+			for _ in Touches do
+				Count += 1
+			end
+			Pinching = Count >= 2 and not Processed and Target ~= nil and not Completionview and not Cameratransitionactive
+			Pinchstartdistance = Targetdistance
+			if Pinching and Dragging then
+				Enddrag()
+			end
+		end
+		if Pinching and Target and not Completionview and not Cameratransitionactive then
+			Targetdistance = math.clamp(Pinchstartdistance / Scale, Mindistance, Maxdistance)
+		end
+		if State == Enum.UserInputState.End or State == Enum.UserInputState.Cancel then
+			Pinching = false
+		end
+	end)
+
 	Userinputservice.InputEnded:Connect(function(Input)
+		Touches[Input] = nil
 		if not Dragging then
 			return
 		end

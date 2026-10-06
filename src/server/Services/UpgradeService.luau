@@ -186,6 +186,9 @@ function UpgradeService:PurchaseWithCash(Player: Player, UpgradeName: string)
 	if Price == nil then
 		return { Success = false, Reason = "MaxLevel" }
 	end
+	if Price > 0 and Core:GetService("TutorialService"):IsRunning(Player) then
+		return { Success = false, Reason = "Tutorial" }
+	end
 	if not Core:GetService("CashService"):SpendCash(Player, Price) then
 		return { Success = false, Reason = "NotEnoughCash" }
 	end

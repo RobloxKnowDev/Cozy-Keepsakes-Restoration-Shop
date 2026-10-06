@@ -67,13 +67,6 @@ local function Getdisplay(Player: Player): ShopDisplay
 	return Displaybyshop[Core:GetService("ShopService"):GetShop(Player)]
 end
 
-local function Getanchorpart(Object: DisplayObject): BasePart
-	if Object:IsA("BasePart") then
-		return Object
-	end
-	return Object.PrimaryPart or Object:FindFirstChildWhichIsA("BasePart", true)
-end
-
 local function Attachmutationvfx(Object: DisplayObject, Item: any)
 	if (tonumber(Item.RestorationPercent) or 0) / 100 < Mutationconfig.RevealRatio then
 		return
@@ -85,7 +78,7 @@ local function Playplacementvfx(Object: DisplayObject)
 	local Vfx = Placementparticle:Clone() :: Attachment
 	local Emitter = Vfx.PlacementParticle :: ParticleEmitter
 	Emitter.Enabled = true
-	Vfx.Parent = Getanchorpart(Object)
+	Vfx.Parent = Object:WaitForChild("Base")
 	task.delay(Placementburst, function()
 		Emitter.Enabled = false
 		task.delay(Emitter.Lifetime.Max, function()
@@ -113,7 +106,9 @@ local function Revealdisplayobject(Object: DisplayObject, Displayedobjects: Fold
 	local Transparencies = Hidedisplayobject(Object);
 	(Object :: Instance).Parent = Displayedobjects
 	task.delay(0.1, function()
-		Playplacementvfx(Object)
+		if Object.Parent then
+			Playplacementvfx(Object)
+		end
 	end)
 	task.delay(0.2, function()
 		for Part, Transparency in pairs(Transparencies) do
@@ -122,7 +117,24 @@ local function Revealdisplayobject(Object: DisplayObject, Displayedobjects: Fold
 	end)
 end
 
+local function Clearvfx(Object: DisplayObject)
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if
+			Descendant:IsA("ParticleEmitter")
+			or Descendant:IsA("Beam")
+			or Descendant:IsA("Trail")
+			or Descendant:IsA("Light")
+			or Descendant:IsA("Fire")
+			or Descendant:IsA("Smoke")
+			or Descendant:IsA("Sparkles")
+		then
+			Descendant:Destroy()
+		end
+	end
+end
+
 local function Removedisplayobject(Object: DisplayObject)
+	Clearvfx(Object)
 	Hidedisplayobject(Object)
 	task.delay(0.2, function()
 		Object:Destroy()

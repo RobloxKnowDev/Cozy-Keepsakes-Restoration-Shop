@@ -1,6 +1,7 @@
 local FaceMapping = {}
 
 local Seamdot = 0.6
+local Tiemargin = 0.001
 
 function FaceMapping.GetPoint(Part: BasePart, Worldposition: Vector3, Facename: string): Vector2
 	local Position = Part.CFrame:PointToObjectSpace(Worldposition)
@@ -66,14 +67,23 @@ function FaceMapping.GetDecalLocalPoint(Size: Vector3, Facename: string, U: numb
 	return FaceMapping.GetLocalPoint(Size, Facename, U, V)
 end
 
-function FaceMapping.ShowsDecal(Face: Enum.NormalId, Localnormal: Vector3): boolean
-	local Largest = math.max(math.abs(Localnormal.X), math.abs(Localnormal.Y), math.abs(Localnormal.Z))
-	return Vector3.FromNormalId(Face):Dot(Localnormal) >= Largest
+local function Getmeshnormal(Decal: Decal, Worldnormal: Vector3): Vector3
+	local Part = Decal.Parent :: TriangleMeshPart
+	return (Part.CFrame:VectorToObjectSpace(Worldnormal) * Part.Size / Part.MeshSize).Unit
 end
 
-function FaceMapping.TouchesDecal(Face: Enum.NormalId, Localnormal: Vector3): boolean
-	local Largest = math.max(math.abs(Localnormal.X), math.abs(Localnormal.Y), math.abs(Localnormal.Z))
-	return Vector3.FromNormalId(Face):Dot(Localnormal) >= math.min(Seamdot, Largest)
+function FaceMapping.ShowsDecal(Decal: Decal, Worldnormal: Vector3): boolean
+	local Meshnormal = Getmeshnormal(Decal, Worldnormal)
+	local Axis = Vector3.FromNormalId(Decal.Face)
+	local Dot = Axis:Dot(Meshnormal)
+	local Rest = Meshnormal - Axis * Dot
+	return Dot >= math.max(math.abs(Rest.X), math.abs(Rest.Y), math.abs(Rest.Z)) + Tiemargin
+end
+
+function FaceMapping.TouchesDecal(Decal: Decal, Worldnormal: Vector3): boolean
+	local Meshnormal = Getmeshnormal(Decal, Worldnormal)
+	local Largest = math.max(math.abs(Meshnormal.X), math.abs(Meshnormal.Y), math.abs(Meshnormal.Z))
+	return Vector3.FromNormalId(Decal.Face):Dot(Meshnormal) >= math.min(Seamdot, Largest)
 end
 
 return FaceMapping

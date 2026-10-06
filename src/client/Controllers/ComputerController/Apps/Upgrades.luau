@@ -124,7 +124,8 @@ local function BindCard(Controller, UpgradeName: string)
 		end
 		local State = Controller.upgradeState and Controller.upgradeState[UpgradeName]
 		local Price = tonumber(State and State.CashPrice) or 0
-		if Core:GetController("CashController"):GetCash() >= Price then
+		local Tutorial = Price > 0 and Core:GetController("TutorialController").running == true
+		if not Tutorial and Core:GetController("CashController"):GetCash() >= Price then
 			Feedback:Confirm()
 		else
 			Feedback:UiClick()
@@ -139,6 +140,7 @@ local function BindCard(Controller, UpgradeName: string)
 		local Message = if Reason == "NotEnoughCash"
 			then "Not enough money"
 			elseif Reason == "MaxLevel" then "Maximum level reached"
+			elseif Reason == "Tutorial" then "Finish the tutorial first"
 			else "Upgrade purchase failed"
 		Core:GetController("MessageController"):Show(Message, ErrorGradient)
 	end)

@@ -16,8 +16,6 @@ return {
 		"Rainbow",
 	},
 
-	TestSequence = { "Gold", "Diamond", "Rainbow" },
-
 	RevealRatio = 0.5,
 	RevealDelaySeconds = 1.15,
 	VfxName = "MutationVfx",

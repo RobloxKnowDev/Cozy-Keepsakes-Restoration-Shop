@@ -1,6 +1,5 @@
 local Assetservice = game:GetService("AssetService")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
-local Runservice = game:GetService("RunService")
 local Tweenservice = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
@@ -26,6 +25,7 @@ local Restorationservice = {
 		ApplyScratchPolish = "Event",
 		CleanInk = "Event",
 		CleanDirt = "Event",
+		GetLeftovers = "Function",
 		CleanScratch = "Event",
 		CompleteRestoration = "Function",
 		CompletePeel = "Event",
@@ -38,12 +38,13 @@ local Restorationservice = {
 local Dirtcleaninterval = 0.05
 local Scratchcleaninterval = Dirtcleaninterval
 local Inkcleaninterval = Scratchcleaninterval
-local Coveragegridwidth = 32
+local Coveragegridwidth = Cleaningconfig.CoverageGrid
 local Coveragecellcount = Coveragegridwidth * Coveragegridwidth
 local Brushradii = { CottonTip = 1 / 12, ToothBrush = 3 / 32 }
 local Maxcleanpoints = 32
 local Maxdirtstrokes = 8
 local Dirtsnapratio = 0.995
+local Dirtversion = 2
 local Dirtsurfacenames = {
 	UiTop = true,
 	UiBottom = true,
@@ -57,10 +58,12 @@ local Dirttools = { CottonTip = true, ToothBrush = true }
 local Spothealth = { Sticker = 3 }
 local Toolpower = { CottonTip = 1, HeatGun = 1, Polish = 1, Solvent = 1, ToothBrush = 1, Tweezers = 1 }
 local Toolsforspot = { Sticker = "Tweezers" }
-type CoverageEntry = { Cells: { number }, Hits: number, Premarked: number, Passes: number }
+type CoverageEntry = { Cells: { number }, Hits: number, Free: number, Premarked: number, Passes: number }
 local Coverage: { [RestorationObject]: { [Instance]: CoverageEntry } } = {}
 
-type CoverageMask = { Blank: { boolean }, Premarked: number }
+type CoverageMask = { Alpha: { number }, Premarked: number }
+local Visiblealpha = 32
+local Dirtfadestep = math.ceil(255 / Cleaningconfig.DirtPasses)
 local Maskcache: { [string]: CoverageMask } = {}
 local Textureframenames = { Ink = true, ScratchesFrame = true }
 local Frontfacerank = { Front = 1, Back = 2, Top = 3, Left = 4, Right = 5, Bottom = 6 }
@@ -79,7 +82,7 @@ local function Buildmask(Image: string, Shape): CoverageMask
 	local Width, Height = Size.X, Size.Y
 	local Iscut = Roundedtexture.IsCut(Shape)
 	local Bounds = Roundedtexture.GetBounds(Width, Height, Shape)
-	local Blank = table.create(Coveragecellcount, false)
+	local Alpha = table.create(Coveragecellcount, 0)
 	local Premarked = 0
 	for Row = 0, Coveragegridwidth - 1 do
 		local Minpixely = math.floor(Row * Height / Coveragegridwidth)
@@ -87,26 +90,22 @@ local function Buildmask(Image: string, Shape): CoverageMask
 		for Column = 0, Coveragegridwidth - 1 do
 			local Minpixelx = math.floor(Column * Width / Coveragegridwidth)
 			local Maxpixelx = math.floor((Column + 1) * Width / Coveragegridwidth) - 1
-			local Visible = false
+			local Darkest = 0
 			for Y = Minpixely, Maxpixely, 2 do
 				for X = Minpixelx, Maxpixelx, 2 do
-					if
-						buffer.readu8(Pixels, (Y * Width + X) * 4 + 3) > 32
-						and (not Iscut or not Roundedtexture.IsOutside(X, Y, Bounds))
-					then
-						Visible = true
-						break
+					local Value = buffer.readu8(Pixels, (Y * Width + X) * 4 + 3)
+					if Value > Darkest and (not Iscut or not Roundedtexture.IsOutside(X, Y, Bounds)) then
+						Darkest = Value
 					end
 				end
-				if Visible then break end
 			end
-			if not Visible then
-				Blank[Row * Coveragegridwidth + Column + 1] = true
+			Alpha[Row * Coveragegridwidth + Column + 1] = Darkest
+			if Darkest <= Visiblealpha then
 				Premarked += 1
 			end
 		end
 	end
-	local Mask = { Blank = Blank, Premarked = Premarked }
+	local Mask = { Alpha = Alpha, Premarked = Premarked }
 	Maskcache[Key] = Mask
 	return Mask
 end
@@ -114,19 +113,21 @@ end
 local function Warmmasks(Object: RestorationObject)
 	local Missing = {}
 	local Remaining = 0
-	for _, Descendant in ipairs(Object:GetDescendants()) do
-		local Image = nil
-		if Descendant:IsA("ImageLabel") and Descendant.Name == "Texture" and Textureframenames[Descendant.Parent.Name] then
-			Image = Descendant.Image
-		elseif Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
-			Image = Descendant.Texture
+	local function Addmissing(Image: string, Shape)
+		local Key = Image .. "|" .. Roundedtexture.GetKey(Shape)
+		if not Maskcache[Key] and not Missing[Key] then
+			Missing[Key] = { Image = Image, Shape = Shape }
+			Remaining += 1
 		end
-		if Image then
+	end
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("ImageLabel") and Descendant.Name == "Texture" and Textureframenames[Descendant.Parent.Name] then
+			Addmissing(Descendant.Image, Roundedtexture.GetShape(Descendant))
+		elseif Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
 			local Shape = Roundedtexture.GetShape(Descendant)
-			local Key = Image .. "|" .. Roundedtexture.GetKey(Shape)
-			if not Maskcache[Key] and not Missing[Key] then
-				Missing[Key] = { Image = Image, Shape = Shape }
-				Remaining += 1
+			Addmissing(Descendant.Texture, Shape)
+			for _, Texture in ipairs(Cleaningconfig.DirtTextures) do
+				Addmissing(Texture.Image, Shape)
 			end
 		end
 	end
@@ -149,16 +150,17 @@ local function Buildcoverageentry(Source: Instance, Image: string, Passes: numbe
 	local Success, Mask = pcall(Buildmask, Image, Roundedtexture.GetShape(Source))
 	if not Success then
 		warn("RestorationService: could not read " .. Image .. ": " .. tostring(Mask))
-		return { Cells = table.create(Coveragecellcount, 0), Hits = 0, Premarked = 0, Passes = Passes }
+		return { Cells = table.create(Coveragecellcount, 0), Hits = 0, Free = 0, Premarked = 0, Passes = Passes }
 	end
 	assert(Mask.Premarked < Coveragecellcount, "RestorationService: " .. Source:GetFullName() .. " is fully transparent")
 	local Cells = table.create(Coveragecellcount, 0)
-	for Index, Blank in ipairs(Mask.Blank) do
-		if Blank then
-			Cells[Index] = Passes
-		end
+	local Free = 0
+	for Index, Alpha in ipairs(Mask.Alpha) do
+		local Needed = if Alpha > Visiblealpha then math.min(math.ceil((Alpha - Visiblealpha) / Dirtfadestep), Passes) else 0
+		Cells[Index] = Passes - Needed
+		Free += Passes - Needed
 	end
-	return { Cells = Cells, Hits = Mask.Premarked * Passes, Premarked = Mask.Premarked, Passes = Passes }
+	return { Cells = Cells, Hits = Free, Free = Free, Premarked = Mask.Premarked, Passes = Passes }
 end
 
 local function Premarkunreachable(Entry: CoverageEntry, Object: RestorationObject, Decal: Decal): boolean
@@ -186,11 +188,12 @@ local function Premarkunreachable(Entry: CoverageEntry, Object: RestorationObjec
 				if
 					not Result
 					or Result.Instance ~= Part
-					or not Facemapping.ShowsDecal(Decal.Face, Part.CFrame:VectorToObjectSpace(Result.Normal))
+					or not Facemapping.ShowsDecal(Decal, Result.Normal)
 				then
+					Entry.Free += Entry.Passes - Entry.Cells[Index]
+					Entry.Hits += Entry.Passes - Entry.Cells[Index]
 					Entry.Cells[Index] = Entry.Passes
 					Entry.Premarked += 1
-					Entry.Hits += Entry.Passes
 				end
 			end
 		end
@@ -227,13 +230,7 @@ local function Randomizemaximum(Value: number): number
 	return Roundtwodecimals(Value * Randomgenerator:NextNumber(Minimum, Maximum))
 end
 
-local Testmutationindex = 0
-
 local function Rollmutation(): string
-	if Runservice:IsStudio() and Testmutationindex < #Mutationconfig.TestSequence then
-		Testmutationindex += 1
-		return Mutationconfig.TestSequence[Testmutationindex]
-	end
 	local Total = 0
 	for _, Name in ipairs(Mutationconfig.Order) do
 		Total += Mutationconfig[Name].Weight
@@ -315,6 +312,7 @@ local function Captureprogress(Object: RestorationObject): { [string]: number }
 		Progress[Kind] = tonumber(Object:GetAttribute("Cleaned_" .. Kind)) or 0
 	end
 	Progress.DirtSeed = Object:GetAttribute("DirtSeed")
+	Progress.DirtVersion = Object:GetAttribute("DirtVersion")
 	return Progress
 end
 
@@ -485,8 +483,19 @@ local function Facearea(Decal: Decal): number
 	return Size.X * Size.Y * Size.Z / math.abs(Vector3.FromNormalId(Decal.Face):Dot(Size))
 end
 
-local function Initializedirt(Object: RestorationObject, Singleface: boolean, Seed: number): number
+local function Pickdirttexture(Generator: Random, Excludedpattern: string?)
+	local Choices = {}
+	for _, Texture in ipairs(Cleaningconfig.DirtTextures) do
+		if Texture.Pattern ~= Excludedpattern then
+			table.insert(Choices, Texture)
+		end
+	end
+	return Choices[Generator:NextInteger(1, #Choices)]
+end
+
+local function Initializedirt(Object: RestorationObject, Singleface: boolean, Seed: number, Version: number): number
 	local Generator = Random.new(Seed)
+	local Styled = Version == Dirtversion and not Singleface
 	local Decals = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
@@ -517,19 +526,41 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean, Se
 	end
 	local Keptcount = if #Decals == 0 then 0 elseif Singleface then 1 else Generator:NextInteger(1, #Decals)
 	local Kept = 0
+	local Layers = 0
 	local Totaldirt = 0
 	for _, Decal in ipairs(Decals) do
+		local Texture = if Styled and Kept < Keptcount then Pickdirttexture(Generator, nil) else nil
+		if Texture then
+			Decal.Texture = Texture.Image
+			Decal.ZIndex = Texture.ZIndex
+		end
 		local Entry = if Kept < Keptcount then Buildcoverageentry(Decal, Decal.Texture, Cleaningconfig.DirtPasses) else nil
 		if Entry and Premarkunreachable(Entry, Object, Decal) then
 			Kept += 1
 			Coverage[Object][Decal] = Entry
 			Decal:SetAttribute("Cleaned", false)
 			Totaldirt += 16
+			if Texture and Layers < Cleaningconfig.MaxDirtLayers and Generator:NextNumber() < Cleaningconfig.DirtLayerChance then
+				local Layertexture = Pickdirttexture(Generator, Texture.Pattern)
+				local Layer = Decal:Clone()
+				Layer.Texture = Layertexture.Image
+				Layer.ZIndex = Layertexture.ZIndex
+				Layer.Parent = Decal.Parent
+				local Layerentry = Buildcoverageentry(Layer, Layer.Texture, Cleaningconfig.DirtPasses)
+				if Premarkunreachable(Layerentry, Object, Layer) then
+					Layers += 1
+					Coverage[Object][Layer] = Layerentry
+					Totaldirt += 16
+				else
+					Layer:Destroy()
+				end
+			end
 		else
 			Decal:Destroy()
 		end
 	end
 	Object:SetAttribute("DirtSeed", Seed)
+	Object:SetAttribute("DirtVersion", Version)
 	Object:SetAttribute("Total_Dirt", Totaldirt)
 	Object:SetAttribute("Cleaned_Dirt", 0)
 	return Totaldirt
@@ -653,7 +684,16 @@ local function Iscovered(Entry: CoverageEntry): boolean
 	return Entry.Hits >= Coveragecellcount * Entry.Passes
 end
 
-local function Createspots(Object: RestorationObject, Singleface: boolean, Seed: number)
+local function Isfaceclean(Target: Decal): boolean
+	for _, Sibling in ipairs((Target.Parent :: Instance):GetChildren()) do
+		if Sibling ~= Target and Sibling.Name == Target.Name and Sibling:GetAttribute("Cleaned") == false then
+			return false
+		end
+	end
+	return true
+end
+
+local function Createspots(Object: RestorationObject, Singleface: boolean, Seed: number, Version: number)
 	Coverage[Object] = {}
 	Warmmasks(Object)
 	local Old = Object:FindFirstChild("RestorationSpots")
@@ -670,7 +710,7 @@ local function Createspots(Object: RestorationObject, Singleface: boolean, Seed:
 	if Sticker then
 		Sticker.CanQuery = false
 	end
-	local Totaldirt = Initializedirt(Object, Singleface, Seed)
+	local Totaldirt = Initializedirt(Object, Singleface, Seed, Version)
 	local Totalscratches = Initializescratches(Object)
 	local Totalink = if Hassticker then Initializeink(Object) else 0
 	local Totalsticker = 0
@@ -722,8 +762,9 @@ function Restorationservice:PrepareObject(
 	Object:SetAttribute("AwardedUserId", Owner.UserId)
 	local Istutorial = Core:GetService("TutorialService"):IsActive(Owner)
 	local Seed = if Progress and Progress.DirtSeed then Progress.DirtSeed else Randomgenerator:NextInteger(1, 2147483646)
+	local Version = if Progress and Progress.DirtSeed then Progress.DirtVersion or 1 else Dirtversion
 	local Success, Failure = pcall(function()
-		Createspots(Object, Istutorial, Seed)
+		Createspots(Object, Istutorial, Seed, Version)
 		Precleanobject(Object, (tonumber(Percent) or 0) / 100, Progress)
 	end)
 	if not Success then
@@ -1004,6 +1045,23 @@ function Restorationservice:Init()
 		Setcleanedspots(Sessionobject, Cleanedspots)
 	end)
 
+	Remotemanager:OnServerInvoke(self.Name, "GetLeftovers", function(Player, Targets)
+		local Sessionobject = Sessions[Player]
+		if not Sessionobject or type(Targets) ~= "table" or #Targets > Maxdirtstrokes then return {} end
+		local Masks = {}
+		for Index, Target in ipairs(Targets) do
+			local Entry = Coverage[Sessionobject][Target]
+			local Mask = buffer.create(Coveragecellcount)
+			if Entry then
+				for Cell = 1, Coveragecellcount do
+					buffer.writeu8(Mask, Cell - 1, Entry.Passes - Entry.Cells[Cell])
+				end
+			end
+			Masks[Index] = Mask
+		end
+		return Masks
+	end)
+
 	Remotemanager:OnServerEvent(self.Name, "CleanDirt", function(Player, Toolname, Strokes)
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Dirttools[Toolname] then return end
@@ -1026,9 +1084,9 @@ function Restorationservice:Init()
 				and Validpoints(Stroke.Points)
 			then
 				Seen[Target] = true
-				local Opaquepasses = (Coveragecellcount - Entry.Premarked) * Entry.Passes
+				local Opaquepasses = Coveragecellcount * Entry.Passes - Entry.Free
 				local Newlycovered = Stampcells(Entry, Stroke.Points, Brushradii[Toolname])
-				if not Iscovered(Entry) and Entry.Hits - Entry.Premarked * Entry.Passes >= Opaquepasses * Dirtsnapratio then
+				if not Iscovered(Entry) and Entry.Hits - Entry.Free >= Opaquepasses * Dirtsnapratio then
 					Newlycovered += Coveragecellcount * Entry.Passes - Entry.Hits
 					for Index = 1, Coveragecellcount do
 						Entry.Cells[Index] = Entry.Passes
@@ -1037,7 +1095,9 @@ function Restorationservice:Init()
 				end
 				if Iscovered(Entry) and Target:GetAttribute("Cleaned") ~= true then
 					Target:SetAttribute("Cleaned", true)
-					Core:GetService("DailyTaskService"):Record(Player, "Clean", { Tool = Toolname })
+					if Isfaceclean(Target) then
+						Core:GetService("DailyTaskService"):Record(Player, "Clean", { Tool = Toolname })
+					end
 				end
 				Removeddirt += Newlycovered * 16 / Opaquepasses
 			end

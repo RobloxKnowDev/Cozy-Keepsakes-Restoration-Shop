@@ -369,7 +369,8 @@ function Customercontroller:Respond(Decision: string)
 		if Reason == "NotEnoughCash" then
 			Core:GetController("MessageController"):Show("Not enough money", ErrorMessageGradient)
 		elseif Reason == "EmergencyOfferPresented" then
-			Core:GetController("MessageController"):Show("You cannot afford this item. Restore this free skateboard to recover.", ErrorMessageGradient)
+			local Emergencyname = string.lower(Objectconfig.Object[Objectconfig.Offer.EmergencyObject].Name)
+			Core:GetController("MessageController"):Show("You cannot afford this item. Restore this free " .. Emergencyname .. " to recover.", ErrorMessageGradient)
 		end
 		return
 	end

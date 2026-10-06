@@ -33,6 +33,15 @@ local Halodirt: Decal? = nil
 local Haloclear = buffer.create(Halocanvassize * Halocanvassize * 4)
 local Halotarget = { Center = Vector2.new(0.5, 0.5), Size = Vector2.zero, Alpha = 0 }
 local Halostate = { Center = Vector2.new(0.5, 0.5), Size = Vector2.zero, Alpha = 0 }
+local Leftoverradius = 0.25
+local Glowimagesize = 32
+local Glowdotsize = 10
+local Glowalpha = 0.9
+local Glowimage: EditableImage? = nil
+local Glowcanvas: EditableImage? = nil
+local Glowdecal: Decal? = nil
+local Glowtarget = 0
+local Glowstate = 0
 
 function Uvtorch.IsLit(): boolean
 	return Lit
@@ -104,6 +113,67 @@ local function Gethalodecal(): Decal
 	return Decal
 end
 
+local function Buildglowimage(): EditableImage
+	local Image = Assetservice:CreateEditableImage({ Size = Vector2.new(Glowimagesize, Glowimagesize) })
+	local Pixels = buffer.create(Glowimagesize * Glowimagesize * 4)
+	local Half = Glowimagesize / 2
+	for Y = 0, Glowimagesize - 1 do
+		for X = 0, Glowimagesize - 1 do
+			local Distance = math.sqrt((X + 0.5 - Half) ^ 2 + (Y + 0.5 - Half) ^ 2) / Half
+			local Offset = (Y * Glowimagesize + X) * 4
+			buffer.writeu8(Pixels, Offset, 255)
+			buffer.writeu8(Pixels, Offset + 1, 255)
+			buffer.writeu8(Pixels, Offset + 2, 255)
+			buffer.writeu8(Pixels, Offset + 3, math.round(math.clamp(1 - Distance, 0, 1) ^ 1.5 * 255))
+		end
+	end
+	Image:WritePixelsBuffer(Vector2.zero, Vector2.new(Glowimagesize, Glowimagesize), Pixels)
+	return Image
+end
+
+local function Getglowdecal(): Decal
+	if Glowdecal then return Glowdecal end
+	if not Glowimage then Glowimage = Buildglowimage() end
+	local Canvas = Glowcanvas or Assetservice:CreateEditableImage({ Size = Vector2.new(Halocanvassize, Halocanvassize) })
+	Glowcanvas = Canvas
+	local Decal = Instance.new("Decal")
+	Decal.Name = "UvGlow"
+	Decal.TextureContent = Content.fromObject(Canvas)
+	Decal.Color3 = Uvcolor
+	Decal.ZIndex = Halozindex
+	Decal.Transparency = 1
+	Decal.Destroying:Connect(function()
+		if Glowdecal == Decal then Glowdecal = nil end
+	end)
+	Glowdecal = Decal
+	return Decal
+end
+
+local function Drawglow(Spots: { Vector3 })
+	local Canvas = Glowcanvas :: EditableImage
+	local Image = Glowimage :: EditableImage
+	Canvas:WritePixelsBuffer(Vector2.zero, Canvas.Size, Haloclear)
+	for _, Spot in ipairs(Spots) do
+		local Diameter = Glowdotsize + Spot.Z * 2
+		Canvas:DrawImageTransformed(
+			Vector2.new(Spot.X, Spot.Y) * Halocanvassize,
+			Vector2.one * (Diameter / Glowimagesize),
+			0,
+			Image,
+			{ CombineType = Enum.ImageCombineType.AlphaBlend }
+		)
+	end
+end
+
+local function Hideglow()
+	Glowtarget = 0
+	Glowstate = 0
+	if Glowdecal then
+		Glowdecal.Transparency = 1
+		Glowdecal.Parent = nil
+	end
+end
+
 local function Detachsurfacehalo()
 	Halosurface = nil
 	if Halo then
@@ -126,6 +196,7 @@ local function Hidehalo()
 	Halostate.Alpha = 0
 	Detachsurfacehalo()
 	Detachdecalhalo()
+	Hideglow()
 end
 
 local function Scan(Context)
@@ -133,7 +204,23 @@ local function Scan(Context)
 	local Light = Getlight(Context)
 	if not (Light.Enabled and Context.Object and Display.OnObject) then
 		Halotarget.Alpha = 0
+		Glowtarget = 0
 		return
+	end
+	local Leftoverdecal, Spots = Core:GetController("CleaningController"):FindLeftovers(
+		Display.HitInstance,
+		Display.SurfacePosition,
+		Display.SurfaceNormal,
+		Leftoverradius
+	)
+	if Leftoverdecal and #Spots > 0 then
+		local Decal = Getglowdecal()
+		Decal.Face = Leftoverdecal.Face
+		Decal.Parent = Leftoverdecal.Parent
+		Drawglow(Spots)
+		Glowtarget = Glowalpha
+	else
+		Glowtarget = 0
 	end
 	local Found = Core:GetController("CleaningController"):FindStainAround(
 		Display.HitInstance,
@@ -152,11 +239,14 @@ local function Scan(Context)
 		Detachsurfacehalo()
 		local Decal = Gethalodecal()
 		if Halodirt ~= Found.Decal then
+			local Moved = Halodirt == nil or Halodirt.Parent ~= Found.Decal.Parent or Halodirt.Face ~= Found.Decal.Face
 			Halodirt = Found.Decal
 			Decal.Face = Found.Decal.Face
-			Decal.ZIndex = Found.Decal.ZIndex + 1
+			Decal.ZIndex = Halozindex
 			Decal.Parent = Found.Decal.Parent
-			Halostate.Center, Halostate.Size, Halostate.Alpha = Found.Center, Size * 1.5, 0
+			if Moved then
+				Halostate.Center, Halostate.Size, Halostate.Alpha = Found.Center, Size * 1.5, 0
+			end
 		end
 	else
 		Detachdecalhalo()
@@ -191,6 +281,10 @@ local function Drawhalodecal(Decal: Decal, Breath: number, Shimmer: number)
 end
 
 local function Animatehalo(Deltatime: number)
+	if Glowdecal then
+		Glowstate += (Glowtarget - Glowstate) * (1 - math.exp(-Halosmoothing * Deltatime))
+		Glowdecal.Transparency = 1 - Glowstate * (0.85 + 0.15 * math.sin(os.clock() * Halobreathspeed * 2))
+	end
 	if not Halo and not Halodecal then return end
 	local Blend = 1 - math.exp(-Halosmoothing * Deltatime)
 	Halostate.Center = Halostate.Center:Lerp(Halotarget.Center, Blend)

@@ -27,6 +27,13 @@ assert(
 		Countcopies("RoundedTexture")
 	)
 )
+assert(
+	Facemapping.GetDecalPoint and Facemapping.TouchesDecal and Facemapping.ShowsDecal,
+	string.format(
+		"CleaningController: outdated FaceMapping (%d copies in Shared.Utils, delete the duplicates in Studio)",
+		Countcopies("FaceMapping")
+	)
+)
 
 local Cleaningcontroller = { Name = "CleaningController", Priority = 9 }
 
@@ -39,6 +46,10 @@ local Dirtdecalnames = Cleaningconfig.DirtDecals
 local Getfacepoint = Facemapping.GetPoint
 local Getdecalpoint = Facemapping.GetDecalPoint
 local Cleanedfadeinfo = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local Occlusionoffset = 0.02
+local Occlusionlength = 64
+local Occlusionparams = RaycastParams.new()
+Occlusionparams.FilterType = Enum.RaycastFilterType.Include
 
 local function Getfacename(Localnormal: Vector3): string
 	local Absolutex = math.abs(Localnormal.X)
@@ -71,11 +82,21 @@ local function Getinkimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLabel?
 	return Texture
 end
 
-local function Getdirtdecals(Part: BasePart, Worldnormal: Vector3): { Decal }
-	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
+local function Isoccluded(Part: BasePart, Worldposition: Vector3, Face: Enum.NormalId): boolean
+	local Direction = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Face))
+	Occlusionparams.FilterDescendantsInstances = { Part }
+	return Workspace:Raycast(Worldposition + Direction * Occlusionoffset, Direction * Occlusionlength, Occlusionparams) ~= nil
+end
+
+local function Getdirtdecals(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3): { Decal }
 	local Decals = {}
 	for _, Child in ipairs(Part:GetChildren()) do
-		if Child:IsA("Decal") and Dirtdecalnames[Child.Name] and Facemapping.TouchesDecal(Child.Face, Localnormal) then
+		if
+			Child:IsA("Decal")
+			and Dirtdecalnames[Child.Name]
+			and Facemapping.TouchesDecal(Child, Worldnormal)
+			and (Facemapping.ShowsDecal(Child, Worldnormal) or not Isoccluded(Part, Worldposition, Child.Face))
+		then
 			table.insert(Decals, Child)
 		end
 	end
@@ -107,8 +128,14 @@ local function Getscratchimage(Surface: SurfaceGui, Facepoint: Vector2): ImageLa
 	return nil
 end
 
+local Leftovers: { [Decal]: buffer } = {}
+local Leftoverrequests: { [Decal]: number } = {}
+local Leftoverinterval = 0.3
+local Coveragegrid = Cleaningconfig.CoverageGrid
 local Overlayimages: { [Instance]: EditableImage } = {}
 local Overlaypending: { [Instance]: boolean } = {}
+local Overlaybudget = 56 * 1024 * 1024
+local Preloadframebudget = 0.005
 local Overlayradiusratio = 1 / 16
 local Cottonscale = 4 / 3
 local Brushscale = 1.5
@@ -154,6 +181,134 @@ local function Roundcorners(Editable: EditableImage, Shape)
 	Editable:WritePixelsBuffer(Vector2.zero, Size, Pixels)
 end
 
+local function Applyoverlay(Test: ImageLabel | Decal, Created: EditableImage)
+	if Test:IsA("Decal") then
+		Test.TextureContent = Content.fromObject(Created)
+	else
+		Roundcorners(Created, Roundedtexture.GetShape(Test))
+		Test.ImageContent = Content.fromObject(Created)
+	end
+	Overlayimages[Test] = Created
+	Test.Destroying:Connect(function()
+		Overlayimages[Test] = nil
+		Overlaypending[Test] = nil
+		Tickmarks[Test] = nil
+		Lastfades[Test] = nil
+		Created:Destroy()
+	end)
+end
+
+local function Shrinkpixels(Pixels: buffer, Size: Vector2, Scale: number): (buffer, Vector2)
+	local Sourcewidth, Sourceheight = Size.X, Size.Y
+	local Width = math.max(math.floor(Sourcewidth * Scale), 1)
+	local Height = math.max(math.floor(Sourceheight * Scale), 1)
+	local Result = buffer.create(Width * Height * 4)
+	local Minxs = table.create(Width, 0)
+	local Maxxs = table.create(Width, 0)
+	for X = 0, Width - 1 do
+		Minxs[X + 1] = math.floor(X * Sourcewidth / Width)
+		Maxxs[X + 1] = math.max(math.floor((X + 1) * Sourcewidth / Width) - 1, Minxs[X + 1])
+	end
+	local Started = os.clock()
+	for Y = 0, Height - 1 do
+		if os.clock() - Started > Preloadframebudget then
+			task.wait()
+			Started = os.clock()
+		end
+		local Miny = math.floor(Y * Sourceheight / Height)
+		local Maxy = math.max(math.floor((Y + 1) * Sourceheight / Height) - 1, Miny)
+		for X = 0, Width - 1 do
+			local Minx = Minxs[X + 1]
+			local Maxx = Maxxs[X + 1]
+			local Best = Miny * Sourcewidth + Minx
+			local Bestalpha = -1
+			for Sourcey = Miny, Maxy do
+				for Sourcex = Minx, Maxx do
+					local Index = Sourcey * Sourcewidth + Sourcex
+					local Alpha = buffer.readu8(Pixels, Index * 4 + 3)
+					if Alpha > Bestalpha then
+						Bestalpha = Alpha
+						Best = Index
+					end
+				end
+			end
+			buffer.writeu32(Result, (Y * Width + X) * 4, buffer.readu32(Pixels, Best * 4))
+		end
+	end
+	return Result, Vector2.new(Width, Height)
+end
+
+local function Preloaddecals(Decals: { Decal })
+	for _, Decal in ipairs(Decals) do
+		Overlaypending[Decal] = true
+	end
+	task.spawn(function()
+		local Sources: { [string]: EditableImage } = {}
+		local Images = {}
+		for _, Decal in ipairs(Decals) do
+			if not table.find(Images, Decal.Texture) then
+				table.insert(Images, Decal.Texture)
+			end
+		end
+		local Remaining = #Images
+		for _, Image in ipairs(Images) do
+			task.spawn(function()
+				local Success, Created = pcall(function()
+					return Assetservice:CreateEditableImageAsync(Content.fromUri(Image))
+				end)
+				if Success then
+					Sources[Image] = Created
+				else
+					warn("CleaningController: EditableImage failed for " .. Image .. ": " .. tostring(Created))
+				end
+				Remaining -= 1
+			end)
+		end
+		while Remaining > 0 do
+			task.wait()
+		end
+		local Total = 0
+		for _, Decal in ipairs(Decals) do
+			local Source = Sources[Decal.Texture]
+			if Source then
+				Total += Source.Size.X * Source.Size.Y * 4
+			end
+		end
+		local Scale = math.min(1, math.sqrt(Overlaybudget / math.max(Total, 1)))
+		local Pixels: { [string]: buffer } = {}
+		local Sizes: { [string]: Vector2 } = {}
+		for Image, Source in pairs(Sources) do
+			local Full = Source:ReadPixelsBuffer(Vector2.zero, Source.Size)
+			if Scale < 1 then
+				Pixels[Image], Sizes[Image] = Shrinkpixels(Full, Source.Size, Scale)
+			else
+				Pixels[Image], Sizes[Image] = Full, Source.Size
+			end
+			Source:Destroy()
+		end
+		local Started = os.clock()
+		for _, Decal in ipairs(Decals) do
+			if os.clock() - Started > Preloadframebudget then
+				task.wait()
+				Started = os.clock()
+			end
+			local Image = Decal.Texture
+			if Decal.Parent and Pixels[Image] then
+				local Success, Created = pcall(function()
+					local Overlay = Assetservice:CreateEditableImage({ Size = Sizes[Image] })
+					Overlay:WritePixelsBuffer(Vector2.zero, Sizes[Image], Pixels[Image])
+					return Overlay
+				end)
+				if Success then
+					Applyoverlay(Decal, Created)
+				else
+					warn("CleaningController: EditableImage failed for " .. Decal:GetFullName() .. ": " .. tostring(Created))
+				end
+			end
+		end
+	end)
+end
+
 local function Getoverlayimage(Test: ImageLabel | Decal): EditableImage?
 	local Editable = Overlayimages[Test]
 	if Editable then return Editable end
@@ -168,20 +323,7 @@ local function Getoverlayimage(Test: ImageLabel | Decal): EditableImage?
 			warn("CleaningController: EditableImage failed for " .. Test:GetFullName() .. ": " .. tostring(Created))
 			return
 		end
-		if Test:IsA("Decal") then
-			Test.TextureContent = Content.fromObject(Created)
-		else
-			Roundcorners(Created, Roundedtexture.GetShape(Test))
-			Test.ImageContent = Content.fromObject(Created)
-		end
-		Overlayimages[Test] = Created
-		Test.Destroying:Connect(function()
-			Overlayimages[Test] = nil
-			Overlaypending[Test] = nil
-			Tickmarks[Test] = nil
-			Lastfades[Test] = nil
-			Created:Destroy()
-		end)
+		Applyoverlay(Test, Created)
 	end)
 	return nil
 end
@@ -276,6 +418,9 @@ local Overlayframenames = { Ink = true, ScratchesFrame = true }
 function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 	table.clear(Pendingpoints)
 	table.clear(Pendingdirt)
+	table.clear(Leftovers)
+	table.clear(Leftoverrequests)
+	local Decals = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if
 			Descendant:IsA("ImageLabel")
@@ -286,7 +431,7 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 		then
 			Getoverlayimage(Descendant)
 		elseif Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
-			Getoverlayimage(Descendant)
+			table.insert(Decals, Descendant)
 			Descendant:GetAttributeChangedSignal("Cleaned"):Connect(function()
 				if Descendant:GetAttribute("Cleaned") == true then
 					Tweenservice:Create(Descendant, Cleanedfadeinfo, { Transparency = 1 }):Play()
@@ -294,10 +439,11 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 			end)
 		end
 	end
+	Preloaddecals(Decals)
 end
 
 function Cleaningcontroller:EraseDirtOverlay(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3, Radiusscale: number)
-	for _, Decal in ipairs(Getdirtdecals(Part, Worldnormal)) do
+	for _, Decal in ipairs(Getdirtdecals(Part, Worldposition, Worldnormal)) do
 		if Decal:GetAttribute("Cleaned") ~= true then
 			Fadedecal(Decal, Getdecalpoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
 		end
@@ -452,6 +598,61 @@ local function Scandecal(Decal: Decal, Facepoint: Vector2, Radiusscale: number):
 	}
 end
 
+local function Refreshleftovers(Decals: { Decal })
+	local Now = os.clock()
+	local Requested = {}
+	for _, Decal in ipairs(Decals) do
+		if Now - (Leftoverrequests[Decal] or 0) >= Leftoverinterval then
+			Leftoverrequests[Decal] = Now
+			table.insert(Requested, Decal)
+		end
+	end
+	if #Requested == 0 then return end
+	task.spawn(function()
+		local Masks = Remotemanager:InvokeServer("RestorationService", "GetLeftovers", Requested)
+		for Index, Decal in ipairs(Requested) do
+			Leftovers[Decal] = Masks[Index]
+		end
+	end)
+end
+
+function Cleaningcontroller:FindLeftovers(
+	Part: BasePart,
+	Worldposition: Vector3,
+	Worldnormal: Vector3,
+	Radius: number
+): (Decal?, { Vector3 })
+	local Decals = {}
+	local Facedecal: Decal? = nil
+	for _, Decal in ipairs(Getdirtdecals(Part, Worldposition, Worldnormal)) do
+		if Decal:GetAttribute("Cleaned") ~= true then
+			table.insert(Decals, Decal)
+			if not Facedecal or Facemapping.ShowsDecal(Decal, Worldnormal) then
+				Facedecal = Decal
+			end
+		end
+	end
+	local Spots = {}
+	if not Facedecal then return nil, Spots end
+	Refreshleftovers(Decals)
+	local Point = Getdecalpoint(Part, Worldposition, Facedecal.Face.Name)
+	for _, Decal in ipairs(Decals) do
+		local Mask = Leftovers[Decal]
+		if Mask and Decal.Face == Facedecal.Face then
+			for Cell = 0, Coveragegrid * Coveragegrid - 1 do
+				local Remaining = buffer.readu8(Mask, Cell)
+				if Remaining > 0 then
+					local Center = Vector2.new((Cell % Coveragegrid + 0.5) / Coveragegrid, (Cell // Coveragegrid + 0.5) / Coveragegrid)
+					if (Center - Point).Magnitude <= Radius then
+						table.insert(Spots, Vector3.new(Center.X, Center.Y, Remaining))
+					end
+				end
+			end
+		end
+	end
+	return Facedecal, Spots
+end
+
 function Cleaningcontroller:FindStainAround(
 	Part: BasePart,
 	Worldposition: Vector3,
@@ -474,7 +675,7 @@ function Cleaningcontroller:FindStainAround(
 			if Cluster and (not Best or Cluster.Spot > Best.Spot) then Best = Cluster end
 		end
 	end
-	for _, Decal in ipairs(Getdirtdecals(Part, Worldnormal)) do
+	for _, Decal in ipairs(Getdirtdecals(Part, Worldposition, Worldnormal)) do
 		if Decal:GetAttribute("Cleaned") ~= true then
 			local Cluster = Scandecal(Decal, Getdecalpoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
 			if Cluster and (not Best or Cluster.Spot > Best.Spot) then Best = Cluster end
