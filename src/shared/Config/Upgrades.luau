@@ -22,7 +22,7 @@ return {
 
 	DailyCustomers = {
 		DisplayName = "Daily Customers",
-		DefaultLevel = 5,
+		DefaultLevel = 6,
 		MaxLevel = 12,
 		DeveloperProductId = Monetization.UpgradeDeveloperProducts.DailyCustomers,
 		CashPriceLevel1 = 100,

@@ -116,7 +116,6 @@ function Inventory.ShowItemInfo(Controller, Item, Animate: boolean?)
 	Controller.inventoryRainbowGradients = if Rainbow
 		then { Controller.inventoryInfoMutationGradient, Controller.inventoryInfoMutationFrameGradient }
 		else nil
-	Core:GetController("MutationController"):SetRainbowRotation(Controller.inventoryInfoMutationGradient, Rainbow)
 	Controller.inventoryBlackFrame.Visible = true
 	Controller.inventoryInfoFrame.Visible = true
 	if Animate then

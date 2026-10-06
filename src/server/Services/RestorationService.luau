@@ -175,7 +175,7 @@ local function Premarkunreachable(Entry: CoverageEntry, Object: RestorationObjec
 		for Column = 0, Coveragegridwidth - 1 do
 			local Index = Row * Coveragegridwidth + Column + 1
 			if Entry.Cells[Index] < Entry.Passes then
-				local Localpoint = Facemapping.GetLocalPoint(
+				local Localpoint = Facemapping.GetDecalLocalPoint(
 					Part.Size,
 					Facename,
 					(Column + 0.5) / Coveragegridwidth,
@@ -183,7 +183,11 @@ local function Premarkunreachable(Entry: CoverageEntry, Object: RestorationObjec
 				)
 				local Origin = Part.CFrame:PointToWorldSpace(Localpoint) + Worldnormal * Distance
 				local Result = Workspace:Raycast(Origin, -Worldnormal * Length, Params)
-				if not Result or Result.Instance ~= Part then
+				if
+					not Result
+					or Result.Instance ~= Part
+					or not Facemapping.ShowsDecal(Decal.Face, Part.CFrame:VectorToObjectSpace(Result.Normal))
+				then
 					Entry.Cells[Index] = Entry.Passes
 					Entry.Premarked += 1
 					Entry.Hits += Entry.Passes

@@ -35,9 +35,9 @@ local Scratchcleaninterval = Cleaninterval
 local Inkcleaninterval = Cleaninterval
 local Liquidapplyinterval = 0.25
 local Maxdirtstrokes = 8
-local Minimumfacedot = 0.01
 local Dirtdecalnames = Cleaningconfig.DirtDecals
 local Getfacepoint = Facemapping.GetPoint
+local Getdecalpoint = Facemapping.GetDecalPoint
 local Cleanedfadeinfo = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local function Getfacename(Localnormal: Vector3): string
@@ -75,7 +75,7 @@ local function Getdirtdecals(Part: BasePart, Worldnormal: Vector3): { Decal }
 	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
 	local Decals = {}
 	for _, Child in ipairs(Part:GetChildren()) do
-		if Child:IsA("Decal") and Dirtdecalnames[Child.Name] and Vector3.FromNormalId(Child.Face):Dot(Localnormal) > Minimumfacedot then
+		if Child:IsA("Decal") and Dirtdecalnames[Child.Name] and Facemapping.TouchesDecal(Child.Face, Localnormal) then
 			table.insert(Decals, Child)
 		end
 	end
@@ -299,7 +299,7 @@ end
 function Cleaningcontroller:EraseDirtOverlay(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3, Radiusscale: number)
 	for _, Decal in ipairs(Getdirtdecals(Part, Worldnormal)) do
 		if Decal:GetAttribute("Cleaned") ~= true then
-			Fadedecal(Decal, Getfacepoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
+			Fadedecal(Decal, Getdecalpoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
 		end
 	end
 end
@@ -476,7 +476,7 @@ function Cleaningcontroller:FindStainAround(
 	end
 	for _, Decal in ipairs(Getdirtdecals(Part, Worldnormal)) do
 		if Decal:GetAttribute("Cleaned") ~= true then
-			local Cluster = Scandecal(Decal, Getfacepoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
+			local Cluster = Scandecal(Decal, Getdecalpoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
 			if Cluster and (not Best or Cluster.Spot > Best.Spot) then Best = Cluster end
 		end
 	end

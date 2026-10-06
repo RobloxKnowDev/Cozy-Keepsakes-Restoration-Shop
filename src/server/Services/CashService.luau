@@ -13,7 +13,7 @@ local Cashservice = {
 	},
 }
 
-local Startingcash = 150
+local Startingcash = 300
 local Minimumcash = -10
 local Cashbyplayer: { [Player]: number } = {}
 

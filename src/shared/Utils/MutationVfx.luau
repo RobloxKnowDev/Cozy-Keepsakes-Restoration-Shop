@@ -18,11 +18,13 @@ function MutationVfx.Attach(Object: Instance, Mutation: string)
 	end
 	local Attachment = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Vfx"):WaitForChild(Mutation):Clone() :: Attachment
 	Attachment.Name = Mutationconfig.VfxName
-	Attachment.Light:Destroy()
 	if Mutation == "Rainbow" then
 		Collectionservice:AddTag(Attachment, Mutationconfig.RainbowTag)
 	end
-	Attachment.Parent = Getanchorpart(Object)
+	local Anchor = Getanchorpart(Object)
+	local Center = if Object:IsA("Model") then Object:GetBoundingBox().Position else Anchor.Position
+	Attachment.Position = Anchor.CFrame:PointToObjectSpace(Center)
+	Attachment.Parent = Anchor
 end
 
 return MutationVfx

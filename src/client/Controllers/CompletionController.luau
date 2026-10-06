@@ -172,7 +172,6 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 	self.mutationFrameGradient.Color = if Hasmutation then Mutation.BackgroundGradient else self.baseMutationFrameGradient
 	local Rainbow = Hasmutation and Mutationname == "Rainbow"
 	self.rainbowGradients = if Rainbow then { self.mutationGradient, self.mutationFrameGradient } else nil
-	Core:GetController("MutationController"):SetRainbowRotation(self.mutationGradient, Rainbow)
 	self.rarityText.Text = Rarity.Name
 	self.rarityGradient.Color = Rarity.Gradient
 	self.totalProgressText.Text = string.format("%d%%", Restorationpercent(Overallratio))

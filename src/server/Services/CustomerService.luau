@@ -121,6 +121,8 @@ local Fullband = NumberRange.new(-Streethalfwidth, Streethalfwidth)
 local Shopstops: { [string]: ShopStop } = {}
 local States: { [Player]: ShopState } = {}
 local Pendingskips: { [Player]: number } = {}
+local Offerbags: { [Player]: { [string]: { string } } } = {}
+local Commonstreaks: { [Player]: number } = {}
 local Passerbys: { [Folder]: Passerby } = {}
 local Passersby = 0
 local CustomerSerial = 0
@@ -571,26 +573,82 @@ local function BroadcastOffer(State: ShopState)
 	Remotemanager:FireClient(Customerservice.Name, "OfferUpdated", State.Player, GetOfferPayload(State))
 end
 
-local function GetOfferLuck(Reputation: number): number
-	local Progress = math.min(math.max(Reputation, 0) / Rarityconfig.FullLuckReputation, 1) ^ Rarityconfig.LuckCurve
-	return 1 + (Rarityconfig.MaximumLuck - 1) * Progress
-end
-
 local function GetOfferChances(Reputation: number)
-	local Luck = GetOfferLuck(Reputation)
+	local Tiers = Rarityconfig.Tiers
+	local Lower = Tiers[1]
+	local Upper = Tiers[1]
+	for _, Tier in ipairs(Tiers) do
+		Upper = Tier
+		if Tier.Reputation > Reputation then
+			break
+		end
+		Lower = Tier
+	end
+	local Progress = if Upper == Lower then 0 else (Reputation - Lower.Reputation) / (Upper.Reputation - Lower.Reputation)
 	local Chances = {}
-	for Index, Rarity in ipairs(Rarityconfig.Order) do
-		Chances[Rarity] = Rarityconfig[Rarity].Weight * Luck ^ (Index - 1)
+	for _, Rarity in ipairs(Rarityconfig.Order) do
+		Chances[Rarity] = Lower[Rarity] + (Upper[Rarity] - Lower[Rarity]) * Progress
 	end
 	return Chances
 end
 
+local function Shufflebag(Rarity: string, Lastobject: string?): { string }
+	local Bag = table.clone(ObjectsByRarity[Rarity])
+	for Index = #Bag, 2, -1 do
+		local Swap = math.random(Index)
+		Bag[Index], Bag[Swap] = Bag[Swap], Bag[Index]
+	end
+	if Bag[#Bag] == Lastobject then
+		Bag[1], Bag[#Bag] = Bag[#Bag], Bag[1]
+	end
+	return Bag
+end
+
+local function Drawfrombag(Player: Player, Rarity: string): string
+	local Bags = Offerbags[Player]
+	local Bag = Bags[Rarity] or Shufflebag(Rarity, nil)
+	local ObjectKey = table.remove(Bag) :: string
+	Bags[Rarity] = if #Bag > 0 then Bag else Shufflebag(Rarity, ObjectKey)
+	return ObjectKey
+end
+
+local function Takefrombag(Player: Player, ObjectKey: string)
+	local Rarity = Objectconfig.Object[ObjectKey].Rarity
+	local Bags = Offerbags[Player]
+	local Bag = Bags[Rarity] or Shufflebag(Rarity, nil)
+	local Index = table.find(Bag, ObjectKey)
+	if Index then
+		table.remove(Bag, Index)
+	end
+	Bags[Rarity] = if #Bag > 0 then Bag else Shufflebag(Rarity, ObjectKey)
+end
+
+local function Loadbags(Saved: { [string]: { string } }): { [string]: { string } }
+	local Bags = {}
+	for _, Rarity in ipairs(Rarityconfig.Order) do
+		local Bag = {}
+		for _, ObjectKey in ipairs(Saved[Rarity] or {}) do
+			if table.find(ObjectsByRarity[Rarity], ObjectKey) and not table.find(Bag, ObjectKey) then
+				table.insert(Bag, ObjectKey)
+			end
+		end
+		if #Bag > 0 then
+			Bags[Rarity] = Bag
+		end
+	end
+	return Bags
+end
+
 local function ChooseObjectKey(Player: Player): string
 	if Core:GetService("TutorialService"):IsActive(Player) then
+		Takefrombag(Player, Objectconfig.Offer.TutorialObject)
 		return Objectconfig.Offer.TutorialObject
 	end
 	local Reputation = Core:GetService("StatsService"):GetStats(Player).Reputation
 	local Chances = GetOfferChances(Reputation)
+	if Commonstreaks[Player] >= Rarityconfig.MaxCommonStreak then
+		Chances.Common = 0
+	end
 	local Totalchance = 0
 	for _, Rarity in ipairs(Rarityconfig.Order) do
 		local Chance = Chances[Rarity] or 0
@@ -607,7 +665,8 @@ local function ChooseObjectKey(Player: Player): string
 		if Chance > 0 and #Objectpool > 0 then
 			Accumulatedchance += Chance
 			if Roll < Accumulatedchance then
-				return Objectpool[math.random(1, #Objectpool)]
+				Commonstreaks[Player] = if Rarity == "Common" then Commonstreaks[Player] + 1 else 0
+				return Drawfrombag(Player, Rarity)
 			end
 		end
 	end
@@ -646,8 +705,9 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer
 	}
 end
 
-local function ChooseEmergencyRequest(): CustomerOffer
+local function ChooseEmergencyRequest(Player: Player): CustomerOffer
 	local ObjectKey = Objectconfig.Offer.EmergencyObject
+	Takefrombag(Player, ObjectKey)
 	local Definition = Objectconfig.Object[ObjectKey]
 	local Maximums = Core:GetService("RestorationService"):GenerateObjectMaximums(ObjectKey)
 	OfferSerial += 1
@@ -835,6 +895,8 @@ local function OpenShop(Player: Player)
 		NeedsInstantCustomer = true,
 		Directcustomer = Intutorial,
 	}
+	Commonstreaks[Player] = Commonstreaks[Player] or 0
+	Offerbags[Player] = Offerbags[Player] or {}
 	States[Player] = State
 	Setpendingskips(Player, Pendingskips[Player] or 0)
 	ReplicateCustomerCount(State)
@@ -881,13 +943,21 @@ function Customerservice:Init()
 		Load = function(Player, Saved)
 			local Count = tonumber(Saved.PendingSkips) or 0
 			Pendingskips[Player] = if Count == Count and math.abs(Count) ~= math.huge then math.max(math.floor(Count), 0) else 0
+			Commonstreaks[Player] = math.max(math.floor(tonumber(Saved.CommonStreak) or 0), 0)
+			Offerbags[Player] = Loadbags(Saved.OfferBags or {})
 		end,
 		Save = function(Player)
-			return { PendingSkips = Pendingskips[Player] or 0 }
+			return {
+				PendingSkips = Pendingskips[Player] or 0,
+				CommonStreak = Commonstreaks[Player] or 0,
+				OfferBags = Offerbags[Player] or {},
+			}
 		end,
 		Clear = function(Player)
 			Closeshop(Player)
 			Pendingskips[Player] = nil
+			Commonstreaks[Player] = nil
+			Offerbags[Player] = nil
 		end,
 	})
 	for _, Player in ipairs(Players:GetPlayers()) do
@@ -940,7 +1010,7 @@ function Customerservice:Init()
 						Reason = "NotEnoughCash",
 					}
 				end
-				State.PendingOffer = ChooseEmergencyRequest()
+				State.PendingOffer = ChooseEmergencyRequest(Player)
 				BroadcastOffer(State)
 				return {
 					Success = false,

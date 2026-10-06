@@ -327,7 +327,6 @@ function Controller:ShowItemInfo(Item, Animate: boolean?)
 	self.infoReputationText.Text = tostring(self:GetBaseReputation(Item))
 	local Rainbow = Hasmutation and Item.Mutation == "Rainbow"
 	self.selectRainbowGradients = if Rainbow then { self.infoMutationGradient, self.infoMutationFrameGradient } else nil
-	Core:GetController("MutationController"):SetRainbowRotation(self.infoMutationGradient, Rainbow)
 	self.blackFrame.Visible = true
 	self.infoFrame.Visible = true
 	if Animate then
