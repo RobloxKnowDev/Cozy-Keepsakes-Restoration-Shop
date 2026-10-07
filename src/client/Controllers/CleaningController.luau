@@ -1,14 +1,13 @@
 local Assetservice = game:GetService("AssetService")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Tweenservice = game:GetService("TweenService")
-local Userinputservice = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
 
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
 local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
+local Surfacecast = require(Replicatedstorage.Shared.Utils.SurfaceCast)
 
 local function Countcopies(Name: string): number
 	local Count = 0
@@ -48,8 +47,8 @@ local Getdecalpoint = Facemapping.GetDecalPoint
 local Cleanedfadeinfo = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Occlusionoffset = 0.02
 local Occlusionlength = 64
-local Occlusionparams = RaycastParams.new()
-Occlusionparams.FilterType = Enum.RaycastFilterType.Include
+local Activecaster = nil
+local Activeobject = nil
 
 local function Getfacename(Localnormal: Vector3): string
 	local Absolutex = math.abs(Localnormal.X)
@@ -84,8 +83,7 @@ end
 
 local function Isoccluded(Part: BasePart, Worldposition: Vector3, Face: Enum.NormalId): boolean
 	local Direction = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Face))
-	Occlusionparams.FilterDescendantsInstances = { Part }
-	return Workspace:Raycast(Worldposition + Direction * Occlusionoffset, Direction * Occlusionlength, Occlusionparams) ~= nil
+	return Activecaster:CastPart(Part, Worldposition + Direction * Occlusionoffset, Direction * Occlusionlength) ~= nil
 end
 
 local function Getdirtdecals(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3): { Decal }
@@ -144,6 +142,12 @@ local Stainsamplestep = 2
 local Stainspotratio = 0.2
 local Tickmarks: { [Instance]: buffer } = {}
 local Lastfades: { [Instance]: { Tick: number, X: number, Y: number } } = {}
+local Fadetick = 1
+local Maxpendingpoints = 32
+local Pingmovement = 0.002
+local Dissolvekeep = { 0.45, 0.2, 0 }
+local Dissolveinterval = 0.06
+local Finishassist = Cleaningconfig.FinishAssist
 
 export type StainCluster = {
 	Surface: SurfaceGui?,
@@ -238,7 +242,7 @@ local function Shrinkpixels(Pixels: buffer, Size: Vector2, Scale: number): (buff
 	return Result, Vector2.new(Width, Height)
 end
 
-local function Preloaddecals(Decals: { Decal })
+local function Preloaddecals(Decals: { Decal }, Caster)
 	for _, Decal in ipairs(Decals) do
 		Overlaypending[Decal] = true
 	end
@@ -306,6 +310,9 @@ local function Preloaddecals(Decals: { Decal })
 				end
 			end
 		end
+		if Caster then
+			Caster:Load()
+		end
 	end)
 end
 
@@ -326,6 +333,40 @@ local function Getoverlayimage(Test: ImageLabel | Decal): EditableImage?
 		Applyoverlay(Test, Created)
 	end)
 	return nil
+end
+
+local function Dissolvecells(Decal: Decal, Cells: buffer)
+	local Mask = Leftovers[Decal]
+	local Editable = Overlayimages[Decal]
+	local Indices = {}
+	for Offset = 0, buffer.len(Cells) - 2, 2 do
+		local Index = buffer.readu16(Cells, Offset)
+		table.insert(Indices, Index)
+		if Mask then buffer.writeu8(Mask, Index, 0) end
+	end
+	if not Editable then return end
+	task.spawn(function()
+		for _, Keep in ipairs(Dissolvekeep) do
+			if Overlayimages[Decal] ~= Editable then return end
+			local Size = Editable.Size
+			for _, Index in ipairs(Indices) do
+				local Column, Row = Index % Coveragegrid, Index // Coveragegrid
+				local Corner = Vector2.new(math.floor(Column * Size.X / Coveragegrid), math.floor(Row * Size.Y / Coveragegrid))
+				local Region = Vector2.new(
+					math.floor((Column + 1) * Size.X / Coveragegrid) - Corner.X,
+					math.floor((Row + 1) * Size.Y / Coveragegrid) - Corner.Y
+				)
+				if Region.X > 0 and Region.Y > 0 then
+					local Pixels = Editable:ReadPixelsBuffer(Corner, Region)
+					for Offset = 3, Region.X * Region.Y * 4 - 1, 4 do
+						buffer.writeu8(Pixels, Offset, math.floor(buffer.readu8(Pixels, Offset) * Keep))
+					end
+					Editable:WritePixelsBuffer(Corner, Region, Pixels)
+				end
+			end
+			task.wait(Dissolveinterval)
+		end
+	end)
 end
 
 local Pendingpoints: { [ImageLabel]: { Vector2 } } = {}
@@ -363,14 +404,14 @@ local function Fadedecal(Decal: Decal, Localpoint: Vector2, Radiusscale: number)
 		Points = {}
 		Pendingdirt[Decal] = Points
 	end
-	if #Points < 16 then table.insert(Points, Localpoint) end
+	if #Points < Maxpendingpoints then table.insert(Points, Localpoint) end
 	local Editable = Getoverlayimage(Decal)
 	if not Editable then return end
 	local Size = Editable.Size
 	local Width, Height = Size.X, Size.Y
 	local Centerx = math.round(Localpoint.X * Width)
 	local Centery = math.round(Localpoint.Y * Height)
-	local Tick = math.floor(os.clock() / Cleaninterval) % 65535 + 1
+	local Tick = Fadetick
 	local Last = Lastfades[Decal]
 	if Last and Last.Tick == Tick and Last.X == Centerx and Last.Y == Centery then return end
 	Lastfades[Decal] = { Tick = Tick, X = Centerx, Y = Centery }
@@ -420,6 +461,15 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 	table.clear(Pendingdirt)
 	table.clear(Leftovers)
 	table.clear(Leftoverrequests)
+	if Activecaster then
+		Activecaster:Destroy()
+	end
+	local Caster = Surfacecast.new(Object)
+	Activecaster = Caster
+	Activeobject = Object
+	Object.Destroying:Connect(function()
+		Caster:Destroy()
+	end)
 	local Decals = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if
@@ -439,14 +489,35 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 			end)
 		end
 	end
-	Preloaddecals(Decals)
+	Preloaddecals(Decals, if (Object:GetAttribute("DirtVersion") :: number) >= 3 then Caster else nil)
 end
 
-function Cleaningcontroller:EraseDirtOverlay(Part: BasePart, Worldposition: Vector3, Worldnormal: Vector3, Radiusscale: number)
+function Cleaningcontroller:CastSurface(Origin: Vector3, Vector: Vector3): Surfacecast.Hit?
+	return Activecaster:Cast(Origin, Vector)
+end
+
+function Cleaningcontroller:EraseDirtOverlay(
+	Part: BasePart,
+	Worldposition: Vector3,
+	Worldnormal: Vector3,
+	Radiusscale: number
+): boolean
+	local Touched = false
 	for _, Decal in ipairs(Getdirtdecals(Part, Worldposition, Worldnormal)) do
 		if Decal:GetAttribute("Cleaned") ~= true then
+			Touched = true
 			Fadedecal(Decal, Getdecalpoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
 		end
+	end
+	return Touched
+end
+
+function Cleaningcontroller:QueuePing(Worldposition: Vector3)
+	local Moved = (Worldposition - self.lastPingPosition).Magnitude > Pingmovement
+	self.lastPingPosition = Worldposition
+	local Ratio = Activeobject:GetAttribute("CleanedSpots") / Activeobject:GetAttribute("TotalSpots")
+	if Moved and Ratio >= Finishassist.PingStart and Ratio < 1 then
+		self.pingPending = true
 	end
 end
 
@@ -459,8 +530,10 @@ function Cleaningcontroller:SendDirt(Toolname: string)
 		end
 	end
 	table.clear(Pendingdirt)
-	if #Strokes == 0 then return end
+	if #Strokes == 0 and not self.pingPending then return end
+	self.pingPending = false
 	self.lastRequest = os.clock()
+	Fadetick = Fadetick % 65535 + 1
 	Remotemanager:FireServer("RestorationService", "CleanDirt", Toolname, Strokes)
 end
 
@@ -505,12 +578,17 @@ function Cleaningcontroller:EraseCleanedLeftovers(
 end
 
 function Cleaningcontroller:Init()
-	self.camera = Workspace.CurrentCamera
 	self.lastRequest = 0
 	self.lastScratchRequest = 0
 	self.lastInkRequest = 0
 	self.lastInkSolventRequest = 0
 	self.lastScratchPolishRequest = 0
+	self.pingPending = false
+	self.lastPingPosition = Vector3.zero
+end
+
+function Cleaningcontroller:Start()
+	Remotemanager:OnClientEvent("RestorationService", "LeftoversCleared", Dissolvecells)
 end
 
 local function Scanpixels(Editable: EditableImage, Localpoint: Vector2, Radiusscale: number)
@@ -760,64 +838,48 @@ function Cleaningcontroller:TryCleanScratch(Part: BasePart, Worldposition: Vecto
 	return Image
 end
 
-function Cleaningcontroller:TryCleanDirt(Object: Model | BasePart, Toolname: string)
+function Cleaningcontroller:TryCleanDirt(Hit: Surfacecast.Hit, Toolname: string)
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
-	local Mouse = Userinputservice:GetMouseLocation()
-	local Ray = self.camera:ViewportPointToRay(Mouse.X, Mouse.Y)
-	local Params = RaycastParams.new()
-	Params.FilterType = Enum.RaycastFilterType.Include
-	Params.FilterDescendantsInstances = { Object }
-	local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 100, Params)
-	if not Result or not Result.Instance:IsA("BasePart") then return end
 	local Radiusscale = if Toolname == "CottonTip" then Cottonscale else Brushscale
-	self:EraseCleanedLeftovers(Result.Instance, Result.Position, Result.Normal, Radiusscale)
-	self:EraseDirtOverlay(Result.Instance, Result.Position, Result.Normal, Radiusscale)
+	self:EraseCleanedLeftovers(Hit.Instance, Hit.Position, Hit.DecalNormal, Radiusscale)
+	if not self:EraseDirtOverlay(Hit.Instance, Hit.Position, Hit.DecalNormal, Radiusscale) then
+		self:QueuePing(Hit.Position)
+	end
 	self:SendDirt(Toolname)
 end
 
-function Cleaningcontroller:TryCleanCotton(Object: Model | BasePart)
+function Cleaningcontroller:TryCleanCotton(Hit: Surfacecast.Hit)
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
-	local Mouse = Userinputservice:GetMouseLocation()
-	local Ray = self.camera:ViewportPointToRay(Mouse.X, Mouse.Y)
-	local Params = RaycastParams.new()
-	Params.FilterType = Enum.RaycastFilterType.Include
-	Params.FilterDescendantsInstances = { Object }
-	local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 100, Params)
-	if not Result or not Result.Instance:IsA("BasePart") then return end
 
-	self:EraseCleanedLeftovers(Result.Instance, Result.Position, Result.Normal, Brushscale)
-	local Ink = self:GetInkImage(Result.Instance, Result.Position, Result.Normal)
+	self:EraseCleanedLeftovers(Hit.Instance, Hit.Position, Hit.DecalNormal, Brushscale)
+	local Ink = self:GetInkImage(Hit.Instance, Hit.Position, Hit.DecalNormal)
 	if Ink then
 		if Ink:GetAttribute("HasSolvent") ~= true then return end
-		self:EraseTextureAt(Result.Instance, Result.Position, Result.Normal, Ink, Brushscale)
-		self:TryCleanInk(Result.Instance, Result.Position, Result.Normal)
+		self:EraseTextureAt(Hit.Instance, Hit.Position, Hit.DecalNormal, Ink, Brushscale)
+		self:TryCleanInk(Hit.Instance, Hit.Position, Hit.DecalNormal)
 		return
 	end
 
-	local Scratch = self:GetScratchImage(Result.Instance, Result.Position, Result.Normal)
+	local Scratch = self:GetScratchImage(Hit.Instance, Hit.Position, Hit.DecalNormal)
 	if Scratch then
 		if Scratch:GetAttribute("HasPolish") ~= true then return end
-		self:EraseTextureAt(Result.Instance, Result.Position, Result.Normal, Scratch, Brushscale)
-		self:TryCleanScratch(Result.Instance, Result.Position, Result.Normal)
+		self:EraseTextureAt(Hit.Instance, Hit.Position, Hit.DecalNormal, Scratch, Brushscale)
+		self:TryCleanScratch(Hit.Instance, Hit.Position, Hit.DecalNormal)
 		return
 	end
 
-	self:EraseDirtOverlay(Result.Instance, Result.Position, Result.Normal, Cottonscale)
+	if not self:EraseDirtOverlay(Hit.Instance, Hit.Position, Hit.DecalNormal, Cottonscale) then
+		self:QueuePing(Hit.Position)
+	end
 	self:SendDirt("CottonTip")
 end
 
-function Cleaningcontroller:TryClean(Object: Model | BasePart, Toolname: string)
+function Cleaningcontroller:TryClean(Hit: Surfacecast.Hit?, Toolname: string)
 	if os.clock() - self.lastRequest < 0.05 then return end
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
-	local Mouse = Userinputservice:GetMouseLocation()
-	local Ray = self.camera:ViewportPointToRay(Mouse.X, Mouse.Y)
-	local Params = RaycastParams.new()
-	Params.FilterType = Enum.RaycastFilterType.Include
-	Params.FilterDescendantsInstances = { Object }
-	local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 100, Params)
-	if Result and Result.Instance:GetAttribute("SpotKind") then
+	if Hit and Hit.Instance:GetAttribute("SpotKind") then
 		self.lastRequest = os.clock()
-		Remotemanager:FireServer("RestorationService", "CleanSpot", Result.Instance, Toolname)
+		Remotemanager:FireServer("RestorationService", "CleanSpot", Hit.Instance, Toolname)
 	end
 end
 

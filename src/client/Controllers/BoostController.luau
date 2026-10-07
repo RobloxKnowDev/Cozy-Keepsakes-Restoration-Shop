@@ -2,12 +2,15 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BoostConfig = require(ReplicatedStorage.Shared.Config.Boosts)
+local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
 
 local BoostController = {
 	Name = "BoostController",
 	Priority = 2,
 }
+
+local AppearWindow = 0.5
 
 function BoostController:RemoveBoost(Name: string)
 	local Boost = self.boosts[Name]
@@ -32,6 +35,7 @@ function BoostController:CreateBoost(Name: string)
 		DescriptionText = Tooltip:WaitForChild("DescriptionText") :: TextLabel,
 		EndsAt = 0,
 		Permanent = false,
+		CreatedAt = os.clock(),
 	}
 	self.boosts[Name] = Boost
 
@@ -68,6 +72,17 @@ function BoostController:SetPermanentBoost(Name: string, LayoutOrder: number, Te
 	Boost.DescriptionText.Text = Description
 	Boost.Frame.LayoutOrder = LayoutOrder
 	Boost.Text.Text = Text
+end
+
+function BoostController:PlayGain(Name: string, WithMessage: boolean)
+	local Boost = self.boosts[Name]
+	if not Boost then return end
+	local Gradient = BoostConfig[Name].Gradient
+	local Title = if Boost.Permanent then Boost.NameText.Text .. " " .. Boost.Text.Text else Boost.NameText.Text
+	Core:GetController("FeedbackController"):BoostGain(Boost.Frame, Title .. "!", Gradient, os.clock() - Boost.CreatedAt < AppearWindow)
+	if WithMessage then
+		Core:GetController("MessageController"):Show(Boost.NameText.Text .. ": " .. Boost.DescriptionText.Text, Gradient)
+	end
 end
 
 function BoostController:Update()

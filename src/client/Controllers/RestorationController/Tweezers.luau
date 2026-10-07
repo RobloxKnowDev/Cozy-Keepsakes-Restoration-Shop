@@ -35,7 +35,7 @@ end
 
 function Tweezers.OnUpdate(Context)
 	if Pressing and Userinputservice:GetLastInputType() == Enum.UserInputType.Touch then
-		Trygrab(Context)
+		task.spawn(Trygrab, Context)
 	end
 	Core:GetController("StickerController"):Update()
 end

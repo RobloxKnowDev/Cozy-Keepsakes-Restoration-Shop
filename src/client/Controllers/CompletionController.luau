@@ -40,6 +40,7 @@ local Completioncontroller = {
 	celebrationId = 0,
 	closing = false,
 	emptyRows = {},
+	statsConnections = {},
 	stick = Vector2.zero,
 }
 
@@ -218,6 +219,10 @@ function Completioncontroller:Hide()
 		self.viewportSizeConnection:Disconnect()
 		self.viewportSizeConnection = nil
 	end
+	for _, Connection in ipairs(self.statsConnections) do
+		Connection:Disconnect()
+	end
+	table.clear(self.statsConnections)
 	if self.objectArrivalTween then
 		self.objectArrivalTween:Cancel()
 		self.objectArrivalTween = nil
@@ -515,6 +520,11 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 	self.closing = false
 	self.onContinue = Oncontinue
 	self:ApplyProgressStats(Object)
+	for _, Name in ipairs({ "CleanedSpots", "Mutation" }) do
+		table.insert(self.statsConnections, Object:GetAttributeChangedSignal(Name):Connect(function()
+			self:ApplyProgressStats(Object)
+		end))
+	end
 
 	if self.viewport and self.world then
 		Object.Archivable = true

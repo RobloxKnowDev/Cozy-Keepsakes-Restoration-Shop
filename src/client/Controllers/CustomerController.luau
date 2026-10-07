@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
+local Interactionoutline = require(Replicatedstorage.Shared.Utils.InteractionOutline)
 local Objectconfig = require(Replicatedstorage.Shared.Config.Object)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Uigradient = require(Replicatedstorage.Shared.Utils.UiGradient)
@@ -23,8 +24,6 @@ local Frametweeninfo = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDi
 local Fastframetweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local Buttontweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Estimationtweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-local HighlightFillcolor = Color3.fromRGB(255, 232, 163)
-local HighlightOutlinecolor = Color3.fromRGB(255, 255, 255)
 local ErrorMessageGradient = Rarityconfig.Mythic.Gradient
 local DisabledEstimateColor = Color3.fromRGB(115, 115, 115)
 local PointerRayOffsets = { Vector2.zero }
@@ -152,14 +151,14 @@ function Customercontroller:CanInteract(): boolean
 		and not Restorationcontroller:IsEditingObject()
 end
 
-function Customercontroller:SetHoveredCustomer(Customer: Model?)
-	if self.hoveredCustomer == Customer then
+function Customercontroller:SetOutlinedCustomer(Customer: Model?)
+	if self.outlinedCustomer == Customer then
 		return
 	end
 
-	self.hoveredCustomer = Customer
-	self.hoverHighlight.Adornee = Customer
-	self.hoverHighlight.Enabled = Customer ~= nil
+	self.outlinedCustomer = Customer
+	self.outline.Adornee = Customer
+	self.outline.Enabled = Customer ~= nil
 end
 
 function Customercontroller:GetInteractionCustomer(): Model?
@@ -196,23 +195,16 @@ function Customercontroller:TryInteractAtPosition(Screenposition: Vector2?, Expa
 	local Clickedcustomer = self:GetCustomerAtPosition(Screenposition, Expandtouch)
 	if not Clickedcustomer or not self.pendingOffer then return false end
 	Core:GetController("FeedbackController"):UiClick()
-	self:SetHoveredCustomer(Clickedcustomer)
 	self:ShowPendingOffer()
 	return true
 end
 
-function Customercontroller:UpdateHoveredCustomer()
-	if not self:CanInteract() then
-		self:SetHoveredCustomer(nil)
+function Customercontroller:UpdateOutline()
+	if not self:CanInteract() or Userinputservice:GetLastInputType() == Enum.UserInputType.Touch then
+		self:SetOutlinedCustomer(nil)
 		return
 	end
-
-	local Lastinputtype = Userinputservice:GetLastInputType()
-	if Lastinputtype == Enum.UserInputType.Touch then
-		self:SetHoveredCustomer(nil)
-		return
-	end
-	self:SetHoveredCustomer(self:GetCustomerAtPosition(nil))
+	self:SetOutlinedCustomer(self:GetCustomerAtPosition(nil))
 end
 
 function Customercontroller:ShowPendingOffer()
@@ -221,6 +213,7 @@ function Customercontroller:ShowPendingOffer()
 	end
 	Core:GetController("DailyRewardController"):CloseForSwitch()
 	Core:GetController("SettingController"):CloseForSwitch()
+	Core:GetController("DonationController"):CloseForSwitch()
 
 	self:ShowOffer(self.pendingOffer)
 end
@@ -325,7 +318,7 @@ function Customercontroller:CloseOfferUi(Fast: boolean?)
 	if not self:IsVisible() or self.isBusy then
 		return
 	end
-	self:SetHoveredCustomer(nil)
+	self:SetOutlinedCustomer(nil)
 	self:HideAnimated(Fast)
 end
 
@@ -425,15 +418,7 @@ function Customercontroller:Init()
 	self.estimatesRemaining = 0
 	self.isEstimating = false
 	self.hideId = 0
-	self.hoverHighlight = Instance.new("Highlight")
-	self.hoverHighlight.Name = "CustomerHoverHighlight"
-	self.hoverHighlight.DepthMode = Enum.HighlightDepthMode.Occluded
-	self.hoverHighlight.FillColor = HighlightFillcolor
-	self.hoverHighlight.FillTransparency = 1
-	self.hoverHighlight.OutlineColor = HighlightOutlinecolor
-	self.hoverHighlight.OutlineTransparency = 0
-	self.hoverHighlight.Enabled = false
-	self.hoverHighlight.Parent = Workspace
+	self.outline = Interactionoutline.Create("CustomerOutline")
 
 	AnimateButton(self.buyButton)
 	AnimateButton(self.declineButton)
@@ -490,7 +475,7 @@ function Customercontroller:Start()
 			end
 		else
 			self.pendingOffer = nil
-			self:SetHoveredCustomer(nil)
+			self:SetOutlinedCustomer(nil)
 			self:HideInstant()
 		end
 	end
@@ -503,7 +488,7 @@ function Customercontroller:Start()
 	end)
 
 	Runservice.RenderStepped:Connect(function()
-		self:UpdateHoveredCustomer()
+		self:UpdateOutline()
 	end)
 end
 

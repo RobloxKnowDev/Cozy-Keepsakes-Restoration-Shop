@@ -210,7 +210,7 @@ local function Scan(Context)
 	local Leftoverdecal, Spots = Core:GetController("CleaningController"):FindLeftovers(
 		Display.HitInstance,
 		Display.SurfacePosition,
-		Display.SurfaceNormal,
+		Display.DecalNormal,
 		Leftoverradius
 	)
 	if Leftoverdecal and #Spots > 0 then
@@ -225,7 +225,7 @@ local function Scan(Context)
 	local Found = Core:GetController("CleaningController"):FindStainAround(
 		Display.HitInstance,
 		Display.SurfacePosition,
-		Display.SurfaceNormal,
+		Display.DecalNormal,
 		Beamscale
 	)
 	if not Found then

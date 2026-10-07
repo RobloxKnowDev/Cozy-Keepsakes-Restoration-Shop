@@ -120,13 +120,14 @@ function ProgressController:Update(Object: Model | BasePart, InteractionPosition
 		local Previous = self.previousGlobal
 		self.previousGlobal = GlobalRatio
 		self:AnimateText(self.globalText, Percent(Previous), Percent(GlobalRatio))
+		local Full = Percent(GlobalRatio) >= 100
 		if GlobalRatio > Previous then
-			if InteractionPosition then
+			if InteractionPosition and not Full then
 				local GainedPercent = math.clamp(math.round((GlobalRatio - Previous) * 1000) / 10, 0.1, 1)
 				self.feedback:CleaningPercent(InteractionPosition, GainedPercent)
 			end
 			self.feedback:Pulse(self.globalText, 1.07)
-			local Threshold = self:Crossed(Previous, GlobalRatio)
+			local Threshold = if Full then nil else self:Crossed(Previous, GlobalRatio)
 			if Threshold then
 				self.feedback:CenterText(string.format("%d%% Restored", Threshold * 100), Gradients.Scratch)
 				self.feedback:Burst(self.percentFrame, Colors.Scratch, 12)
@@ -135,7 +136,7 @@ function ProgressController:Update(Object: Model | BasePart, InteractionPosition
 				self.feedback:PlaySound("Progress", 0.1, 0.96 + GlobalRatio * 0.08)
 			end
 		end
-		if Percent(GlobalRatio) >= 100 and not self.globalCompleted then
+		if Full and not self.globalCompleted then
 			self.globalCompleted = true
 			self:CompleteGlobal()
 		end

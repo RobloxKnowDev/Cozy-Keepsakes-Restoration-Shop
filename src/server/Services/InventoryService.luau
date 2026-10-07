@@ -196,6 +196,15 @@ function Inventoryservice:GetRestoredItems(Player: Player): { RestoredItem }
 	return Result
 end
 
+function Inventoryservice:GetSaleValue(Player: Player): number
+	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
+	local Total = 0
+	for _, Item in ipairs(ItemsByPlayer[Player] or {}) do
+		Total += ApplySaleMultiplier(Item.CurrentValue, Multiplier)
+	end
+	return Total
+end
+
 function Inventoryservice:PushItems(Player: Player)
 	local Items = self:GetRestoredItems(Player)
 	if not Player.Parent then return end
@@ -206,12 +215,16 @@ function Inventoryservice:PushIndex(Player: Player, Unlockedkey: string?, Mutati
 	Remotemanager:FireClient(self.Name, "IndexUpdated", Player, self:GetIndexEntries(Player), Unlockedkey, Mutation)
 end
 
+function Inventoryservice:NewItemId(): number
+	NextItemId += 1
+	return NextItemId
+end
+
 function Inventoryservice:AddRestoredItem(Player: Player, Item: RestoredItem): RestoredItem
 	local Items = self:EnsurePlayer(Player)
-	NextItemId += 1
 
 	local Stored = CloneItem(Item)
-	Stored.Id = NextItemId
+	Stored.Id = self:NewItemId()
 	table.insert(Items, 1, Stored)
 	self:PushItems(Player)
 	return CloneItem(Stored)
@@ -246,23 +259,27 @@ function Inventoryservice:GetRestoredItem(Player: Player, ItemId: number): Resto
 	return nil
 end
 
-function Inventoryservice:TakeRestoredItem(Player: Player, ItemId: number): RestoredItem?
+function Inventoryservice:TakeRestoredItem(Player: Player, ItemId: number, Silent: boolean?): RestoredItem?
 	local Items = self:EnsurePlayer(Player)
 	for Index, Item in ipairs(Items) do
 		if Item.Id == ItemId then
 			table.remove(Items, Index)
-			self:PushItems(Player)
+			if not Silent then
+				self:PushItems(Player)
+			end
 			return CloneItem(Item)
 		end
 	end
 	return nil
 end
 
-function Inventoryservice:ReturnRestoredItem(Player: Player, Item: RestoredItem): RestoredItem
+function Inventoryservice:ReturnRestoredItem(Player: Player, Item: RestoredItem, Silent: boolean?): RestoredItem
 	local Items = self:EnsurePlayer(Player)
 	local Stored = CloneItem(Item)
 	table.insert(Items, 1, Stored)
-	self:PushItems(Player)
+	if not Silent then
+		self:PushItems(Player)
+	end
 	return CloneItem(Stored)
 end
 
@@ -349,12 +366,12 @@ function Inventoryservice:Init()
 	Core:GetService("DataService"):Register("Inventory", {
 		Load = function(Player, Saved)
 			self:EnsurePlayer(Player)
+			local Saveditems = if type(Saved.Items) == "table" then Saved.Items else {}
 			local Items = {}
-			for _, Item in ipairs(if type(Saved.Items) == "table" then Saved.Items else {}) do
-				local Stored = CloneItem(Item)
-				Stored.Id = math.floor(tonumber(Item.Id) or 0)
-				NextItemId = math.max(NextItemId, Stored.Id)
-				table.insert(Items, Stored)
+			for Index = #Saveditems, 1, -1 do
+				local Stored = CloneItem(Saveditems[Index])
+				Stored.Id = self:NewItemId()
+				Items[Index] = Stored
 			end
 			ItemsByPlayer[Player] = Items
 			IndexByPlayer[Player] = Readsavedindex(Saved.Index)

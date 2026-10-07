@@ -44,8 +44,7 @@ function Hudcustomercontroller:UpdateTimer()
 	local Target = Player:GetAttribute("NextCustomerAt") or 0
 	local Remaining = Target - Workspace:GetServerTimeNow()
 	local Active = Target > 0 and Remaining > 0
-	local Canskip = Monetizationconfig.SkipCooldownProductId > 0
-		and Remaining > Customerconfig.SkipArrivalSeconds + Customerconfig.SkipMarginSeconds
+	local Canskip = Monetizationconfig.SkipCooldownProductId > 0 and Remaining > Customerconfig.GetSkipThreshold()
 	self.cooldownFrame.Visible = self.hudVisible and Active
 	Uifade.SetVisible(self.cooldownBar, Active)
 	Uifade.SetVisible(self.nextText, Active)

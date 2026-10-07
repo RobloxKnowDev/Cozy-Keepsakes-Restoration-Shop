@@ -237,6 +237,7 @@ end
 function Controller:CloseTopbarFrames()
 	self.dailyRewardController:CloseForSwitch()
 	self.settingController:CloseForSwitch()
+	self.donationController:CloseForSwitch()
 end
 
 function Controller:SetSelectionControlsEnabled(Enabled: boolean)
@@ -245,6 +246,11 @@ function Controller:SetSelectionControlsEnabled(Enabled: boolean)
 	self.selectCloseButton.Interactable = Enabled
 	self.infoCloseButton.Active = Enabled
 	self.infoCloseButton.Interactable = Enabled
+	if self.equipBestButton.Active ~= Cardsenabled then
+		self.equipBestButton.Active = Cardsenabled
+		self.equipBestButton.Interactable = Cardsenabled
+		if not Cardsenabled then Shared.ApplyActiveScale(self.equipBestButton, false) end
+	end
 	for _, Card in ipairs(self.selectCards) do
 		for _, Button in ipairs(Card.Buttons) do
 			if Button.Active ~= Cardsenabled then
@@ -620,6 +626,49 @@ function Controller:RemoveDisplayItem(Slotindex: number)
 	Core:GetController("MessageController"):Show(Message, ErrorMessageGradient)
 end
 
+function Controller:EquipBest()
+	if not self.selectFrameOpen or self.selectPlacementPending then return end
+	local Requestid = self.selectionRequestId
+	self.selectPlacementPending = true
+	self:SetSelectionControlsEnabled(false)
+	self:SetBlocker("EquipBest", "Disabled")
+	local Success, Response = pcall(function()
+		return Remotemanager:InvokeServer("ExpositionService", "EquipBest")
+	end)
+	self:SetBlocker("EquipBest", nil)
+	local Iscurrentrequest = self.selectionRequestId == Requestid
+	if Iscurrentrequest then
+		self.selectPlacementPending = false
+		self:UpdateButtonAvailability()
+	end
+	if Success and type(Response) == "table" and Response.Success == true then
+		if type(Response.DisplayItems) == "table" then self:ApplyDisplayItems(Response.DisplayItems, Iscurrentrequest and (tonumber(Response.Changed) or 0) > 0) end
+		local Grantedreputation = tonumber(Response.GrantedReputation) or 0
+		if (tonumber(Response.Changed) or 0) > 0 then
+			local Message = if Grantedreputation > 0
+				then "+" .. FormatReputation(Grantedreputation) .. " Reputation"
+				else "Best items equipped"
+			Core:GetController("FeedbackController"):PlaySound("SlotItem", 0.15)
+			Core:GetController("MessageController"):Show(Message, ReputationMessageGradient)
+			if Iscurrentrequest then self:CloseSelectionFrame(false) end
+			return
+		end
+		if Iscurrentrequest then self:RefreshSelectionControls() end
+		if (tonumber(Response.Kept) or 0) > 0 then
+			Core:GetController("MessageController"):Show("Your best items are already on display", ReputationMessageGradient)
+		else
+			Core:GetController("MessageController"):Show("No restored items to display", ErrorMessageGradient)
+		end
+		return
+	end
+	if Iscurrentrequest then self:SetSelectionControlsEnabled(true) end
+	local Reason = if Success and type(Response) == "table" then Response.Reason else "EquipFailed"
+	local Message = if Reason == "Busy"
+		then "Please wait before changing your display"
+		else "Unable to equip your best items"
+	Core:GetController("MessageController"):Show(Message, ErrorMessageGradient)
+end
+
 function Controller:BindButtonAnimation(Button: GuiButton)
 	Button.MouseEnter:Connect(function()
 		self.hoveredButtons[Button] = true
@@ -778,6 +827,7 @@ function Controller:Init()
 	self.selectGridLayout = Selectscrollingframe:WaitForChild("UIGridLayout") :: UIGridLayout
 	self.selectTemplate = Selectscrollingframe:WaitForChild("Template") :: GuiObject
 	self.selectCloseButton = Selectframe:WaitForChild("CloseButton") :: GuiButton
+	self.equipBestButton = Selectframe:WaitForChild("EquipBestButton") :: GuiButton
 	self.blackFrame = Selectframe:WaitForChild("BlackFrame") :: GuiObject
 	self.infoFrame = Infoframe
 	self.infoScale = Shared.EnsureScale(Infoframe)
@@ -906,6 +956,7 @@ function Controller:Start()
 	self.customerController = Core:GetController("CustomerController")
 	self.dailyRewardController = Core:GetController("DailyRewardController")
 	self.settingController = Core:GetController("SettingController")
+	self.donationController = Core:GetController("DonationController")
 	self.completionController = Core:GetController("CompletionController")
 	Runservice.Heartbeat:Connect(function()
 		local Sequence = Core:GetController("MutationController"):GetGradient("Rainbow")
@@ -916,10 +967,12 @@ function Controller:Start()
 	for _, Button in ipairs(self.animatedButtons) do self:BindButtonAnimation(Button) end
 	Shared.AnimateButton(self.selectCloseButton, function() return not self.selectCloseButton.Active end)
 	Shared.AnimateButton(self.infoCloseButton, function() return not self.infoCloseButton.Active end)
+	Shared.AnimateButton(self.equipBestButton, function() return not self.equipBestButton.Active end)
 	Core:GetController("GamepadController"):OnActivated(self.reputationButtonL, function() self:Open() end)
 	Core:GetController("GamepadController"):OnActivated(self.reputationButtonR, function() self:Close() end)
 	Core:GetController("GamepadController"):OnActivated(self.selectCloseButton, function() self:CloseSelectionFrame(false) end)
 	Core:GetController("GamepadController"):OnActivated(self.infoCloseButton, function() self:CloseItemInfo() end)
+	Core:GetController("GamepadController"):OnActivated(self.equipBestButton, function() self:EquipBest() end)
 	for _, Slot in ipairs(self.slotButtons) do
 		Core:GetController("GamepadController"):OnActivated(Slot.Button, function()
 			self:SyncFrameBlockers()

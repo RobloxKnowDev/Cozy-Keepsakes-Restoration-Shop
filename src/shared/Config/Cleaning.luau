@@ -18,4 +18,11 @@ return {
 		{ Image = "rbxassetid://87402903792010", Pattern = "Clumps", ZIndex = 5 },
 		{ Image = "rbxassetid://79361514123085", Pattern = "Dust", ZIndex = 1 },
 	},
+	FinishAssist = {
+		Start = 0.97,
+		MinGain = 0.001,
+		MaxGain = 0.008,
+		Curve = 2,
+		PingStart = 0.985,
+	},
 }

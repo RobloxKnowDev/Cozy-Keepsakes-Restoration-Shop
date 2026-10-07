@@ -37,7 +37,7 @@ function Cottontip.OnUpdate(Context)
 	if not Lastposition or (Position - Lastposition).Magnitude > 0.002 then Lastmove = os.clock() end
 	Lastposition = Position
 	Setscrubbing(os.clock() - Lastmove < Movegrace)
-	Core:GetController("CleaningController"):TryCleanCotton(Context.Object)
+	Core:GetController("CleaningController"):TryCleanCotton(Display.Hit)
 end
 
 function Cottontip.OnInputEnded()

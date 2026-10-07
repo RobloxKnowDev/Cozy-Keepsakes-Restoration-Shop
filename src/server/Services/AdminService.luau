@@ -491,6 +491,37 @@ local Commands = {
 		end,
 	},
 	{
+		Name = "nextshop",
+		Usage = "nextshop [player]",
+		Description = "Move to the next free shop (camera tests)",
+		Arguments = { "player" },
+		Run = function(Caller: Player, Arguments: { string }): string
+			local Target = if Arguments[1] then Findplayer(Arguments[1]) else Caller
+			if not Target then
+				return "Player not found: " .. tostring(Arguments[1])
+			end
+			local Shop, Reason = Core:GetService("ShopService"):MoveToNextShop(Target)
+			if not Shop then
+				return Target.Name .. ": " .. tostring(Reason)
+			end
+			return Target.Name .. " now owns " .. Shop.Name
+		end,
+	},
+	{
+		Name = "cleanall",
+		Usage = "cleanall [player]",
+		Description = "Give a Clean All without Robux (used now or saved)",
+		Arguments = { "player" },
+		Run = function(Caller: Player, Arguments: { string }): string
+			local Target = if Arguments[1] then Findplayer(Arguments[1]) else Caller
+			if not Target then
+				return "Player not found: " .. tostring(Arguments[1])
+			end
+			Core:GetService("RestorationService"):CleanAll(Target)
+			return Target.Name .. ": Clean All given, saved Clean All: " .. tostring(Target:GetAttribute("PendingCleanAll") or 0)
+		end,
+	},
+	{
 		Name = "save",
 		Usage = "save <player>",
 		Description = "Force an immediate save",

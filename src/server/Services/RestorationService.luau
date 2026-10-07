@@ -1,7 +1,7 @@
 local Assetservice = game:GetService("AssetService")
+local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Tweenservice = game:GetService("TweenService")
-local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
@@ -13,6 +13,7 @@ local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
 local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
 local Restorationpercent = require(Replicatedstorage.Shared.Utils.RestorationPercent)
+local Surfacecast = require(Replicatedstorage.Shared.Utils.SurfaceCast)
 
 local Restorationservice = {
 	Name = "RestorationService",
@@ -26,16 +27,19 @@ local Restorationservice = {
 		CleanInk = "Event",
 		CleanDirt = "Event",
 		GetLeftovers = "Function",
+		LeftoversCleared = "Event",
 		CleanScratch = "Event",
 		CompleteRestoration = "Function",
 		CompletePeel = "Event",
 		CancelPeel = "Event",
 		CleanSpot = "Event",
 		SessionEnded = "Event",
+		UseCleanAll = "Function",
 	},
 }
 
 local Dirtcleaninterval = 0.05
+local Dirtburst = 3
 local Scratchcleaninterval = Dirtcleaninterval
 local Inkcleaninterval = Scratchcleaninterval
 local Coveragegridwidth = Cleaningconfig.CoverageGrid
@@ -44,7 +48,9 @@ local Brushradii = { CottonTip = 1 / 12, ToothBrush = 3 / 32 }
 local Maxcleanpoints = 32
 local Maxdirtstrokes = 8
 local Dirtsnapratio = 0.995
-local Dirtversion = 2
+local Finishassist = Cleaningconfig.FinishAssist
+local Dirtversion = 3
+local Premarkframebudget = 0.005
 local Dirtsurfacenames = {
 	UiTop = true,
 	UiBottom = true,
@@ -55,10 +61,11 @@ local Dirtsurfacenames = {
 }
 local Dirtdecalnames = Cleaningconfig.DirtDecals
 local Dirttools = { CottonTip = true, ToothBrush = true }
+local Cleanalltool = "CleanAll"
 local Spothealth = { Sticker = 3 }
 local Toolpower = { CottonTip = 1, HeatGun = 1, Polish = 1, Solvent = 1, ToothBrush = 1, Tweezers = 1 }
 local Toolsforspot = { Sticker = "Tweezers" }
-type CoverageEntry = { Cells: { number }, Hits: number, Free: number, Premarked: number, Passes: number }
+type CoverageEntry = { Cells: { number }, Hits: number, Free: number, Premarked: number, Passes: number, Units: number }
 local Coverage: { [RestorationObject]: { [Instance]: CoverageEntry } } = {}
 
 type CoverageMask = { Alpha: { number }, Premarked: number }
@@ -146,11 +153,11 @@ local function Warmmasks(Object: RestorationObject)
 	end
 end
 
-local function Buildcoverageentry(Source: Instance, Image: string, Passes: number): CoverageEntry
+local function Buildcoverageentry(Source: Instance, Image: string, Passes: number, Units: number): CoverageEntry
 	local Success, Mask = pcall(Buildmask, Image, Roundedtexture.GetShape(Source))
 	if not Success then
 		warn("RestorationService: could not read " .. Image .. ": " .. tostring(Mask))
-		return { Cells = table.create(Coveragecellcount, 0), Hits = 0, Free = 0, Premarked = 0, Passes = Passes }
+		return { Cells = table.create(Coveragecellcount, 0), Hits = 0, Free = 0, Premarked = 0, Passes = Passes, Units = Units }
 	end
 	assert(Mask.Premarked < Coveragecellcount, "RestorationService: " .. Source:GetFullName() .. " is fully transparent")
 	local Cells = table.create(Coveragecellcount, 0)
@@ -160,19 +167,17 @@ local function Buildcoverageentry(Source: Instance, Image: string, Passes: numbe
 		Cells[Index] = Passes - Needed
 		Free += Passes - Needed
 	end
-	return { Cells = Cells, Hits = Free, Free = Free, Premarked = Mask.Premarked, Passes = Passes }
+	return { Cells = Cells, Hits = Free, Free = Free, Premarked = Mask.Premarked, Passes = Passes, Units = Units }
 end
 
-local function Premarkunreachable(Entry: CoverageEntry, Object: RestorationObject, Decal: Decal): boolean
+local function Premarkunreachable(Entry: CoverageEntry, Object: RestorationObject, Caster, Decal: Decal): boolean
 	local Part = Decal.Parent :: BasePart
 	local Facename = Decal.Face.Name
 	local Worldnormal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Decal.Face))
 	local Objectsize = if Object:IsA("Model") then Object:GetExtentsSize() else Object.Size
 	local Distance = Objectsize.Magnitude + 1
 	local Length = Distance + Part.Size.Magnitude
-	local Params = RaycastParams.new()
-	Params.FilterType = Enum.RaycastFilterType.Include
-	Params.FilterDescendantsInstances = { Object }
+	local Started = os.clock()
 	for Row = 0, Coveragegridwidth - 1 do
 		for Column = 0, Coveragegridwidth - 1 do
 			local Index = Row * Coveragegridwidth + Column + 1
@@ -184,16 +189,20 @@ local function Premarkunreachable(Entry: CoverageEntry, Object: RestorationObjec
 					(Row + 0.5) / Coveragegridwidth
 				)
 				local Origin = Part.CFrame:PointToWorldSpace(Localpoint) + Worldnormal * Distance
-				local Result = Workspace:Raycast(Origin, -Worldnormal * Length, Params)
+				local Hit = Caster:Cast(Origin, -Worldnormal * Length)
 				if
-					not Result
-					or Result.Instance ~= Part
-					or not Facemapping.ShowsDecal(Decal, Result.Normal)
+					not Hit
+					or Hit.Instance ~= Part
+					or not Facemapping.ShowsDecal(Decal, Hit.DecalNormal)
 				then
 					Entry.Free += Entry.Passes - Entry.Cells[Index]
 					Entry.Hits += Entry.Passes - Entry.Cells[Index]
 					Entry.Cells[Index] = Entry.Passes
 					Entry.Premarked += 1
+				end
+				if os.clock() - Started > Premarkframebudget then
+					task.wait()
+					Started = os.clock()
 				end
 			end
 		end
@@ -214,10 +223,12 @@ local Mutationbyobject: { [Instance]: string } = {}
 local Sessions: { [Player]: RestorationObject } = {}
 local Sessionitem: { [Player]: any } = {}
 local Lastclean: { [Player]: number } = {}
+local Dirtallowance: { [Player]: number } = {}
 local Lastscratchclean: { [Player]: number } = {}
 local Lastinkclean: { [Player]: number } = {}
 local Peeling: { [Player]: BasePart } = {}
 local Activeobjects: { [Player]: RestorationObject } = {}
+local Pendingcleanall: { [Player]: number } = {}
 local Randomgenerator = Random.new()
 
 local function Roundtwodecimals(Value: number): number
@@ -313,6 +324,7 @@ local function Captureprogress(Object: RestorationObject): { [string]: number }
 	end
 	Progress.DirtSeed = Object:GetAttribute("DirtSeed")
 	Progress.DirtVersion = Object:GetAttribute("DirtVersion")
+	Progress.DirtTotal = Object:GetAttribute("Total_Dirt")
 	return Progress
 end
 
@@ -327,6 +339,10 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 	for _, Kind in ipairs(Progresskinds) do
 		local Total = tonumber(Object:GetAttribute("Total_" .. Kind)) or 0
 		local Stored = if Progress then tonumber(Progress[Kind]) or 0 else Total * math.clamp(Ratio, 0, 1)
+		local Savedtotal = if Progress and Kind == "Dirt" then tonumber(Progress.DirtTotal) or 0 else 0
+		if Savedtotal > 0 then
+			Stored *= Total / Savedtotal
+		end
 		Cleanedbykind[Kind] = math.clamp(Stored, 0, Total)
 	end
 
@@ -359,6 +375,15 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 	for _, Kind in ipairs(Progresskinds) do
 		Cleanedbykind[Kind] = math.max(Cleanedbykind[Kind], Hidden[Kind])
 	end
+	local Keptdirt = {}
+	for Source, Entry in pairs(Coverage[Object]) do
+		if Source:IsA("Decal") then
+			table.insert(Keptdirt, Entry)
+		end
+	end
+	for _, Entry in ipairs(Keptdirt) do
+		Entry.Units = ((tonumber(Object:GetAttribute("Total_Dirt")) or 0) - Cleanedbykind.Dirt) / #Keptdirt
+	end
 
 	local Sticker = Object.RestorationSpots:FindFirstChild("Sticker")
 	if Sticker and Cleanedbykind.Sticker >= 1 then
@@ -372,11 +397,6 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 	local Restored = Cleanedbykind.Dirt * Dirtweight + Cleanedbykind.Ink + Cleanedbykind.Scratch + Cleanedbykind.Sticker
 	Object:SetAttribute("CleanedSpots", if Progress then math.min(Restored, Totalspots) else math.max(Cleaned, Target))
 	Revealmutation(Object, true)
-end
-
-local function Setcleanedspots(Object: RestorationObject, Value: number)
-	Object:SetAttribute("CleanedSpots", Value)
-	Revealmutation(Object)
 end
 
 local function Applyratiotoitem(Item: any, Ratio: number, Object: RestorationObject?)
@@ -495,7 +515,7 @@ end
 
 local function Initializedirt(Object: RestorationObject, Singleface: boolean, Seed: number, Version: number): number
 	local Generator = Random.new(Seed)
-	local Styled = Version == Dirtversion and not Singleface
+	local Styled = Version >= 2 and not Singleface
 	local Decals = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
@@ -528,14 +548,18 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean, Se
 	local Kept = 0
 	local Layers = 0
 	local Totaldirt = 0
+	local Caster = Surfacecast.new(Object)
+	if Version >= 3 then
+		Caster:Load()
+	end
 	for _, Decal in ipairs(Decals) do
 		local Texture = if Styled and Kept < Keptcount then Pickdirttexture(Generator, nil) else nil
 		if Texture then
 			Decal.Texture = Texture.Image
 			Decal.ZIndex = Texture.ZIndex
 		end
-		local Entry = if Kept < Keptcount then Buildcoverageentry(Decal, Decal.Texture, Cleaningconfig.DirtPasses) else nil
-		if Entry and Premarkunreachable(Entry, Object, Decal) then
+		local Entry = if Kept < Keptcount then Buildcoverageentry(Decal, Decal.Texture, Cleaningconfig.DirtPasses, 16) else nil
+		if Entry and Premarkunreachable(Entry, Object, Caster, Decal) then
 			Kept += 1
 			Coverage[Object][Decal] = Entry
 			Decal:SetAttribute("Cleaned", false)
@@ -546,8 +570,8 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean, Se
 				Layer.Texture = Layertexture.Image
 				Layer.ZIndex = Layertexture.ZIndex
 				Layer.Parent = Decal.Parent
-				local Layerentry = Buildcoverageentry(Layer, Layer.Texture, Cleaningconfig.DirtPasses)
-				if Premarkunreachable(Layerentry, Object, Layer) then
+				local Layerentry = Buildcoverageentry(Layer, Layer.Texture, Cleaningconfig.DirtPasses, 16)
+				if Premarkunreachable(Layerentry, Object, Caster, Layer) then
 					Layers += 1
 					Coverage[Object][Layer] = Layerentry
 					Totaldirt += 16
@@ -559,6 +583,7 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean, Se
 			Decal:Destroy()
 		end
 	end
+	Caster:Destroy()
 	Object:SetAttribute("DirtSeed", Seed)
 	Object:SetAttribute("DirtVersion", Version)
 	Object:SetAttribute("Total_Dirt", Totaldirt)
@@ -586,7 +611,7 @@ local function Initializescratches(Object: RestorationObject): number
 			Texture:SetAttribute("Remaining", 1)
 			Texture:SetAttribute("HasPolish", false)
 			Descendant:SetAttribute("Cleaned", false)
-			Coverage[Object][Descendant] = Buildcoverageentry(Texture, Texture.Image, 1)
+			Coverage[Object][Descendant] = Buildcoverageentry(Texture, Texture.Image, 1, 1)
 			Totalscratches += 1
 		end
 	end
@@ -612,7 +637,7 @@ local function Initializeink(Object: RestorationObject): number
 			Texture:SetAttribute("Remaining", 1)
 			Texture:SetAttribute("HasSolvent", false)
 			Descendant:SetAttribute("Cleaned", false)
-			Coverage[Object][Descendant] = Buildcoverageentry(Texture, Texture.Image, 1)
+			Coverage[Object][Descendant] = Buildcoverageentry(Texture, Texture.Image, 1, 1)
 			Totalink += 1
 		end
 	end
@@ -691,6 +716,191 @@ local function Isfaceclean(Target: Decal): boolean
 		end
 	end
 	return true
+end
+
+local function Fillentry(Entry: CoverageEntry): number
+	local Credited = Coveragecellcount * Entry.Passes - Entry.Hits
+	for Index = 1, Coveragecellcount do
+		Entry.Cells[Index] = Entry.Passes
+	end
+	Entry.Hits = Coveragecellcount * Entry.Passes
+	return Credited
+end
+
+local function Markdirtcleaned(Player: Player, Target: Decal, Toolname: string)
+	Target:SetAttribute("Cleaned", true)
+	if Isfaceclean(Target) then
+		Core:GetService("DailyTaskService"):Record(Player, "Clean", { Tool = Toolname })
+	end
+end
+
+local function Settledirt(Player: Player, Target: Decal, Entry: CoverageEntry, Toolname: string): number
+	local Credited = 0
+	if not Iscovered(Entry) and Entry.Hits - Entry.Free >= (Coveragecellcount * Entry.Passes - Entry.Free) * Dirtsnapratio then
+		Credited = Fillentry(Entry)
+	end
+	if Iscovered(Entry) and Target:GetAttribute("Cleaned") ~= true then
+		Markdirtcleaned(Player, Target, Toolname)
+	end
+	return Credited
+end
+
+local function Isfinished(Object: RestorationObject): boolean
+	for Target in pairs(Coverage[Object]) do
+		if Target:GetAttribute("Cleaned") ~= true then
+			return false
+		end
+	end
+	return (tonumber(Object:GetAttribute("Cleaned_Sticker")) or 0) >= (tonumber(Object:GetAttribute("Total_Sticker")) or 0)
+end
+
+local function Finishobject(Player: Player, Object: RestorationObject)
+	local Spot = Peeling[Player]
+	if Spot and Spot.Parent then
+		Spot:SetAttribute("PeelingBy", nil)
+	end
+	Peeling[Player] = nil
+	for Target, Entry in pairs(Coverage[Object]) do
+		Fillentry(Entry)
+		if Target:IsA("Decal") then
+			if Target:GetAttribute("Cleaned") ~= true then
+				Markdirtcleaned(Player, Target, Cleanalltool)
+			end
+		else
+			(Target :: GuiObject).Visible = false
+			Target:SetAttribute("Cleaned", true)
+			Target:WaitForChild("Texture"):SetAttribute("Remaining", 0)
+		end
+	end
+	for _, Child in ipairs(Object:WaitForChild("RestorationSpots"):GetChildren()) do
+		if Child:GetAttribute("SpotKind") and (Child :: BasePart).CanQuery then
+			Child:Destroy()
+		end
+	end
+	for _, Kind in ipairs(Progresskinds) do
+		Object:SetAttribute("Cleaned_" .. Kind, tonumber(Object:GetAttribute("Total_" .. Kind)) or 0)
+	end
+	Object:SetAttribute("CleanedSpots", tonumber(Object:GetAttribute("TotalSpots")) or 0)
+	Revealmutation(Object)
+end
+
+local function Setcleanedspots(Player: Player, Object: RestorationObject, Value: number)
+	if Value >= (tonumber(Object:GetAttribute("TotalSpots")) or 0) or Isfinished(Object) then
+		Finishobject(Player, Object)
+		return
+	end
+	Object:SetAttribute("CleanedSpots", Value)
+	Revealmutation(Object)
+end
+
+local function Assistfloor(Object: RestorationObject): number
+	local Ratio = Getcompletionratio(Object)
+	if Ratio < Finishassist.Start or Ratio >= 1 then
+		return 0
+	end
+	local Advance = ((Ratio - Finishassist.Start) / (1 - Finishassist.Start)) ^ Finishassist.Curve
+	return (Finishassist.MinGain + (Finishassist.MaxGain - Finishassist.MinGain) * Advance) * (tonumber(Object:GetAttribute("TotalSpots")) or 0)
+end
+
+local function Assistentry(Entry: CoverageEntry, Points: { Vector2 }, Wanted: number): (number, { number })
+	local Order = {}
+	for Index = 1, Coveragecellcount do
+		if Entry.Cells[Index] < Entry.Passes then
+			local Center = Vector2.new(
+				((Index - 1) % Coveragegridwidth + 0.5) / Coveragegridwidth,
+				((Index - 1) // Coveragegridwidth + 0.5) / Coveragegridwidth
+			)
+			local Distance = math.huge
+			for _, Point in ipairs(Points) do
+				Distance = math.min(Distance, (Point - Center).Magnitude)
+			end
+			table.insert(Order, { Index = Index, Distance = Distance })
+		end
+	end
+	table.sort(Order, function(Left, Right)
+		if Left.Distance ~= Right.Distance then
+			return Left.Distance < Right.Distance
+		end
+		return Left.Index < Right.Index
+	end)
+	local Applied = 0
+	local Cleared = {}
+	for _, Cell in ipairs(Order) do
+		if Applied >= Wanted then
+			break
+		end
+		local Added = math.min(Entry.Passes - Entry.Cells[Cell.Index], Wanted - Applied)
+		Entry.Cells[Cell.Index] += Added
+		Applied += Added
+		if Entry.Cells[Cell.Index] == Entry.Passes then
+			table.insert(Cleared, Cell.Index - 1)
+		end
+	end
+	Entry.Hits += Applied
+	return Applied, Cleared
+end
+
+local function Remainingunits(Entry: CoverageEntry): number
+	return (Coveragecellcount * Entry.Passes - Entry.Hits) * Entry.Units / (Coveragecellcount * Entry.Passes - Entry.Free)
+end
+
+local function Remainingdecals(Object: RestorationObject)
+	local List = {}
+	for Target, Entry in pairs(Coverage[Object]) do
+		if Target:IsA("Decal") and not Iscovered(Entry) then
+			table.insert(List, { Target = Target, Entry = Entry, Points = {} })
+		end
+	end
+	table.sort(List, function(Left, Right)
+		return Remainingunits(Left.Entry) < Remainingunits(Right.Entry)
+	end)
+	return List
+end
+
+local function Assistdirt(Player: Player, Targets, Shortfall: number, Dirtweight: number, Toolname: string): number
+	local Removed = 0
+	for _, Item in ipairs(Targets) do
+		if Shortfall <= 0 then
+			break
+		end
+		local Entry = Item.Entry
+		if not Iscovered(Entry) then
+			local Opaquepasses = Coveragecellcount * Entry.Passes - Entry.Free
+			local Unit = Entry.Units * Dirtweight / Opaquepasses
+			local Applied, Cleared = Assistentry(Entry, Item.Points, math.ceil(Shortfall / Unit))
+			local Credited = Applied + Settledirt(Player, Item.Target, Entry, Toolname)
+			Removed += Credited * Entry.Units / Opaquepasses
+			Shortfall -= Credited * Unit
+			if #Cleared > 0 and not Iscovered(Entry) then
+				local Cells = buffer.create(#Cleared * 2)
+				for Position, Index in ipairs(Cleared) do
+					buffer.writeu16(Cells, (Position - 1) * 2, Index)
+				end
+				Remotemanager:FireClient(Restorationservice.Name, "LeftoversCleared", Player, Item.Target, Cells)
+			end
+		end
+	end
+	return Removed
+end
+
+local function Setpendingcleanall(Player: Player, Count: number)
+	Pendingcleanall[Player] = Count
+	Player:SetAttribute("PendingCleanAll", Count)
+end
+
+local function Basependingcleanall(Player: Player)
+	Core:GetService("DataService"):WaitForLoad(Player)
+	if Player.Parent and Pendingcleanall[Player] == nil then
+		Setpendingcleanall(Player, 0)
+	end
+end
+
+local function Cleanallobject(Player: Player): RestorationObject?
+	local Object = Sessions[Player]
+	if not Object or Core:GetService("TutorialService"):IsRunning(Player) or Getcompletionratio(Object) >= 1 then
+		return nil
+	end
+	return Object
 end
 
 local function Createspots(Object: RestorationObject, Singleface: boolean, Seed: number, Version: number)
@@ -790,10 +1000,29 @@ function Restorationservice:HasActiveObject(Player: Player): boolean
 	return Object ~= nil and Object.Parent ~= nil
 end
 
+function Restorationservice:IsRestoring(Player: Player): boolean
+	return Sessionitem[Player] ~= nil or Sessions[Player] ~= nil or Activeobjects[Player] ~= nil
+end
+
+function Restorationservice:CleanAll(Player: Player): boolean
+	local Object = Cleanallobject(Player)
+	if Object then
+		Finishobject(Player, Object)
+	else
+		Setpendingcleanall(Player, (Pendingcleanall[Player] or 0) + 1)
+	end
+	return true
+end
+
 function Restorationservice:Init()
 	Core:GetService("DataService"):Register("Restoration", {
-		Load = function() end,
-		Save = function() return nil end,
+		Load = function(Player, Saved)
+			local Count = tonumber(Saved.PendingCleanAll) or 0
+			Setpendingcleanall(Player, if Count == Count and math.abs(Count) ~= math.huge then math.max(math.floor(Count), 0) else 0)
+		end,
+		Save = function(Player)
+			return { PendingCleanAll = Pendingcleanall[Player] or 0 }
+		end,
 		Clear = function(Player)
 			local Spot = Peeling[Player]
 			if Spot and Spot.Parent then
@@ -803,11 +1032,19 @@ function Restorationservice:Init()
 			Sessionitem[Player] = nil
 			Sessions[Player] = nil
 			Lastclean[Player] = nil
+			Dirtallowance[Player] = nil
 			Lastscratchclean[Player] = nil
 			Lastinkclean[Player] = nil
+			Pendingcleanall[Player] = nil
 			Releaseactiveobject(Player)
 		end,
 	})
+	for _, Player in ipairs(Players:GetPlayers()) do
+		task.spawn(Basependingcleanall, Player)
+	end
+	Players.PlayerAdded:Connect(function(Player)
+		task.spawn(Basependingcleanall, Player)
+	end)
 	for _, Shop in ipairs(Core:GetService("ShopService"):GetShops()) do
 		local Generateditems = Instance.new("Folder")
 		Generateditems.Name = "GeneratedItems"
@@ -907,6 +1144,7 @@ function Restorationservice:Init()
 		end
 		Peeling[Player] = nil
 		Lastclean[Player] = nil
+		Dirtallowance[Player] = nil
 		Lastscratchclean[Player] = nil
 		Lastinkclean[Player] = nil
 
@@ -955,8 +1193,8 @@ function Restorationservice:Init()
 		local Totalspots = tonumber(Object:GetAttribute("TotalSpots")) or 0
 		local Cleanedspots = math.min((tonumber(Object:GetAttribute("CleanedSpots")) or 0) + 1, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Setcleanedspots(Object, Cleanedspots)
 		Object:SetAttribute("Cleaned_Sticker", (Object:GetAttribute("Cleaned_Sticker") or 0) + 1)
+		Setcleanedspots(Player, Object, Cleanedspots)
 		Spot:Destroy()
 	end)
 
@@ -1012,7 +1250,7 @@ function Restorationservice:Init()
 		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
 		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Setcleanedspots(Sessionobject, Cleanedspots)
+		Setcleanedspots(Player, Sessionobject, Cleanedspots)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanScratch", function(Player, Target, Points)
@@ -1042,7 +1280,7 @@ function Restorationservice:Init()
 		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
 		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Setcleanedspots(Sessionobject, Cleanedspots)
+		Setcleanedspots(Player, Sessionobject, Cleanedspots)
 	end)
 
 	Remotemanager:OnServerInvoke(self.Name, "GetLeftovers", function(Player, Targets)
@@ -1062,16 +1300,29 @@ function Restorationservice:Init()
 		return Masks
 	end)
 
+	Remotemanager:OnServerInvoke(self.Name, "UseCleanAll", function(Player)
+		local Object = Cleanallobject(Player)
+		if not Object or (Pendingcleanall[Player] or 0) <= 0 then
+			return false
+		end
+		Setpendingcleanall(Player, Pendingcleanall[Player] - 1)
+		Finishobject(Player, Object)
+		return true
+	end)
+
 	Remotemanager:OnServerEvent(self.Name, "CleanDirt", function(Player, Toolname, Strokes)
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Dirttools[Toolname] then return end
-		if type(Strokes) ~= "table" or #Strokes == 0 or #Strokes > Maxdirtstrokes then return end
+		if type(Strokes) ~= "table" or #Strokes > Maxdirtstrokes then return end
+		if #Strokes == 0 and Getcompletionratio(Sessionobject) < Finishassist.PingStart then return end
 		local Now = os.clock()
-		if Now - (Lastclean[Player] or 0) < Dirtcleaninterval then return end
-		Lastclean[Player] = Now
+		local Allowed = Dirtallowance[Player] or Now
+		if Now < Allowed - Dirtcleaninterval * (Dirtburst - 1) then return end
+		Dirtallowance[Player] = math.max(Now, Allowed) + Dirtcleaninterval
 
 		local Removeddirt = 0
 		local Seen = {}
+		local Touched = {}
 		for _, Stroke in ipairs(Strokes) do
 			local Target = if type(Stroke) == "table" then Stroke.Target else nil
 			local Entry = if typeof(Target) == "Instance" then Coverage[Sessionobject][Target] else nil
@@ -1086,21 +1337,15 @@ function Restorationservice:Init()
 				Seen[Target] = true
 				local Opaquepasses = Coveragecellcount * Entry.Passes - Entry.Free
 				local Newlycovered = Stampcells(Entry, Stroke.Points, Brushradii[Toolname])
-				if not Iscovered(Entry) and Entry.Hits - Entry.Free >= Opaquepasses * Dirtsnapratio then
-					Newlycovered += Coveragecellcount * Entry.Passes - Entry.Hits
-					for Index = 1, Coveragecellcount do
-						Entry.Cells[Index] = Entry.Passes
-					end
-					Entry.Hits = Coveragecellcount * Entry.Passes
-				end
-				if Iscovered(Entry) and Target:GetAttribute("Cleaned") ~= true then
-					Target:SetAttribute("Cleaned", true)
-					if Isfaceclean(Target) then
-						Core:GetService("DailyTaskService"):Record(Player, "Clean", { Tool = Toolname })
-					end
-				end
-				Removeddirt += Newlycovered * 16 / Opaquepasses
+				Newlycovered += Settledirt(Player, Target, Entry, Toolname)
+				Removeddirt += Newlycovered * Entry.Units / Opaquepasses
+				table.insert(Touched, { Target = Target, Entry = Entry, Points = Stroke.Points })
 			end
+		end
+		local Dirtweight = tonumber(Sessionobject:GetAttribute("DirtWeight")) or 1
+		local Shortfall = Assistfloor(Sessionobject) - Removeddirt * Dirtweight
+		if Shortfall > 0 then
+			Removeddirt += Assistdirt(Player, if #Strokes > 0 then Touched else Remainingdecals(Sessionobject), Shortfall, Dirtweight, Toolname)
 		end
 		if Removeddirt <= 0 then return end
 		local Totaldirt = tonumber(Sessionobject:GetAttribute("Total_Dirt")) or 0
@@ -1109,11 +1354,10 @@ function Restorationservice:Init()
 		local Previouscleaneddirt = tonumber(Sessionobject:GetAttribute("Cleaned_Dirt")) or 0
 		local Appliedprogress = Cleaneddirt - Previouscleaneddirt
 		Sessionobject:SetAttribute("Cleaned_Dirt", Cleaneddirt)
-		local Dirtweight = tonumber(Sessionobject:GetAttribute("DirtWeight")) or 1
 		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
 		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress * Dirtweight, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Setcleanedspots(Sessionobject, Cleanedspots)
+		Setcleanedspots(Player, Sessionobject, Cleanedspots)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanSpot", function(Player, Spot, Toolname)
@@ -1144,7 +1388,6 @@ function Restorationservice:Init()
 		Lastclean[Player] = Now
 		local Health = (Spot:GetAttribute("Health") or 1) - (Toolpower[Toolname] or 0)
 		if Health <= 0 then
-			Setcleanedspots(Sessionobject, (Sessionobject:GetAttribute("CleanedSpots") or 0) + 1)
 			Sessionobject:SetAttribute("Cleaned_" .. Kind, (Sessionobject:GetAttribute("Cleaned_" .. Kind) or 0) + 1)
 			if Kind == "Sticker" and Toolname == "Tweezers" then
 				Spot.CanQuery = false
@@ -1168,6 +1411,7 @@ function Restorationservice:Init()
 			else
 				Spot:Destroy()
 			end
+			Setcleanedspots(Player, Sessionobject, (Sessionobject:GetAttribute("CleanedSpots") or 0) + 1)
 		else
 			Spot:SetAttribute("Health", Health)
 			Spot.Transparency = math.clamp(Spot.Transparency + 0.35, 0, 0.85)
@@ -1178,9 +1422,10 @@ function Restorationservice:Init()
 		local Sessionobject = Sessions[Player]
 		Sessions[Player] = nil
 		Lastclean[Player] = nil
+		Dirtallowance[Player] = nil
 		Lastscratchclean[Player] = nil
 		Lastinkclean[Player] = nil
-		Returnsessionitem(Player, Sessionobject)
+		if Sessionobject then Returnsessionitem(Player, Sessionobject) end
 		if Sessionobject and Activeobjects[Player] == Sessionobject then Releaseactiveobject(Player) end
 		Core:GetService("CustomerService"):PresentOffer(Player)
 	end)

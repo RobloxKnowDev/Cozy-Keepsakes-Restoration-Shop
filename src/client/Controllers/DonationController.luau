@@ -1,11 +1,13 @@
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextChatService = game:GetService("TextChatService")
 local TweenService = game:GetService("TweenService")
 
 local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
 local Config = require(ReplicatedStorage.Shared.Config.Donation)
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
+local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Separatenumber = require(ReplicatedStorage.Shared.Utils.NumberAbbreviator)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
@@ -19,6 +21,11 @@ local RobuxIcon = ""
 local OpenTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local CloseTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 local FastCloseTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+local RichTextEscapes = { ["&"] = "&amp;", ["<"] = "&lt;", [">"] = "&gt;", ['"'] = "&quot;", ["'"] = "&apos;" }
+
+local function EscapeRichText(Text: string): string
+	return (string.gsub(Text, "[&<>\"']", RichTextEscapes))
+end
 
 function DonationController:IsOpen(): boolean
 	return self.isOpen == true
@@ -28,12 +35,6 @@ function DonationController:CanOpen(): boolean
 	return not self:IsOpen()
 end
 
-function DonationController:DeselectOtherTopbarIcons()
-	for _, OtherIcon in pairs(Icon.getIcons()) do
-		if OtherIcon ~= self.topbarIcon then OtherIcon:deselect() end
-	end
-end
-
 function DonationController:Open()
 	if not self:CanOpen() then
 		self.topbarIcon:deselect()
@@ -41,7 +42,6 @@ function DonationController:Open()
 	end
 	Core:GetController("SettingController"):CloseForSwitch()
 	Core:GetController("DailyRewardController"):CloseForSwitch()
-	self:DeselectOtherTopbarIcons()
 	local ComputerController = Core:GetController("ComputerController")
 	local CustomerController = Core:GetController("CustomerController")
 	local ExpositionController = Core:GetController("ExpositionController")
@@ -89,6 +89,15 @@ function DonationController:CloseForSwitch()
 	self.topbarIcon:deselect()
 end
 
+function DonationController:AnnounceDonation(Name: string, Amount: number)
+	local Announcement = Config.Announcement
+	local Message = string.gsub(EscapeRichText(Announcement.Text), "{(%a+)}", {
+		Name = string.format('<font color="%s"><b>%s</b></font>', Announcement.NameColor, EscapeRichText(Name)),
+		Amount = string.format('<font color="%s"><b>%s Robux</b></font>', Announcement.AmountColor, Separatenumber(Amount)),
+	})
+	TextChatService:WaitForChild("TextChannels"):WaitForChild("RBXGeneral"):DisplaySystemMessage(Message, "Donation")
+end
+
 function DonationController:Init()
 	local PlayerGui = Player:WaitForChild("PlayerGui")
 	self.ui = PlayerGui:WaitForChild("DonationUi")
@@ -134,6 +143,9 @@ function DonationController:Init()
 end
 
 function DonationController:Start()
+	RemoteManager:OnClientEvent("MonetizationService", "DonationAnnounced", function(Name: string, Amount: number)
+		self:AnnounceDonation(Name, Amount)
+	end)
 	MarketplaceService.PromptProductPurchaseFinished:Connect(function(_UserId, ProductId, WasPurchased)
 		if not WasPurchased then return end
 		for _, Product in ipairs(Config.Products) do

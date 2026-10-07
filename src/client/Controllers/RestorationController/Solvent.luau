@@ -108,7 +108,7 @@ function Solvent.OnUpdate(Context)
 	end
 	if os.clock() - Lastpourtime < Pourinterval then return end
 	if Lastpuddleposition and (Position - Lastpuddleposition).Magnitude < Minpuddledistance then return end
-	local Target = Cleaningcontroller:TryApplyInkSolvent(Surface, Position, Normal)
+	local Target = Cleaningcontroller:TryApplyInkSolvent(Surface, Position, Display.DecalNormal)
 	Lastpourtime = os.clock()
 	Lastpuddleposition = Position
 	Depositliquid(Context.Object, Surface, Position, Normal, Target)

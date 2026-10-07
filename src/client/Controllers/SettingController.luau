@@ -16,6 +16,7 @@ local Shared = require(script.Parent.ComputerController.Apps.Shared)
 local SettingController = {
 	Name = "SettingController",
 	Priority = 9,
+	topbarImage = "rbxassetid://92246988918469",
 }
 
 local Player = Players.LocalPlayer
@@ -91,12 +92,6 @@ function SettingController:CanOpen(): boolean
 	return not self:IsOpen()
 end
 
-function SettingController:DeselectOtherTopbarIcons()
-	for _, OtherIcon in pairs(Icon.getIcons()) do
-		if OtherIcon ~= self.topbarIcon then OtherIcon:deselect() end
-	end
-end
-
 function SettingController:Open()
 	if not self:CanOpen() then
 		self.topbarIcon:deselect()
@@ -104,7 +99,6 @@ function SettingController:Open()
 	end
 	Core:GetController("DailyRewardController"):CloseForSwitch()
 	Core:GetController("DonationController"):CloseForSwitch()
-	self:DeselectOtherTopbarIcons()
 	local ComputerController = Core:GetController("ComputerController")
 	local CustomerController = Core:GetController("CustomerController")
 	local ExpositionController = Core:GetController("ExpositionController")
@@ -375,8 +369,9 @@ function SettingController:Init()
 
 	self.topbarIcon = Icon.new()
 		:setName("Settings")
-		:setImage("rbxassetid://92246988918469")
+		:setImage(self.topbarImage)
 		:modifyTheme({ "IconImage", "ImageColor3", Color3.fromRGB(255, 255, 255) })
+		:modifyTheme({ "IconImage", "ScaleType", Enum.ScaleType.Fit })
 		:setCaption("Settings")
 	self.topbarIcon.selected:Connect(function() self:Open() end)
 	self.topbarIcon.deselected:Connect(function() self:Close() end)

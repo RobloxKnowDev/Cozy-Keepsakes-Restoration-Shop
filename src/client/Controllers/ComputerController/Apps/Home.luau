@@ -79,9 +79,12 @@ function Home.Start(Controller)
 	RemoteManager:OnClientEvent("StatsService", "StatsUpdated", function(Stats)
 		Home.ApplyStats(Controller, Stats)
 	end)
-	RemoteManager:OnClientEvent("MonetizationService", "ShopStateUpdated", function(State)
+	RemoteManager:OnClientEvent("MonetizationService", "ShopStateUpdated", function(State, Granted)
 		Home.ApplyReputationBoost(State)
 		Home.ApplyVIP(State)
+		if Granted then
+			Core:GetController("BoostController"):PlayGain(Granted, true)
+		end
 	end)
 end
 

@@ -10,6 +10,11 @@
       }
     },
 
+    "ReplicatedFirst": {
+      "$path": "src/first",
+      "$ignoreUnknownInstances": true
+    },
+
     "ServerScriptService": {
       "$path": "src/server",
       "$ignoreUnknownInstances": true

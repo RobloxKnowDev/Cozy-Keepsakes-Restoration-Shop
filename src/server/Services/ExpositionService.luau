@@ -15,6 +15,7 @@ local Expositionservice = {
 		GetDisplayItems = "Function",
 		PlaceDisplayItem = "Function",
 		RemoveDisplayItem = "Function",
+		EquipBest = "Function",
 		DisplayItemsUpdated = "Event",
 	},
 }
@@ -304,7 +305,7 @@ function Expositionservice:RestoreDisplayItem(Player: Player, Slotindex: number,
 	return true
 end
 
-function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Itemid: any)
+function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Itemid: any, Silent: boolean?)
 	if not Ispositiveinteger(Slotindex) or Slotindex > 9 then
 		return { Success = false, Reason = "InvalidSlot" }
 	end
@@ -349,7 +350,7 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 		return { Success = false, Reason = "PlayerUnavailable" }
 	end
 
-	local Removeditem = Inventoryservice:TakeRestoredItem(Player, Itemid)
+	local Removeditem = Inventoryservice:TakeRestoredItem(Player, Itemid, Silent)
 	if not Removeditem then
 		Object:Destroy()
 		Releasereservation(Display, Player, Slotindex)
@@ -386,7 +387,7 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 	}
 end
 
-function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
+function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any, Silent: boolean?)
 	if not Ispositiveinteger(Slotindex) or Slotindex > 9 then
 		return { Success = false, Reason = "InvalidSlot" }
 	end
@@ -410,7 +411,7 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 		Removedisplayobject(Placement.Object)
 	end
 	local Inventoryservice = Core:GetService("InventoryService")
-	Inventoryservice:ReturnRestoredItem(Player, Placement.Item)
+	Inventoryservice:ReturnRestoredItem(Player, Placement.Item, Silent)
 	Refreshdisplayreputation(Player)
 	Busyplayers[Player] = nil
 
@@ -420,6 +421,99 @@ function Expositionservice:RemoveDisplayItem(Player: Player, Slotindex: any)
 		RemovedReputation = Basereputation,
 		DisplayItems = Displaysnapshot,
 	}
+end
+
+function Expositionservice:EquipBest(Player: Player)
+	if Busyplayers[Player] then
+		return { Success = false, Reason = "Busy" }
+	end
+	local Display = Getdisplay(Player)
+	local Displayspace = math.clamp(math.floor(Core:GetService("UpgradeService"):GetValue(Player, "DisplaySpace")), 0, 9)
+	local Freeslots = {}
+	local Candidates = {}
+	for Slotindex = 1, Displayspace do
+		local Placement = Display.OccupiedSlots[Slotindex]
+		if not Placement then
+			table.insert(Freeslots, Slotindex)
+		elseif Placement.Player == Player then
+			table.insert(Candidates, { Item = Placement.Item, Slot = Slotindex })
+		end
+	end
+	local Slotcount = #Freeslots + #Candidates
+	for _, Item in ipairs(Core:GetService("InventoryService"):EnsurePlayer(Player)) do
+		table.insert(Candidates, { Item = Item })
+	end
+	for _, Candidate in ipairs(Candidates) do
+		Candidate.Reputation = math.max(tonumber(Candidate.Item.Reputation) or 0, 0)
+	end
+	table.sort(Candidates, function(Left, Right)
+		if Left.Reputation ~= Right.Reputation then
+			return Left.Reputation > Right.Reputation
+		end
+		return Left.Slot ~= nil and Right.Slot == nil
+	end)
+
+	local Removals = {}
+	local Placements = {}
+	local Kept = 0
+	for Index, Candidate in ipairs(Candidates) do
+		local Keep = Index <= Slotcount and (Candidate.Reputation > 0 or Candidate.Slot ~= nil)
+		if Keep then
+			Kept += 1
+		end
+		if Candidate.Slot and not Keep then
+			table.insert(Removals, Candidate.Slot)
+		elseif not Candidate.Slot and Keep then
+			table.insert(Placements, Candidate.Item.Id)
+		end
+	end
+
+	local Changed = 0
+	local Grantedreputation = 0
+	for _, Slotindex in ipairs(Removals) do
+		local Result = self:RemoveDisplayItem(Player, Slotindex, true)
+		if Result.Success then
+			Changed += 1
+			Grantedreputation -= Result.RemovedReputation
+			table.insert(Freeslots, Slotindex)
+		end
+	end
+	table.sort(Freeslots)
+	for Index, Itemid in ipairs(Placements) do
+		local Result = self:PlaceDisplayItem(Player, Freeslots[Index], Itemid, true)
+		if Result.Success then
+			Changed += 1
+			Grantedreputation += Result.GrantedReputation
+		end
+	end
+	if Changed > 0 then
+		Core:GetService("InventoryService"):PushItems(Player)
+	end
+	return {
+		Success = true,
+		Changed = Changed,
+		Kept = Kept,
+		GrantedReputation = Grantedreputation,
+		DisplayItems = self:GetDisplayItems(Player),
+	}
+end
+
+function Expositionservice:IsBusy(Player: Player): boolean
+	return Busyplayers[Player] == true
+end
+
+function Expositionservice:MoveShop(Player: Player, Previous: Model)
+	local Olddisplay = Displaybyshop[Previous]
+	local Newdisplay = Getdisplay(Player)
+	for Slotindex, Placement in pairs(Olddisplay.OccupiedSlots) do
+		if Placement.Player == Player then
+			Olddisplay.OccupiedSlots[Slotindex] = nil
+			Placement.Object:Destroy()
+			self:RestoreDisplayItem(Player, Slotindex, Placement.Item)
+		end
+	end
+	Newdisplay.Revision = math.max(Newdisplay.Revision, Olddisplay.Revision)
+	Commitdisplaychange(Newdisplay, Player)
 end
 
 function Expositionservice:Init()
@@ -447,15 +541,15 @@ function Expositionservice:Init()
 
 	Core:GetService("DataService"):Register("Exposition", {
 		Load = function(Player, Saved)
-			local Display = Getdisplay(Player)
 			for Slotkey, Item in pairs(if type(Saved) == "table" then Saved else {}) do
 				local Slotindex = tonumber(Slotkey)
 				if Slotindex and type(Item) == "table" then
+					Item.Id = Core:GetService("InventoryService"):NewItemId()
 					self:RestoreDisplayItem(Player, Slotindex, Item)
 				end
 			end
 			Refreshdisplayreputation(Player)
-			Commitdisplaychange(Display, Player)
+			Commitdisplaychange(Getdisplay(Player), Player)
 		end,
 		Save = function(Player)
 			local Snapshot = {}
@@ -477,6 +571,9 @@ function Expositionservice:Init()
 	end)
 	Remotemanager:OnServerInvoke(self.Name, "RemoveDisplayItem", function(Player, Slotindex)
 		return self:RemoveDisplayItem(Player, Slotindex)
+	end)
+	Remotemanager:OnServerInvoke(self.Name, "EquipBest", function(Player)
+		return self:EquipBest(Player)
 	end)
 end
 

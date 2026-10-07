@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local InteractionOutline = require(ReplicatedStorage.Shared.Utils.InteractionOutline)
 local PlayerShop = require(ReplicatedStorage.Shared.Utils.PlayerShop)
 local UiFade = require(ReplicatedStorage.Shared.Utils.UiFade)
 local DailyTasks = require(script.Apps.DailyTasks)
@@ -23,8 +24,6 @@ local ComputerController = {
 }
 
 local Applications = { Home, DailyTasks, Index, Inventory, Upgrades, Shop }
-local HighlightFillColor = Color3.fromRGB(255, 232, 163)
-local HighlightOutlineColor = Color3.fromRGB(255, 255, 255)
 local CountDuration = 0.65
 local PulseInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local GainColor = Color3.fromRGB(126, 255, 145)
@@ -64,13 +63,13 @@ function ComputerController:CanOpen(): boolean
 		and not RestorationController:IsEditingObject()
 end
 
-function ComputerController:SetHoveredComputer(Computer: Instance?)
-	if self.hoveredComputer == Computer then
+function ComputerController:SetOutlinedComputer(Computer: Instance?)
+	if self.outlinedComputer == Computer then
 		return
 	end
-	self.hoveredComputer = Computer
-	self.hoverHighlight.Adornee = Computer
-	self.hoverHighlight.Enabled = Computer ~= nil and not self:IsOpen()
+	self.outlinedComputer = Computer
+	self.outline.Adornee = Computer
+	self.outline.Enabled = Computer ~= nil
 end
 
 function ComputerController:IsComputerAtPosition(ScreenPosition: Vector2?, ExpandTouch: boolean?): boolean
@@ -91,17 +90,12 @@ function ComputerController:IsComputerAtPosition(ScreenPosition: Vector2?, Expan
 	return false
 end
 
-function ComputerController:UpdateHoveredComputer()
-	if not self:CanOpen() then
-		self:SetHoveredComputer(nil)
+function ComputerController:UpdateOutline()
+	if not self:CanOpen() or UserInputService:GetLastInputType() == Enum.UserInputType.Touch then
+		self:SetOutlinedComputer(nil)
 		return
 	end
-	local LastInputType = UserInputService:GetLastInputType()
-	if LastInputType == Enum.UserInputType.Touch then
-		self:SetHoveredComputer(nil)
-		return
-	end
-	self:SetHoveredComputer(if self:IsComputerAtPosition(nil) then self.computer else nil)
+	self:SetOutlinedComputer(if self:IsComputerAtPosition(nil) then self.computer else nil)
 end
 function ComputerController:FocusCamera()
 	Core:GetController("InspectionCameraController"):ShowComputerCamera()
@@ -211,10 +205,11 @@ function ComputerController:Open()
 	end
 	Core:GetController("DailyRewardController"):CloseForSwitch()
 	Core:GetController("SettingController"):CloseForSwitch()
+	Core:GetController("DonationController"):CloseForSwitch()
 	local CustomerController = Core:GetController("CustomerController")
 	if CustomerController:IsVisible() then CustomerController:CloseOfferUi(true) end
 	self.isOpen = true
-	self:SetHoveredComputer(nil)
+	self:SetOutlinedComputer(nil)
 	self:SyncHeader()
 	self:SetHudVisible(false)
 	Core:GetController("ExpositionController"):SetBlocker("Computer", "Hidden")
@@ -239,20 +234,48 @@ function ComputerController:Close()
 	self:SetHudVisible(true)
 	Core:GetController("InspectionCameraController"):ShowIntroCamera()
 	Core:GetController("ExpositionController"):SetBlocker("Computer", nil)
-	self:UpdateHoveredComputer()
+	self:UpdateOutline()
 end
 
-function ComputerController:Init()
-	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-	self.computer = PlayerShop(Players.LocalPlayer):WaitForChild("Ordi")
+function ComputerController:BindShop(ShopModel: Model)
+	self.shop = ShopModel
+	self.computer = ShopModel:WaitForChild("Ordi")
 	self.buttonModel = self.computer:WaitForChild("Button")
 	self.coreModel = self.computer:WaitForChild("Core"):WaitForChild("Model") :: BasePart
 	self.postitModel = self.computer:WaitForChild("Postit")
 	self.computerGui = self.computer:WaitForChild("Gui")
 	self.computerModel = self.computerGui:WaitForChild("Computer") :: BasePart
-	self.computerModel.CanQuery = false
+	self.computerModel.CanQuery = self:IsOpen()
 	self.screenModel = self.computer:WaitForChild("Ecran"):WaitForChild("Model") :: BasePart
 	self.screenModel.CanQuery = true
+end
+
+function ComputerController:MoveShop()
+	local ShopModel = PlayerShop(Players.LocalPlayer)
+	if ShopModel == self.shop then
+		return
+	end
+	local Computer = ShopModel:WaitForChild("Ordi")
+	local Template = Computer:WaitForChild("Gui"):WaitForChild("Computer"):WaitForChild("SurfaceGui") :: SurfaceGui
+	Computer:WaitForChild("Button")
+	Computer:WaitForChild("Core"):WaitForChild("Model")
+	Computer:WaitForChild("Postit")
+	Computer:WaitForChild("Ecran"):WaitForChild("Model")
+	if Players.LocalPlayer:GetAttribute("Shop") ~= ShopModel.Name or ShopModel == self.shop then
+		return
+	end
+	local PreviousModel = self.computerModel
+	PreviousModel.CanQuery = false
+	self:BindShop(ShopModel)
+	Template.Adornee = PreviousModel
+	Template.Parent = PreviousModel
+	self.surfaceGui.Adornee = self.computerModel
+	self:SetOutlinedComputer(nil)
+end
+
+function ComputerController:Init()
+	local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	self:BindShop(PlayerShop(Players.LocalPlayer))
 	self.surfaceGui = self.computerModel:WaitForChild("SurfaceGui") :: SurfaceGui
 	self.surfaceGui.Adornee = self.computerModel
 	self.surfaceGui.Parent = PlayerGui
@@ -296,15 +319,7 @@ function ComputerController:Init()
 	self.sellLocked = false
 
 	self.computerCashAnimationId = 0
-	self.hoverHighlight = Instance.new("Highlight")
-	self.hoverHighlight.Name = "ComputerHoverHighlight"
-	self.hoverHighlight.DepthMode = Enum.HighlightDepthMode.Occluded
-	self.hoverHighlight.FillColor = HighlightFillColor
-	self.hoverHighlight.FillTransparency = 1
-	self.hoverHighlight.OutlineColor = HighlightOutlineColor
-	self.hoverHighlight.OutlineTransparency = 0
-	self.hoverHighlight.Enabled = false
-	self.hoverHighlight.Parent = Workspace
+	self.outline = InteractionOutline.Create("ComputerOutline")
 	self.cashTextScale = Shared.EnsureScale(self.cashText)
 	self.baseComputerCashTextColor = self.cashText.TextColor3
 
@@ -361,15 +376,18 @@ function ComputerController:Start()
 		if self:IsOpen() then
 			self:SyncHeader()
 		end
-		self:UpdateHoveredComputer()
+		self:UpdateOutline()
 	end)
 	RemoteManager:OnClientEvent("CashService", "CashUpdated", function(Value)
 		self:AnimateComputerCashTo(Value)
 	end)
+	Players.LocalPlayer:GetAttributeChangedSignal("Shop"):Connect(function()
+		self:MoveShop()
+	end)
+	self:MoveShop()
 	local function TryOpen(ScreenPosition: Vector2?, ExpandTouch: boolean?): boolean
 		if not self:CanOpen() or not self:IsComputerAtPosition(ScreenPosition, ExpandTouch) then return false end
 		Core:GetController("FeedbackController"):UiClick()
-		self:SetHoveredComputer(self.computer)
 		self:Open()
 		return true
 	end

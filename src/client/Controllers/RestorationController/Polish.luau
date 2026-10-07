@@ -99,7 +99,7 @@ function Polish.OnUpdate(Context)
 	if not Display.OnObject or not Surface or not Surface:IsA("BasePart") or not Position or not Normal then
 		return
 	end
-	Cleaningcontroller:TryApplyScratchPolish(Surface, Position, Normal)
+	Cleaningcontroller:TryApplyScratchPolish(Surface, Position, Display.DecalNormal)
 	if os.clock() - Lastpourtime < Pourinterval then
 		return
 	end

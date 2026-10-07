@@ -15,6 +15,7 @@ local Shared = require(script.Parent.ComputerController.Apps.Shared)
 local DailyRewardController = {
 	Name = "DailyRewardController",
 	Priority = 8.5,
+	topbarImage = "rbxassetid://72627984848404",
 }
 
 local Player = Players.LocalPlayer
@@ -73,14 +74,6 @@ function DailyRewardController:CanOpen(): boolean
 	return not self:IsOpen()
 		and not Core:GetController("RestorationController"):IsEditingObject()
 		and not Core:GetController("CompletionController"):IsVisible()
-end
-
-function DailyRewardController:DeselectOtherTopbarIcons()
-	for _, OtherIcon in pairs(Icon.getIcons()) do
-		if OtherIcon ~= self.topbarIcon then
-			OtherIcon:deselect()
-		end
-	end
 end
 
 function DailyRewardController:TweenCard(Card, Scale: number, Offset: number, Info: TweenInfo)
@@ -213,7 +206,6 @@ function DailyRewardController:Open()
 	end
 	Core:GetController("SettingController"):CloseForSwitch()
 	Core:GetController("DonationController"):CloseForSwitch()
-	self:DeselectOtherTopbarIcons()
 	local ComputerController = Core:GetController("ComputerController")
 	local CustomerController = Core:GetController("CustomerController")
 	local ExpositionController = Core:GetController("ExpositionController")
@@ -393,8 +385,9 @@ function DailyRewardController:Init()
 
 	self.topbarIcon = Icon.new()
 		:setName("DailyRewards")
-		:setImage("rbxassetid://72627984848404")
+		:setImage(self.topbarImage)
 		:modifyTheme({ "IconImage", "ImageColor3", Color3.fromRGB(255, 255, 255) })
+		:modifyTheme({ "IconImage", "ScaleType", Enum.ScaleType.Fit })
 		:setCaption("Daily Rewards")
 	self.topbarIcon.selected:Connect(function()
 		self:Open()
@@ -424,8 +417,11 @@ function DailyRewardController:Init()
 end
 
 function DailyRewardController:Start()
-	RemoteManager:OnClientEvent("DailyRewardService", "StateUpdated", function(State)
+	RemoteManager:OnClientEvent("DailyRewardService", "StateUpdated", function(State, Granted)
 		self:ApplyState(State)
+		if Granted then
+			Core:GetController("BoostController"):PlayGain(Granted, true)
+		end
 	end)
 	task.spawn(function()
 		while true do

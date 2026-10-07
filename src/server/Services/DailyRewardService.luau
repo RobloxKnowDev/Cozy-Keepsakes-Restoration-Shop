@@ -211,9 +211,9 @@ function DailyRewardService:BuildState(Player: Player)
 	}
 end
 
-function DailyRewardService:PushState(Player: Player)
+function DailyRewardService:PushState(Player: Player, Granted: string?)
 	local State = self:BuildState(Player)
-	if State then RemoteManager:FireClient(self.Name, "StateUpdated", Player, State) end
+	if State then RemoteManager:FireClient(self.Name, "StateUpdated", Player, State, Granted) end
 end
 
 function DailyRewardService:GrantReward(Player: Player, Day: number): boolean
@@ -266,7 +266,7 @@ function DailyRewardService:ClaimNextReward(Player: Player)
 		return { Success = false, Reason = "RewardFailed", State = self:BuildState(Player) }
 	end
 	task.spawn(function() DataService:Save(Player) end)
-	self:PushState(Player)
+	self:PushState(Player, if Reward.Type == "SaleBoost" then "DailySaleBoost" else nil)
 	if Reward.Type == "SaleBoost" then Core:GetService("InventoryService"):PushItems(Player) end
 	return {
 		Success = true,
@@ -308,7 +308,7 @@ function DailyRewardService:GrantSaleBoost(Player: Player, Seconds: number)
 	end
 	Data.SaleBoostEndsAt = math.max(Data.SaleBoostEndsAt, Now()) + math.max(FiniteNumber(Seconds), 0)
 	task.spawn(function() self:SavePlayer(Player) end)
-	self:PushState(Player)
+	self:PushState(Player, "DailySaleBoost")
 	Core:GetService("InventoryService"):PushItems(Player)
 end
 

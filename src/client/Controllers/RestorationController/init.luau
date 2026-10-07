@@ -1,5 +1,6 @@
 local Guiservice = game:GetService("GuiService")
 local Gamepadservice = game:GetService("GamepadService")
+local Marketplaceservice = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
@@ -7,7 +8,10 @@ local Startergui = game:GetService("StarterGui")
 local Userinputservice = game:GetService("UserInputService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
+local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
+local Monetizationconfig = require(Replicatedstorage.Shared.Config.Monetization)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
+local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Interfacemodule = require(script.Runtime.Interface)
 local Toolruntime = require(script.Runtime.ToolRuntime)
@@ -31,6 +35,11 @@ local Runtime = Toolruntime.new(Tools, Interface)
 local Activeobject: (Model | BasePart)? = nil
 local Editingmenu = nil
 local Player = Players.LocalPlayer
+local Robuxicon = "\u{E002}"
+local Cleanallprice = "..."
+local Pendingcleanall: number? = nil
+local Promptedcleanall = false
+local Usingcleanall = false
 
 local function Lockcharacter(Character: Model)
 	local Humanoid = Character:WaitForChild("Humanoid", 10)
@@ -104,6 +113,53 @@ local function Updateprogress(InteractionPosition: Vector2?)
 	end
 end
 
+local function Refreshcleanalltext()
+	Interface.CleanAllText.Text = if (Pendingcleanall or 0) > 0 then "Free" else Cleanallprice
+end
+
+local function Loadcleanallprice()
+	task.spawn(function()
+		local Success, Productinfo = pcall(function()
+			return Marketplaceservice:GetProductInfoAsync(Monetizationconfig.CleanAllProductId, Enum.InfoType.Product)
+		end)
+		local Price = if Success then tonumber(Productinfo.PriceInRobux) else nil
+		Cleanallprice = if Price then string.format("%s%d", Robuxicon, math.floor(Price)) else "N/A"
+		Refreshcleanalltext()
+	end)
+end
+
+local function Updatependingcleanall()
+	local Count = Player:GetAttribute("PendingCleanAll")
+	if (Pendingcleanall ~= nil or Promptedcleanall) and Count > (Pendingcleanall or 0) then
+		Core:GetController("MessageController"):Show("Clean All saved for later!", Rarityconfig.Common.Gradient)
+	end
+	Pendingcleanall = Count
+	Refreshcleanalltext()
+end
+
+local function Cancleanall(): boolean
+	if not Activeobject or Usingcleanall or Monetizationconfig.CleanAllProductId <= 0 then return false end
+	if Core:GetController("TutorialController").running or Core:GetController("CompletionController"):IsVisible() then
+		return false
+	end
+	return (Activeobject:GetAttribute("CleanedSpots") or 0) < (Activeobject:GetAttribute("TotalSpots") or 0) * Cleaningconfig.FinishAssist.Start
+end
+
+local function Cleanall()
+	if not Cancleanall() then return end
+	if (Pendingcleanall or 0) <= 0 then
+		Promptedcleanall = true
+		Marketplaceservice:PromptProductPurchase(Player, Monetizationconfig.CleanAllProductId)
+		return
+	end
+	Usingcleanall = true
+	local Used = Remotemanager:InvokeServer("RestorationService", "UseCleanAll")
+	Usingcleanall = false
+	if not Used then
+		Core:GetController("MessageController"):Show("Clean All is not available right now", Rarityconfig.Mythic.Gradient)
+	end
+end
+
 function Controller:GetInterface()
 	return Interface
 end
@@ -133,6 +189,7 @@ function Controller:Enter()
 	end
 	Core:GetController("DailyRewardController"):CloseForSwitch()
 	Core:GetController("SettingController"):CloseForSwitch()
+	Core:GetController("DonationController"):CloseForSwitch()
 	local Expositioncontroller = Core:GetController("ExpositionController")
 	Expositioncontroller:PrepareForRestoration()
 	if not self:CanEnter() then
@@ -207,8 +264,13 @@ function Controller:Start()
 		function(Name) Runtime:Select(Name) end,
 		function(Mode) Cameracontroller:SetTransformMode(Mode) end,
 		function() Cameracontroller:FlipObject() end,
-		function() Showcompletion() end
+		function() Showcompletion() end,
+		function() Cleanall() end
 	)
+	Pendingcleanall = Player:GetAttribute("PendingCleanAll")
+	Refreshcleanalltext()
+	Loadcleanallprice()
+	Player:GetAttributeChangedSignal("PendingCleanAll"):Connect(Updatependingcleanall)
 	Cameracontroller:SetTransformMode("Orbit")
 	Cameracontroller:ShowIntroCamera()
 	Interface:ShowIntro()
@@ -251,13 +313,16 @@ function Controller:Start()
 			Runtime:InputEnded()
 		end
 	end)
-	Runservice.RenderStepped:Connect(function(Deltatime)
+	Runservice.RenderStepped:Connect(function()
 		if self.pendingEnter then self:Enter() end
+	end)
+	Runservice:BindToRenderStep("RestorationTools", Enum.RenderPriority.Camera.Value + 2, function(Deltatime)
 		local ScreenMouse = Userinputservice:GetMouseLocation()
 		local Mouse = ScreenMouse
 		if not Interface.Hud.IgnoreGuiInset then Mouse -= Guiservice:GetGuiInset() end
 		Interface.Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y)
 		local Isediting = Activeobject ~= nil and not Core:GetController("CompletionController"):IsVisible()
+		Interface.CleanAllButton.Visible = Cancleanall()
 
 		Interface.Cursor.Visible = Isediting
 			and Userinputservice:GetLastInputType() ~= Enum.UserInputType.Touch

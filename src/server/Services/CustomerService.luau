@@ -100,6 +100,7 @@ type ShopState = {
 	ArrivedToday: number,
 	NeedsInstantCustomer: boolean,
 	Directcustomer: boolean,
+	Quickreturn: boolean,
 }
 type Passerby = {
 	Direction: number,
@@ -161,7 +162,7 @@ local function SyncDayState()
 	end
 end
 
-local function CountArrivedCustomer(State: ShopState)
+local function CountServedCustomer(State: ShopState)
 	State.ArrivedToday += 1
 	ReplicateCustomerCount(State)
 end
@@ -536,8 +537,9 @@ local function Buildwardrobe(Player: Player)
 	end
 end
 
-local function GetSpawnInterval(Player: Player): number
-	return Customerconfig.GetInterval(Core:GetService("UpgradeService"):GetValue(Player, "CooldownReduction"))
+local function GetWaitInterval(State: ShopState): number
+	local Interval = Customerconfig.GetInterval(Core:GetService("UpgradeService"):GetValue(State.Player, "CooldownReduction"))
+	return if State.Quickreturn then math.min(Customerconfig.DeclineDelaySeconds, Interval) else Interval
 end
 
 local function SetNextCustomerAt(State: ShopState, Timestamp: number)
@@ -546,9 +548,9 @@ local function SetNextCustomerAt(State: ShopState, Timestamp: number)
 end
 
 local function ArmCustomerTimer(State: ShopState)
-	local Interval = GetSpawnInterval(State.Player)
+	local Interval = GetWaitInterval(State)
 	State.Player:SetAttribute("CustomerInterval", Interval)
-	State.Plannedvisit = Planvisit(State, false)
+	State.Plannedvisit = Planvisit(State, State.Quickreturn)
 	SetNextCustomerAt(State, Workspace:GetServerTimeNow() + Interval)
 end
 
@@ -639,16 +641,39 @@ local function Loadbags(Saved: { [string]: { string } }): { [string]: { string }
 	return Bags
 end
 
-local function ChooseObjectKey(Player: Player): string
-	if Core:GetService("TutorialService"):IsActive(Player) then
-		Takefrombag(Player, Objectconfig.Offer.TutorialObject)
-		return Objectconfig.Offer.TutorialObject
-	end
-	local Reputation = Core:GetService("StatsService"):GetStats(Player).Reputation
-	local Chances = GetOfferChances(Reputation)
-	if Commonstreaks[Player] >= Rarityconfig.MaxCommonStreak then
-		Chances.Common = 0
-	end
+local function GetDiscountPercent(Player: Player): number
+	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
+	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
+	return math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
+end
+
+local function Discountprice(BasePrice: number, DiscountPercent: number): number
+	return math.max(math.round(BasePrice * (1 - DiscountPercent / 100)), 0)
+end
+
+local function Getpricerange(ObjectKey: string): (number, number)
+	local Definition = Objectconfig.Object[ObjectKey]
+	local Maxprice = math.max(
+		tonumber(Definition.PriceMaxValue) or tonumber(Definition.MaxPrice) or tonumber(Definition.MaxValue) or 0,
+		0
+	)
+	local Minprice = math.max(math.min(tonumber(Definition.PriceMinValue) or Maxprice, Maxprice), 0)
+	return Minprice, Maxprice
+end
+
+local function Rollprice(ObjectKey: string): number
+	local Minprice, Maxprice = Getpricerange(ObjectKey)
+	return math.random(Minprice, math.max(Minprice, Maxprice))
+end
+
+local function Peekbag(Player: Player, Rarity: string): string
+	local Bags = Offerbags[Player]
+	local Bag = Bags[Rarity] or Shufflebag(Rarity, nil)
+	Bags[Rarity] = Bag
+	return Bag[#Bag]
+end
+
+local function Rollrarity(Chances: { [string]: number }): string
 	local Totalchance = 0
 	for _, Rarity in ipairs(Rarityconfig.Order) do
 		local Chance = Chances[Rarity] or 0
@@ -661,12 +686,10 @@ local function ChooseObjectKey(Player: Player): string
 	local Accumulatedchance = 0
 	for _, Rarity in ipairs(Rarityconfig.Order) do
 		local Chance = Chances[Rarity] or 0
-		local Objectpool = ObjectsByRarity[Rarity]
-		if Chance > 0 and #Objectpool > 0 then
+		if Chance > 0 and #ObjectsByRarity[Rarity] > 0 then
 			Accumulatedchance += Chance
 			if Roll < Accumulatedchance then
-				Commonstreaks[Player] = if Rarity == "Common" then Commonstreaks[Player] + 1 else 0
-				return Drawfrombag(Player, Rarity)
+				return Rarity
 			end
 		end
 	end
@@ -674,21 +697,39 @@ local function ChooseObjectKey(Player: Player): string
 	error("CustomerService: no object available for offers")
 end
 
-local function ChooseCustomerRequest(Player: Player): CustomerOffer
-	local ObjectKey = ChooseObjectKey(Player)
-	local Definition = Objectconfig.Object[ObjectKey]
+local function ChooseObject(Player: Player, DiscountPercent: number): (string, number)
+	if Core:GetService("TutorialService"):IsActive(Player) then
+		Takefrombag(Player, Objectconfig.Offer.TutorialObject)
+		return Objectconfig.Offer.TutorialObject, Rollprice(Objectconfig.Offer.TutorialObject)
+	end
+	local Reputation = Core:GetService("StatsService"):GetStats(Player).Reputation
+	local Chances = GetOfferChances(Reputation)
+	if Commonstreaks[Player] >= Rarityconfig.MaxCommonStreak then
+		Chances.Common = 0
+	end
+	local Cashservice = Core:GetService("CashService")
+	local Salevalue = Core:GetService("InventoryService"):GetSaleValue(Player)
+	local Rarity = Rollrarity(Chances)
+	local BasePrice = Rollprice(Peekbag(Player, Rarity))
+	for _ = 1, Rarityconfig.OfferRerolls do
+		if
+			Cashservice:CanSpendCash(Player, Discountprice(BasePrice, DiscountPercent) - Salevalue)
+			or math.random() < Rarityconfig.UnaffordableKeepChance
+		then
+			break
+		end
+		Rarity = Rollrarity(Chances)
+		BasePrice = Rollprice(Peekbag(Player, Rarity))
+	end
+	Commonstreaks[Player] = if Rarity == "Common" then Commonstreaks[Player] + 1 else 0
+	return Drawfrombag(Player, Rarity), BasePrice
+end
 
-	local Maxprice = math.max(
-		tonumber(Definition.PriceMaxValue) or tonumber(Definition.MaxPrice) or tonumber(Definition.MaxValue) or 0,
-		0
-	)
-	local Minprice = math.max(math.min(tonumber(Definition.PriceMinValue) or Maxprice, Maxprice), 0)
+local function ChooseCustomerRequest(Player: Player): CustomerOffer
+	local DiscountPercent = GetDiscountPercent(Player)
+	local ObjectKey, BasePrice = ChooseObject(Player, DiscountPercent)
+	local Definition = Objectconfig.Object[ObjectKey]
 	OfferSerial += 1
-	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
-	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
-	local DiscountPercent = math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
-	local BasePrice = math.random(Minprice, math.max(Minprice, Maxprice))
-	local DiscountedPrice = math.max(math.round(BasePrice * (1 - DiscountPercent / 100)), 0)
 	local Maximums = Core:GetService("RestorationService"):GenerateObjectMaximums(ObjectKey)
 
 	return {
@@ -697,7 +738,7 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer
 		ObjectName = Definition.Name or ObjectKey,
 		ImageId = tostring(Definition.IdImage or ""),
 		BasePrice = BasePrice,
-		Price = DiscountedPrice,
+		Price = Discountprice(BasePrice, DiscountPercent),
 		MaxValue = Maximums.MaxValue,
 		MaxReputation = Maximums.MaxReputation,
 		Mutation = Maximums.Mutation,
@@ -727,19 +768,12 @@ end
 
 local function GetAffordableOfferThreshold(Player: Player): number
 	local Cheapestprice = math.huge
-	for _, Definition in pairs(Objectconfig.Object) do
-		local Maxprice = math.max(
-			tonumber(Definition.PriceMaxValue) or tonumber(Definition.MaxPrice) or tonumber(Definition.MaxValue) or 0,
-			0
-		)
-		local Minprice = math.max(math.min(tonumber(Definition.PriceMinValue) or Maxprice, Maxprice), 0)
+	for ObjectKey in pairs(Objectconfig.Object) do
+		local Minprice, Maxprice = Getpricerange(ObjectKey)
 		local Affordableprice = Minprice + (Maxprice - Minprice) * Objectconfig.Offer.EmergencyPriceMargin
 		Cheapestprice = math.min(Cheapestprice, Affordableprice)
 	end
-	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
-	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
-	local DiscountPercent = math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
-	return math.max(math.round(Cheapestprice * (1 - DiscountPercent / 100)), 0)
+	return Discountprice(Cheapestprice, GetDiscountPercent(Player))
 end
 
 function Customerservice:RefreshPendingOfferPrice(Player: Player)
@@ -748,16 +782,25 @@ function Customerservice:RefreshPendingOfferPrice(Player: Player)
 		return
 	end
 	local Offer = State.PendingOffer :: CustomerOffer
-	local UpgradeDiscount = Core:GetService("UpgradeService"):GetValue(Player, "PurchaseDiscount")
-	local VIPDiscount = Core:GetService("MonetizationService"):GetVIPCustomerDiscount(Player)
-	local DiscountPercent = math.clamp(UpgradeDiscount + VIPDiscount, 0, 100)
-	Offer.Price = math.max(math.round(Offer.BasePrice * (1 - DiscountPercent / 100)), 0)
+	Offer.Price = Discountprice(Offer.BasePrice, GetDiscountPercent(Player))
 	BroadcastOffer(State)
 end
 
 local function ClearPendingOffer(State: ShopState)
 	State.PendingOffer = nil
 	BroadcastOffer(State)
+end
+
+local function IsFreeDecline(Player: Player, Offer: CustomerOffer): boolean
+	if Core:GetService("TutorialService"):IsActive(Player) then
+		return true
+	end
+	local Salevalue = Core:GetService("InventoryService"):GetSaleValue(Player)
+	if not Core:GetService("CashService"):CanSpendCash(Player, Offer.Price - Salevalue) then
+		return true
+	end
+	local Reputation = Customerconfig.FreeDeclineReputation[Objectconfig.Object[Offer.ObjectKey].Rarity]
+	return Reputation ~= nil and Core:GetService("StatsService"):GetStats(Player).Reputation >= Reputation
 end
 
 local function CanPresentOffer(State: ShopState): boolean
@@ -774,7 +817,11 @@ local function PresentFrontOffer(State: ShopState)
 	if not Core:GetService("TutorialService"):CanTakeNewObject(State.Player) or States[State.Player] ~= State then
 		return
 	end
-	State.PendingOffer = ChooseCustomerRequest(State.Player)
+	local Offer = ChooseCustomerRequest(State.Player)
+	if not CanPresentOffer(State) or not State.FrontCustomer then
+		return
+	end
+	State.PendingOffer = Offer
 	BroadcastOffer(State)
 end
 
@@ -801,15 +848,16 @@ local function Dispatchvisitor(State: ShopState, Visit: PlannedVisit, Arrival: n
 	Route(Customer, Visit.Trip, Arrival - Visit.Arrival)
 	Customer.Parent = Streetfolder
 	State.Visitor = Customer
-	CountArrivedCustomer(State)
+	State.Quickreturn = false
 	Schedulearrival(State, Customer, Arrival)
 end
 
 local function Skipwait(State: ShopState): boolean
-	local Arrival = Workspace:GetServerTimeNow() + Customerconfig.SkipArrivalSeconds
-	if State.FrontCustomer or State.NextCustomerAt <= Arrival + Customerconfig.SkipMarginSeconds then
+	local Now = Workspace:GetServerTimeNow()
+	if State.FrontCustomer or State.NextCustomerAt - Now <= Customerconfig.GetSkipThreshold() then
 		return false
 	end
+	local Arrival = Now + Customerconfig.SkipArrivalSeconds
 	local Visitor = State.Visitor
 	if Visitor then
 		Visitor:SetAttribute("RouteStart", Visitor:GetAttribute("RouteStart") - (State.NextCustomerAt - Arrival))
@@ -867,7 +915,7 @@ local function UpdateCustomerTimer(State: ShopState)
 		end
 		return
 	end
-	local Interval = GetSpawnInterval(State.Player)
+	local Interval = GetWaitInterval(State)
 	State.Player:SetAttribute("CustomerInterval", Interval)
 	local Now = Workspace:GetServerTimeNow()
 	if State.NextCustomerAt > Now + Interval then
@@ -894,6 +942,7 @@ local function OpenShop(Player: Player)
 		ArrivedToday = 0,
 		NeedsInstantCustomer = true,
 		Directcustomer = Intutorial,
+		Quickreturn = false,
 	}
 	Commonstreaks[Player] = Commonstreaks[Player] or 0
 	Offerbags[Player] = Offerbags[Player] or {}
@@ -1030,6 +1079,7 @@ function Customerservice:Init()
 					Value = Offer.Price,
 				})
 			end
+			CountServedCustomer(State)
 			ClearPendingOffer(State)
 			Walkaway(State)
 			return {
@@ -1038,8 +1088,12 @@ function Customerservice:Init()
 		end
 
 		if NormalizedDecision == "decline" then
+			State.Quickreturn = true
 			ClearPendingOffer(State)
 			Walkaway(State)
+			if not IsFreeDecline(Player, Offer) then
+				CountServedCustomer(State)
+			end
 			return {
 				Success = true,
 			}
@@ -1073,6 +1127,32 @@ function Customerservice:SkipCooldown(Player: Player): boolean
 	return true
 end
 
+function Customerservice:MoveShop(Player: Player)
+	local Shop = Core:GetService("ShopService"):GetShop(Player)
+	Skipdetours(Shop)
+	local State = States[Player]
+	if not State then
+		return
+	end
+	State.Shop = Shop
+	if not Stopsready then
+		return
+	end
+	local Visit = Planvisit(State, State.Quickreturn)
+	State.Plannedvisit = Visit
+	if State.FrontCustomer then
+		local Stop = Shopstops[Shop.Name]
+		local Trip = Newtrip()
+		Go(Trip, Stop.Path[#Stop.Path], 0, Stop.Facing)
+		Route(State.FrontCustomer, Trip, Workspace:GetServerTimeNow())
+	elseif State.Visitor then
+		local Trip = Visit.Trip
+		local Duration = Streetroute.TimeTo(Trip.Points, Trip.Holds, State.Visitor:GetAttribute("Speed"), #Trip.Points)
+		Route(State.Visitor, Trip, State.NextCustomerAt - Duration)
+	end
+	UpdateCustomerTimer(State)
+end
+
 function Customerservice:Start()
 	task.spawn(function()
 		for _, Shop in ipairs(Shopsfolder:GetChildren()) do
@@ -1094,7 +1174,7 @@ function Customerservice:Start()
 			SyncDayState()
 			if IsBusinessHours() then
 				for _, State in pairs(table.clone(States)) do
-					PresentFrontOffer(State)
+					task.spawn(PresentFrontOffer, State)
 				end
 			end
 		end

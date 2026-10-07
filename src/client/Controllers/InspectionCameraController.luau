@@ -43,6 +43,12 @@ local Stickorbitspeed = 2.4
 local Stickrotatespeed = 2.6
 local Focusoffset = Vector3.zero
 local Panlimit = 3
+local Startdistancefactor = 1.65
+local Cameraclearance = 0.5
+local Maxorbitpitch = math.rad(0)
+local Zoomfocusratio = 0.22 / 0.12
+local Boundsoffset = Vector3.zero
+local Boundsradius = 1
 local Objectstartposition = Vector3.zero
 local Objectselected = false
 local Groundy = 0
@@ -75,6 +81,9 @@ type CameraPartOptions = {
 	OnLead: (() -> ())?,
 	OnArrived: (() -> ())?,
 }
+
+local Viewname = "CamPart"
+local Viewoptions: CameraPartOptions? = nil
 
 local function Pointerposition(Input: InputObject): Vector2
 	return Vector2.new(Input.Position.X, Input.Position.Y)
@@ -118,8 +127,11 @@ local function Objectpivot(Object: InspectionTarget): CFrame
 	return Object:IsA("Model") and Object:GetPivot() or Object.CFrame
 end
 
-local function Objectsize(Object: InspectionTarget): Vector3
-	return Object:IsA("Model") and select(2, Object:GetBoundingBox()) or Object.Size
+local function Objectbounds(Object: InspectionTarget): (CFrame, Vector3)
+	if Object:IsA("Model") then
+		return Object:GetBoundingBox()
+	end
+	return Object.CFrame, Object.Size
 end
 
 local function Pivotobject(Object: InspectionTarget, Pivot: CFrame)
@@ -189,12 +201,7 @@ function Controller:IsDragging(): boolean
 end
 
 function Controller:IsIntroCameraReady(): boolean
-	local Campart = Mapcamera:WaitForChild("CamPart")
-	return Introcameraactive
-		and Introcameratween == nil
-		and Campart ~= nil
-		and Campart:IsA("BasePart")
-		and (Camera.CFrame.Position - Campart.Position).Magnitude < 0.05
+	return Introcameraactive and Introcameratween == nil and Viewname == "CamPart"
 end
 
 function Controller:SetEnabled(Value: boolean)
@@ -256,16 +263,19 @@ local function Setfieldofview(Value: number, Duration: number)
 	}):Play()
 end
 
-local function ShowCameraPart(CameraPart: BasePart, Options: CameraPartOptions?): boolean
+local function ShowCameraPart(Name: string, Options: CameraPartOptions?): boolean
 	if Target then
 		return false
 	end
+	local CameraPart = Mapcamera:WaitForChild(Name) :: BasePart
 	if not Introcameraactive then
 		Previouscameratype = Camera.CameraType
 		Previouscamerasubject = Camera.CameraSubject
 	end
 
 	Introcameraactive = true
+	Viewname = Name
+	Viewoptions = Options
 	Camera.CameraType = Enum.CameraType.Scriptable
 	CancelIntroCameraTween()
 	local Duration = if Options and Options.Duration then Options.Duration else Staticcameraduration
@@ -298,18 +308,41 @@ local function ShowCameraPart(CameraPart: BasePart, Options: CameraPartOptions?)
 	return true
 end
 
+local function Bindshop()
+	local Nextshop = Playershop(Player)
+	if Nextshop == Shop then
+		return
+	end
+	local Nextcamera = Nextshop:WaitForChild("Camera")
+	Nextcamera:WaitForChild("CamPart")
+	Nextcamera:WaitForChild("CamPartComputer")
+	Nextcamera:WaitForChild("CamPartExposition")
+	local Nextitems = Nextshop:WaitForChild("GeneratedItems")
+	local Nextwork = Nextshop:WaitForChild("Work")
+	if Player:GetAttribute("Shop") ~= Nextshop.Name then
+		return
+	end
+	Shop = Nextshop
+	Mapcamera = Nextcamera
+	Generateditems = Nextitems
+	Planwork = Nextwork
+	if Introcameraactive then
+		ShowCameraPart(Viewname, Viewoptions)
+	end
+end
+
 function Controller:ShowIntroCamera(): boolean
-	return ShowCameraPart(Mapcamera:WaitForChild("CamPart") :: BasePart)
+	return ShowCameraPart("CamPart")
 end
 
 function Controller:ShowIntroCameraFromExposition(): boolean
-	return ShowCameraPart(Mapcamera:WaitForChild("CamPart") :: BasePart, {
+	return ShowCameraPart("CamPart", {
 		Duration = Expositioncameraduration,
 	})
 end
 
 function Controller:ShowExpositionCamera(OnLead: (() -> ())?, OnArrived: (() -> ())?): boolean
-	return ShowCameraPart(Mapcamera:WaitForChild("CamPartExposition") :: BasePart, {
+	return ShowCameraPart("CamPartExposition", {
 		Duration = Expositioncameraduration,
 		LeadTime = Expositionbuttonleadtime,
 		FieldOfView = Expositionfieldofview,
@@ -319,7 +352,7 @@ function Controller:ShowExpositionCamera(OnLead: (() -> ())?, OnArrived: (() -> 
 end
 
 function Controller:ShowComputerCamera(): boolean
-	return ShowCameraPart(Mapcamera:WaitForChild("CamPartComputer") :: BasePart)
+	return ShowCameraPart("CamPartComputer")
 end
 
 function Controller:Begin(Object: InspectionTarget)
@@ -339,11 +372,14 @@ function Controller:Begin(Object: InspectionTarget)
 	Pitch = math.rad(-38)
 	Orbittravel = 0
 
-	local Radius = math.max(Objectsize(Object).Magnitude * 0.5, 1)
+	local Boundscframe, Boundssize = Objectbounds(Object)
+	Boundsoffset = Objectpivot(Object):PointToObjectSpace(Boundscframe.Position)
+	Boundsradius = Boundssize.Magnitude * 0.5
+	local Radius = math.max(Boundsradius, 1)
 	Panlimit = math.max(Radius * 0.65, 1)
-	Mindistance = math.max(Radius * 1.1, 2.5)
+	Targetdistance = math.max(Radius * Startdistancefactor, 2.5)
+	Mindistance = Targetdistance
 	Maxdistance = math.max(Radius * 2.5, Mindistance + 1)
-	Targetdistance = math.clamp(Radius * 1.65, Mindistance, Maxdistance)
 	Distance = Targetdistance
 	Safecameradistance = Distance
 
@@ -402,11 +438,14 @@ local function Applystick(Deltatime: number)
 	local Yawdelta = Direction.X * Stickorbitspeed * Deltatime
 	local Pitchdelta = Direction.Y * Stickorbitspeed * Deltatime
 	Yaw -= Yawdelta
-	Pitch = math.clamp(Pitch + Pitchdelta, math.rad(-82), math.rad(82))
+	Pitch = math.clamp(Pitch + Pitchdelta, math.rad(-82), Maxorbitpitch)
 	Orbittravel += math.abs(Yawdelta) + math.abs(Pitchdelta)
 end
 
 function Controller:Start()
+	Player:GetAttributeChangedSignal("Shop"):Connect(Bindshop)
+	Bindshop()
+
 	Userinputservice.InputBegan:Connect(function(Input, Processed)
 		if Processed or not Target or Completionview or Cameratransitionactive then
 			return
@@ -461,22 +500,23 @@ function Controller:Start()
 		end
 
 		if Input.UserInputType == Enum.UserInputType.MouseWheel then
+			local Previousdistance = Targetdistance
+			Targetdistance = math.clamp(Targetdistance * (1 - Input.Position.Z * 0.12), Mindistance, Maxdistance)
 			local Mouse = Userinputservice:GetMouseLocation()
-			local Focus = Objectpivot(Target).Position + Focusoffset
+			local Selectedcenteroffset = Objectselected and (Objectpivot(Target).Position.Y - Objectstartposition.Y) or 0
+			local Focus = Objectstartposition + Vector3.new(0, Selectedcenteroffset, 0) + Focusoffset
 			local Ray = Camera:ViewportPointToRay(Mouse.X, Mouse.Y)
 			local Denominator = Ray.Direction:Dot(Camera.CFrame.LookVector)
 			if math.abs(Denominator) > 0.001 then
 				local Depth = (Focus - Ray.Origin):Dot(Camera.CFrame.LookVector) / Denominator
 				if Depth > 0 then
 					local Cursorpoint = Ray.Origin + Ray.Direction * Depth
-					local Zoomdirection = math.clamp(Input.Position.Z, -1, 1)
-					Focusoffset += (Cursorpoint - Focus) * 0.22 * Zoomdirection
+					Focusoffset += (Cursorpoint - Focus) * (Previousdistance - Targetdistance) / Previousdistance * Zoomfocusratio
 					if Focusoffset.Magnitude > Panlimit then
 						Focusoffset = Focusoffset.Unit * Panlimit
 					end
 				end
 			end
-			Targetdistance = math.clamp(Targetdistance * (1 - Input.Position.Z * 0.12), Mindistance, Maxdistance)
 			return
 		end
 
@@ -499,7 +539,7 @@ function Controller:Start()
 				end
 			elseif Dragmode == "OrbitCamera" then
 				Yaw -= Delta.X * 0.008
-				Pitch = math.clamp(Pitch - Delta.Y * 0.008, math.rad(-82), math.rad(82))
+				Pitch = math.clamp(Pitch - Delta.Y * 0.008, math.rad(-82), Maxorbitpitch)
 				Orbittravel += math.abs(Delta.X * 0.008) + math.abs(Delta.Y * 0.008)
 			else
 				local Movement = (-Camera.CFrame.RightVector * Delta.X + Camera.CFrame.UpVector * Delta.Y)
@@ -593,11 +633,7 @@ function Controller:Start()
 		local Selectedcenteroffset = Objectselected and (Adjustedy - Objectstartposition.Y) or 0
 		local Focus = if Completionview
 			then Objectstartposition
-			else Objectstartposition + Vector3.new(0, Selectedcenteroffset, 0) + Vector3.new(
-				0,
-				Objectsize(Target).Y * 0,
-				0
-			) + Focusoffset
+			else Objectstartposition + Vector3.new(0, Selectedcenteroffset, 0) + Focusoffset
 		local Orbit = CFrame.fromEulerAnglesYXZ(Pitch, Yaw, 0)
 		local Orbitdirection = Orbit:VectorToWorldSpace(Vector3.new(0, 0, 1))
 		local Direction = Orbitdirection * Distance
@@ -624,6 +660,12 @@ function Controller:Start()
 			local Collisionalpha = 1 - math.exp(-8 * Deltatime)
 			Safecameradistance += (Alloweddistance - Safecameradistance) * Collisionalpha
 		end
+		local Boundscenter = Objectpivot(Target) * Boundsoffset
+		local Clearradius = Boundsradius + Cameraclearance
+		local Fromcenter = Focus - Boundscenter
+		local Along = Fromcenter:Dot(Orbitdirection)
+		local Clearancedistance = -Along + math.sqrt(math.max(Along * Along - Fromcenter:Dot(Fromcenter) + Clearradius * Clearradius, 0))
+		Safecameradistance = math.max(Safecameradistance, Clearancedistance)
 		local Safeposition = Focus + Orbitdirection * Safecameradistance
 		local Desiredcamera = CFrame.lookAt(Safeposition, Focus)
 		if Cameratransitionactive then
@@ -642,6 +684,10 @@ function Controller:Start()
 			end
 		else
 			Camera.CFrame = Camera.CFrame:Lerp(Desiredcamera, Alpha)
+		end
+		local Camerafromcenter = Camera.CFrame.Position - Boundscenter
+		if Camerafromcenter.Magnitude < Clearradius then
+			Camera.CFrame = CFrame.new(Boundscenter + Camerafromcenter.Unit * Clearradius) * Camera.CFrame.Rotation
 		end
 	end)
 end

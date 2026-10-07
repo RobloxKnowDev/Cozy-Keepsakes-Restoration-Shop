@@ -56,6 +56,8 @@ function Interface.new(Tools)
 	Self.Cursor.Active = false
 	Self.ReturnButton = Gui:WaitForChild("ReturnButton")
 	Self.ContinueButton = Gui:WaitForChild("ContinueButton")
+	Self.CleanAllButton = Gui:WaitForChild("CleanAllButton")
+	Self.CleanAllText = Self.CleanAllButton:WaitForChild("RobuxText")
 	Self.TurnButton = Self.TransformFrame:WaitForChild("TurnButton")
 	Self.LockButton = Self.TransformFrame:WaitForChild("PadlockButton")
 	Self.LockImage = Self.LockButton:WaitForChild("LockImage")
@@ -135,7 +137,7 @@ function Interface:GetToolOrder(): { string }
 	return Names
 end
 
-function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
+function Interface:Start(Selecttool, Setmode, Flipobject, Continue, Cleanall)
 	local Playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	self.Actions = {}
 	local Lastactivations: { [GuiButton]: number } = {}
@@ -166,7 +168,7 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 			Selecttool(Name)
 		end
 	end
-	for _, Button in ipairs({ self.TurnButton, self.LockButton, self.ReturnButton, self.ContinueButton }) do
+	for _, Button in ipairs({ self.TurnButton, self.LockButton, self.ReturnButton, self.ContinueButton, self.CleanAllButton }) do
 		Animate(Button)
 	end
 	local Locked = false
@@ -189,6 +191,7 @@ function Interface:Start(Selecttool, Setmode, Flipobject, Continue)
 	end
 	self.Actions[self.ReturnButton] = Flipobject
 	self.Actions[self.ContinueButton] = Continue
+	self.Actions[self.CleanAllButton] = Cleanall
 	for Button in pairs(self.Actions) do
 		Core:GetController("GamepadController"):OnActivated(Button, function()
 			Activate(Button)
@@ -266,6 +269,7 @@ function Interface:IsPointerOverUi(Position: Vector2): boolean
 		self.PercentFrame,
 		self.ReturnButton,
 		self.ContinueButton,
+		self.CleanAllButton,
 	}) do
 		if Item.Visible then
 			local Minimum = Item.AbsolutePosition
@@ -293,6 +297,7 @@ function Interface:HideForCompletion()
 		self.Cursor,
 		self.ReturnButton,
 		self.ContinueButton,
+		self.CleanAllButton,
 	}) do
 		Item.Visible = false
 	end

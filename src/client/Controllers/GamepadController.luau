@@ -157,7 +157,7 @@ function Gamepadcontroller:Start()
 	Runservice.RenderStepped:Connect(function()
 		local Wanted = self:IsActive()
 		if Wanted and not Gamepadservice.GamepadCursorEnabled then
-			Gamepadservice:EnableGamepadCursor(nil)
+			Gamepadservice:EnableGamepadCursor(self:GetButtonUnderCursor())
 		elseif not Wanted and Gamepadservice.GamepadCursorEnabled then
 			Gamepadservice:DisableGamepadCursor()
 		end

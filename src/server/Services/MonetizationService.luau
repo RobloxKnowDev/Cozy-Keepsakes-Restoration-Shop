@@ -17,6 +17,7 @@ local MonetizationService = {
 		StarterPackGranted = "Event",
 		ShopStateUpdated = "Event",
 		TestGamePass = "Function",
+		DonationAnnounced = "Event",
 	},
 }
 
@@ -25,6 +26,7 @@ local PersonalReputationBoostEndsAt: { [Player]: number } = {}
 local PersonalReputationBoostDuration: { [Player]: number } = {}
 local StarterPackGranted: { [Player]: boolean } = {}
 local Pendinglegacy: { [Player]: boolean } = {}
+local PendingDonations: { [Player]: { [string]: number } } = {}
 local ServerLuckLevel = 0
 local ServerLuckEndsAt = 0
 
@@ -134,13 +136,13 @@ function MonetizationService:GetShopState(Player: Player)
 	}
 end
 
-function MonetizationService:PushState(Player: Player)
-	RemoteManager:FireClient(self.Name, "ShopStateUpdated", Player, self:GetShopState(Player))
+function MonetizationService:PushState(Player: Player, Granted: string?)
+	RemoteManager:FireClient(self.Name, "ShopStateUpdated", Player, self:GetShopState(Player), Granted)
 end
 
-function MonetizationService:PushAllStates()
+function MonetizationService:PushAllStates(Granted: string?)
 	for _, Player in ipairs(Players:GetPlayers()) do
-		self:PushState(Player)
+		self:PushState(Player, Granted)
 	end
 end
 
@@ -162,7 +164,7 @@ function MonetizationService:GrantStarterPack(Player: Player): boolean
 	local CurrentTime = Now()
 	PersonalReputationBoostEndsAt[Player] = math.max(PersonalReputationBoostEndsAt[Player] or 0, CurrentTime) + (tonumber(Config.StarterPack.ReputationDurationSeconds) or 0)
 	PersonalReputationBoostDuration[Player] = PersonalReputationBoostEndsAt[Player] - CurrentTime
-	self:PushState(Player)
+	self:PushState(Player, "StarterReputation")
 	Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
 	self:StarterPackObjectReady(Player)
 	task.spawn(function()
@@ -173,13 +175,14 @@ end
 
 function MonetizationService:GrantGamePass(Player: Player, PassName: string)
 	GamePassCache[Player] = GamePassCache[Player] or {}
+	local Granted = if PassName == "VIP" and GamePassCache[Player][PassName] ~= true then "VIP" else nil
 	GamePassCache[Player][PassName] = true
 	Player:SetAttribute("Owns" .. PassName, true)
 	if PassName == "StarterPack" then self:GrantStarterPack(Player) end
 	if PassName == "VIP" then Core:GetService("CustomerService"):RefreshPendingOfferPrice(Player) end
 	if PassName == "DoubleReputation" then Core:GetService("ExpositionService"):RefreshPlayerReputation(Player) end
 	if PassName == "VIP" or PassName == "DoubleMoney" then Core:GetService("InventoryService"):PushItems(Player) end
-	self:PushState(Player)
+	self:PushState(Player, Granted)
 end
 
 function MonetizationService:GetServerLuckLevel(): number
@@ -196,20 +199,23 @@ function MonetizationService:GrantServerLuck(Level: number, Purchases: number?):
 	end
 	ServerLuckLevel = math.max(ServerLuckLevel, Level)
 	ServerLuckEndsAt = math.max(ServerLuckEndsAt, Now()) + (tonumber(Config.ServerReputationLuck.DurationPerPurchaseSeconds) or 0) * (Purchases or 1)
-	self:PushAllStates()
+	self:PushAllStates("ServerReputationLuck")
 	Core:GetService("ExpositionService"):RefreshAllReputations()
 	return true
 end
 
-function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: number, PurchaseId: string?): boolean
+function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: number, PurchaseId: string): boolean
 	if ProductId > 0 and tonumber(DailyRewardsConfig.SkipProductId) == ProductId then
-		return Core:GetService("DailyRewardService"):HandleDeveloperProduct(Player, ProductId, PurchaseId or "")
+		return Core:GetService("DailyRewardService"):HandleDeveloperProduct(Player, ProductId, PurchaseId)
 	end
 	if ProductId > 0 and tonumber(Config.SkipDayProductId) == ProductId then
 		return Core:GetService("DayNightService"):SkipToNextDayStart()
 	end
 	if ProductId > 0 and tonumber(Config.SkipCooldownProductId) == ProductId then
 		return Core:GetService("CustomerService"):SkipCooldown(Player)
+	end
+	if ProductId > 0 and tonumber(Config.CleanAllProductId) == ProductId then
+		return Core:GetService("RestorationService"):CleanAll(Player)
 	end
 	for _, Product in pairs(Config.CashProducts) do
 		if ProductId > 0 and tonumber(Product.Id) == ProductId then
@@ -223,6 +229,8 @@ function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: n
 	for _, Donation in ipairs(DonationConfig.Products) do
 		if ProductId > 0 and tonumber(Donation.Id) == ProductId then
 			Core:GetService("StatsService"):AddRobuxDonated(Player, Donation.Amount)
+			PendingDonations[Player] = PendingDonations[Player] or {}
+			PendingDonations[Player][PurchaseId] = Donation.Amount
 			return true
 		end
 	end
@@ -234,11 +242,19 @@ function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: n
 	return Core:GetService("UpgradeService"):HandleDeveloperProduct(Player, ProductId)
 end
 
+function MonetizationService:AnnounceDonation(Player: Player, PurchaseId: string)
+	local Pending = PendingDonations[Player]
+	local Amount = if Pending then Pending[PurchaseId] else nil
+	if not Amount then return end
+	Pending[PurchaseId] = nil
+	RemoteManager:FireAllClients(self.Name, "DonationAnnounced", Player.DisplayName, Amount)
+end
+
 function MonetizationService:GrantReputationBoost(Player: Player, Seconds: number)
 	local CurrentTime = Now()
 	PersonalReputationBoostEndsAt[Player] = math.max(PersonalReputationBoostEndsAt[Player] or 0, CurrentTime) + Seconds
 	PersonalReputationBoostDuration[Player] = PersonalReputationBoostEndsAt[Player] - CurrentTime
-	self:PushAllStates()
+	self:PushState(Player, "StarterReputation")
 	Core:GetService("ExpositionService"):RefreshPlayerReputation(Player)
 end
 
@@ -268,6 +284,7 @@ function MonetizationService:Init()
 			PersonalReputationBoostDuration[Player] = nil
 			StarterPackGranted[Player] = nil
 			Pendinglegacy[Player] = nil
+			PendingDonations[Player] = nil
 		end,
 	})
 	local function Resolvestarterpack(Player: Player, Owns: boolean)
@@ -350,13 +367,17 @@ function MonetizationService:Init()
 		local Player = Players:GetPlayerByUserId(ReceiptInfo.PlayerId)
 		if not Player then return Enum.ProductPurchaseDecision.NotProcessedYet end
 		local Purchaseid = tostring(ReceiptInfo.PurchaseId)
-		return Core:GetService("DataService"):ProcessPurchase(Player, Purchaseid, function()
+		local Decision = Core:GetService("DataService"):ProcessPurchase(Player, Purchaseid, function()
 			local Granted = self:HandleDeveloperProduct(Player, ReceiptInfo.ProductId, Purchaseid)
 			if not Granted then
 				warn(string.format("MonetizationService: Developer Product %d was not granted", ReceiptInfo.ProductId))
 			end
 			return Granted
 		end)
+		if Decision == Enum.ProductPurchaseDecision.PurchaseGranted then
+			self:AnnounceDonation(Player, Purchaseid)
+		end
+		return Decision
 	end
 
 	task.spawn(function()

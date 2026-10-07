@@ -138,6 +138,7 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 				if Unlockedmutation == "Normal" then nil else Mutation.Gradient,
 				Unlockedmutation == "Rainbow"
 			)
+			Core:GetController("BoostController"):PlayGain("IndexSellBonus", false)
 		end
 	end
 	task.defer(function()

@@ -12,6 +12,7 @@ local Playershop = require(Replicatedstorage.Shared.Utils.PlayerShop)
 
 local Stickercontroller = { Name = "StickerController", Priority = 9 }
 local Peeldistance = 200
+local Stickertolerance = 0.02
 local Loosefadetween = TweenInfo.new(0.3, Enum.EasingStyle.Linear)
 local function Instancepivot(Instance: Instance?): CFrame?
 	if not Instance then
@@ -26,12 +27,23 @@ local function Instancepivot(Instance: Instance?): CFrame?
 	return nil
 end
 
+local function Isfirstsurface(Result: RaycastResult, Surface): boolean
+	return not Surface or Result.Distance <= Surface.Distance + Stickertolerance
+end
+
 function Stickercontroller:Init()
 	self.gui = Players.LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("PackageUi")
 	self.camera = Workspace.CurrentCamera
 	self.generatedItems = Playershop(Players.LocalPlayer):WaitForChild("GeneratedItems")
 	self.looseStickers = {}
 	self:Reset()
+end
+
+function Stickercontroller:Start()
+	Players.LocalPlayer:GetAttributeChangedSignal("Shop"):Connect(function()
+		self.generatedItems = Playershop(Players.LocalPlayer):WaitForChild("GeneratedItems")
+	end)
+	self.generatedItems = Playershop(Players.LocalPlayer):WaitForChild("GeneratedItems")
 end
 
 function Stickercontroller:ClearLoose()
@@ -74,6 +86,7 @@ function Stickercontroller:Begin(Object: Model | BasePart, Tooltip: Attachment?,
 	if not Contact then
 		return
 	end
+	local Surface = Core:GetController("CleaningController"):CastSurface(Ray.Origin, Ray.Direction * 100)
 
 	local Loosetargets = {}
 	for Index = #self.looseStickers, 1, -1 do
@@ -89,7 +102,7 @@ function Stickercontroller:Begin(Object: Model | BasePart, Tooltip: Attachment?,
 		Params.FilterType = Enum.RaycastFilterType.Include
 		Params.FilterDescendantsInstances = Loosetargets
 		local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 100, Params)
-		if Result and Result.Instance:IsA("BasePart") then
+		if Result and Result.Instance:IsA("BasePart") and Isfirstsurface(Result, Surface) then
 			local Loose = Result.Instance
 			Loose.Anchored = true
 			Loose.CanCollide = false
@@ -122,7 +135,7 @@ function Stickercontroller:Begin(Object: Model | BasePart, Tooltip: Attachment?,
 	Params.FilterType = Enum.RaycastFilterType.Include
 	Params.FilterDescendantsInstances = Targets
 	local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * 100, Params)
-	local Spot = Result and Result.Instance
+	local Spot = Result and Isfirstsurface(Result, Surface) and Result.Instance
 	if
 		not Spot
 		or not Spot:IsA("BasePart")

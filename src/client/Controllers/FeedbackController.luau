@@ -15,6 +15,7 @@ local FeedbackController = {
 	intensity = "Full",
 	activeParticles = 0,
 	tweens = {},
+	purchaseRaysImage = "rbxassetid://126271042027223",
 }
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
@@ -26,6 +27,7 @@ local SuccessColor = Color3.fromRGB(255, 211, 105)
 local ErrorColor = Color3.fromRGB(255, 132, 92)
 local SoundFadeTween = TweenInfo.new(0.2, Enum.EasingStyle.Linear)
 local MaxMusicVolume = 0.5
+local CitySoundVolume = 0.5
 local MusicFadeTween = TweenInfo.new(2, Enum.EasingStyle.Linear)
 local MusicLoopFadeTween = TweenInfo.new(1.2, Enum.EasingStyle.Linear)
 local UiClickCooldown = 0.08
@@ -35,7 +37,15 @@ local GainGradient = Rarityconfig.Common.Gradient
 local RewardPopupLifetime = 2.4
 local RewardTitleGradient = ColorSequence.new(Color3.fromRGB(255, 196, 45), Color3.fromRGB(255, 243, 176))
 local PurchaseLifetime = 2.3
-local PurchaseRaysImage = "rbxassetid://126271042027223"
+local BoostSound = "DailyReward"
+local BoostSoundCooldown = 0.3
+local BoostPulseScale = 1.2
+local BoostAppearScale = 0.35
+local BoostAppearTween = TweenInfo.new(0.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local BoostEchoScale = 1.7
+local BoostEchoTween = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local BoostParticles = 12
+local BoostLabelLifetime = 1.4
 local White = Color3.fromRGB(255, 255, 255)
 local TextFont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
 local RayCount = 14
@@ -840,7 +850,7 @@ function FeedbackController:Purchase(Name: string, ImageId: string, RarityGradie
 	Rays.Position = UDim2.fromScale(0.5, 0.4)
 	Rays.Size = UDim2.fromOffset(250, 250)
 	Rays.BackgroundTransparency = 1
-	Rays.Image = PurchaseRaysImage
+	Rays.Image = self.purchaseRaysImage
 	Rays.ScaleType = Enum.ScaleType.Fit
 	Rays.ImageTransparency = 0.15
 	Rays.ZIndex = 28
@@ -977,6 +987,64 @@ function FeedbackController:RewardPopup(TitleText: string, RewardText: string, T
 	end)
 end
 
+function FeedbackController:BoostGain(Target: ImageLabel, Text: string, Gradient: ColorSequence, Appear: boolean)
+	self:PlaySound(BoostSound, BoostSoundCooldown)
+	if not self:IsDecorativeEnabled() then return end
+	local Motion = self:IsMotionEnabled()
+	if Appear and Motion then
+		local Scale = GetScale(Target)
+		Scale.Scale = BoostAppearScale
+		self:Tween(Scale, Scale, BoostAppearTween, { Scale = 1 })
+	else
+		self:Pulse(Target, BoostPulseScale)
+	end
+	if Motion then
+		local Echo = Instance.new("ImageLabel")
+		Echo.Name = "BoostEcho"
+		Echo.AnchorPoint = Vector2.new(0.5, 0.5)
+		Echo.Position = UDim2.fromScale(0.5, 0.5)
+		Echo.Size = UDim2.fromScale(1, 1)
+		Echo.BackgroundTransparency = 1
+		Echo.Image = Target.Image
+		Echo.ScaleType = Target.ScaleType
+		Echo.ImageTransparency = 0.35
+		Echo.Parent = Target
+		TweenService:Create(Echo, BoostEchoTween, { Size = UDim2.fromScale(BoostEchoScale, BoostEchoScale), ImageTransparency = 1 }):Play()
+		Debris:AddItem(Echo, BoostEchoTween.Time)
+		self:Burst(Target, Gradient.Keypoints[1].Value, BoostParticles)
+	end
+	local Previous = Target:FindFirstChild("BoostGainText")
+	if Previous then Previous:Destroy() end
+	local Label = Instance.new("TextLabel")
+	Label.Name = "BoostGainText"
+	Label.AnchorPoint = Vector2.new(0, 1)
+	Label.Position = UDim2.fromScale(0, -0.04)
+	Label.Size = UDim2.fromScale(3.6, 0.4)
+	Label.BackgroundTransparency = 1
+	Label.FontFace = TextFont
+	Label.Text = Text
+	Label.TextColor3 = White
+	Label.TextScaled = true
+	Label.TextXAlignment = Enum.TextXAlignment.Left
+	Label.TextStrokeColor3 = Color3.fromRGB(24, 18, 12)
+	Label.TextStrokeTransparency = 0.25
+	Label.ZIndex = Target.ZIndex + 6
+	Label.Parent = Target
+	local Labelgradient = Instance.new("UIGradient")
+	Labelgradient.Color = Gradient
+	Labelgradient.Rotation = 90
+	Labelgradient.Parent = Label
+	local LabelScale = GetScale(Label)
+	LabelScale.Scale = if Motion then 0.6 else 1
+	TweenService:Create(LabelScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	TweenService:Create(Label, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, BoostLabelLifetime - 0.4), {
+		Position = if Motion then UDim2.fromScale(0, -0.45) else Label.Position,
+		TextTransparency = 1,
+		TextStrokeTransparency = 1,
+	}):Play()
+	Debris:AddItem(Label, BoostLabelLifetime)
+end
+
 function FeedbackController:PlaySound(Name: string, Cooldown: number?, Pitch: number?, Fadeinseconds: number?): Sound?
 	local Template = self.sfxFolder:FindFirstChild(Name)
 	if not Template or not Template:IsA("Sound") then return end
@@ -1101,6 +1169,7 @@ end
 
 function FeedbackController:SetSoundVolume(Alpha: number)
 	self.soundVolume = math.clamp(Alpha, 0, 1)
+	self.citySound.Volume = CitySoundVolume * self.soundVolume
 end
 
 function FeedbackController:StartMusic()
@@ -1152,6 +1221,8 @@ function FeedbackController:Init()
 	self.soundCooldowns = {}
 	self.loopSounds = {}
 	self.soundVolume = 1
+	self.citySound = SoundService:WaitForChild("CitySound") :: Sound
+	self.citySound.Volume = CitySoundVolume * self.soundVolume
 	self.musicVolume = MaxMusicVolume * 0.5
 	self.gui = Instance.new("ScreenGui")
 	self.gui.Name = "FeedbackUi"
