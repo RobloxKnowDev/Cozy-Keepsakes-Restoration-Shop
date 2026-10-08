@@ -18,6 +18,8 @@ local Tutorialservice = {
 }
 
 local Store = DataStoreService:GetDataStore("Tutorial_v1")
+local Readoptions = Instance.new("DataStoreGetOptions")
+Readoptions.UseCache = false
 local Isstudio = RunService:IsStudio()
 local Loadattempts = 5
 local Saveattempts = 3
@@ -120,6 +122,20 @@ function Tutorialservice:Wipe(Userid: number): (boolean, string)
 		return false, tostring(Error)
 	end
 	return true, "erased"
+end
+
+function Tutorialservice:Peek(Player: Player): { Completed: boolean, Step: number }?
+	if not Loadedbyplayer[Player] or Erroredbyplayer[Player] then
+		return nil
+	end
+	return { Completed = Completedbyplayer[Player] == true, Step = Stepbyplayer[Player] or 1 }
+end
+
+function Tutorialservice:Read(Userid: number): (boolean, any)
+	local Success, Saved = Datastorerequest.Run(Saveattempts, function()
+		return Store:GetAsync(tostring(Userid), Readoptions)
+	end)
+	return Success, Saved
 end
 
 local function Saveplayer(Player: Player): boolean

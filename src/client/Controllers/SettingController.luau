@@ -99,6 +99,7 @@ function SettingController:Open()
 	end
 	Core:GetController("DailyRewardController"):CloseForSwitch()
 	Core:GetController("DonationController"):CloseForSwitch()
+	Core:GetController("GroupRewardController"):CloseForSwitch()
 	local ComputerController = Core:GetController("ComputerController")
 	local CustomerController = Core:GetController("CustomerController")
 	local ExpositionController = Core:GetController("ExpositionController")

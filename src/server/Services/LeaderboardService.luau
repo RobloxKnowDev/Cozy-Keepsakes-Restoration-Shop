@@ -3,25 +3,24 @@ local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local UserService = game:GetService("UserService")
+local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Datastorerequest = require(script.Parent.Parent.Utils.Datastorerequest)
-local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Separatenumber = require(Replicatedstorage.Shared.Utils.NumberAbbreviator)
 
 local Leaderboardservice = {
 	Name = "LeaderboardService",
 	Priority = 16,
-	Remotes = {
-		GetLeaderboards = "Function",
-		LeaderboardsUpdated = "Event",
-	},
 }
 
 type Entry = { UserId: number, Value: number }
+type Row = { Frame: GuiObject, Name: TextLabel, Value: TextLabel }
+type Display = { List: ScrollingFrame, Template: GuiObject, Rows: { Row } }
 
 local Boardorder = { "Reputation", "ItemSold", "Donation" }
 local Statbyboard = {
-	Reputation = "Reputation",
+	Reputation = "RankedReputation",
 	ItemSold = "ItemsSold",
 	Donation = "RobuxDonated",
 }
@@ -29,7 +28,31 @@ local Growingboards = {
 	ItemSold = true,
 	Donation = true,
 }
-local Maxentries = 50
+local Storeversions = {
+	Reputation = 2,
+	ItemSold = 1,
+	Donation = 1,
+}
+local Modelbyboard = {
+	Reputation = "Reputation",
+	ItemSold = "Sold",
+	Donation = "Robux",
+}
+local Robuxicon = "\u{E002}"
+local Valueprefixbyboard = {
+	Reputation = "",
+	ItemSold = "",
+	Donation = Robuxicon,
+}
+local Placecolors = {
+	Color3.fromRGB(255, 196, 0),
+	Color3.fromRGB(205, 215, 230),
+	Color3.fromRGB(214, 133, 66),
+}
+local Defaultplacecolor = Color3.fromRGB(162, 162, 162)
+local Cameramarkers = { "CamRobux", "CamSold", "CamReputation" }
+local Maxentries = 100
+local Namebatchsize = 200
 local Refreshinterval = 120
 local Pushdelay = 1
 local Writeattempts = 3
@@ -41,11 +64,12 @@ local Stores: { [string]: OrderedDataStore } = {}
 local Entriesbyboard: { [string]: { Entry } } = {}
 local Lastwritten: { [Player]: { [string]: number } } = {}
 local Namesbyuserid: { [number]: string } = {}
+local Displaybyboard: { [string]: Display } = {}
 local Pendingwrites = 0
 local Pushscheduled = false
 
 for _, Board in ipairs(Boardorder) do
-	Stores[Board] = DataStoreService:GetOrderedDataStore("Leaderboard_" .. Board .. "_v1")
+	Stores[Board] = DataStoreService:GetOrderedDataStore("Leaderboard_" .. Board .. "_v" .. Storeversions[Board])
 	Entriesbyboard[Board] = {}
 end
 
@@ -77,34 +101,50 @@ local function Resolvenames()
 			end
 		end
 	end
-	if #Missing == 0 then
-		return
-	end
-	local Success, Infos = pcall(function()
-		return UserService:GetUserInfosByUserIdsAsync(Missing)
-	end)
-	if not Success then
-		return
-	end
-	for _, Info in ipairs(Infos) do
-		Namesbyuserid[Info.Id] = Info.DisplayName
+	for First = 1, #Missing, Namebatchsize do
+		local Batch = table.move(Missing, First, math.min(First + Namebatchsize - 1, #Missing), 1, {})
+		local Success, Infos = pcall(function()
+			return UserService:GetUserInfosByUserIdsAsync(Batch)
+		end)
+		if Success then
+			for _, Info in ipairs(Infos) do
+				Namesbyuserid[Info.Id] = Info.DisplayName
+			end
+		end
 	end
 end
 
-local function Buildpayload()
-	local Payload = {}
+local function Createrow(Display: Display, Rank: number): Row
+	local Rowframe = Display.Template:Clone()
+	Rowframe.Name = string.format("%03d", Rank)
+	Rowframe.LayoutOrder = Rank
+	local Place = Rowframe:WaitForChild("Place") :: TextLabel
+	Place.Text = "#" .. Rank
+	Place.TextColor3 = Placecolors[Rank] or Defaultplacecolor
+	Rowframe.Parent = Display.List
+	local Row = {
+		Frame = Rowframe,
+		Name = Rowframe:WaitForChild("Name") :: TextLabel,
+		Value = Rowframe:WaitForChild("Value") :: TextLabel,
+	}
+	Display.Rows[Rank] = Row
+	return Row
+end
+
+local function Renderboards()
 	for _, Board in ipairs(Boardorder) do
-		local Rows = {}
-		for _, Current in ipairs(Entriesbyboard[Board]) do
-			table.insert(Rows, {
-				UserId = Current.UserId,
-				Name = Namesbyuserid[Current.UserId] or "...",
-				Value = Current.Value,
-			})
+		local Display = Displaybyboard[Board]
+		local Entries = Entriesbyboard[Board]
+		for Rank, Current in ipairs(Entries) do
+			local Row = Display.Rows[Rank] or Createrow(Display, Rank)
+			Row.Name.Text = Namesbyuserid[Current.UserId] or "..."
+			Row.Value.Text = Valueprefixbyboard[Board] .. Separatenumber(Current.Value)
+			Row.Frame.Visible = true
 		end
-		Payload[Board] = Rows
+		for Rank = #Entries + 1, #Display.Rows do
+			Display.Rows[Rank].Frame.Visible = false
+		end
 	end
-	return Payload
 end
 
 local function Schedulepush()
@@ -115,7 +155,7 @@ local function Schedulepush()
 	task.delay(Pushdelay, function()
 		Pushscheduled = false
 		Resolvenames()
-		Remotemanager:FireAllClients(Leaderboardservice.Name, "LeaderboardsUpdated", Buildpayload())
+		Renderboards()
 	end)
 end
 
@@ -201,6 +241,24 @@ function Leaderboardservice:Wipe(Userid: number)
 	Schedulepush()
 end
 
+function Leaderboardservice:Read(Userid: number): { { Board: string, Ok: boolean, Value: any, Rank: number? } }
+	local Scores = {}
+	for _, Board in ipairs(Boardorder) do
+		local Success, Value = Datastorerequest.Run(Refreshattempts, function()
+			return Stores[Board]:GetAsync(tostring(Userid))
+		end)
+		local Rank = nil
+		for Index, Current in ipairs(Entriesbyboard[Board]) do
+			if Current.UserId == Userid then
+				Rank = Index
+				break
+			end
+		end
+		table.insert(Scores, { Board = Board, Ok = Success, Value = if Success then Value else tostring(Value), Rank = Rank })
+	end
+	return Scores
+end
+
 function Leaderboardservice:Overwrite(Userid: number, Stats: any)
 	local Player = Players:GetPlayerByUserId(Userid)
 	if Player then
@@ -235,6 +293,25 @@ function Leaderboardservice:Overwrite(Userid: number, Stats: any)
 end
 
 function Leaderboardservice:Init()
+	local Leaderboards = Workspace:WaitForChild("Map"):WaitForChild("Leaderboards") :: Model
+	local Camera = Leaderboards:WaitForChild("Camera")
+	for _, Name in ipairs(Cameramarkers) do
+		local Marker = Camera:WaitForChild(Name) :: BasePart
+		Marker.Anchored = true
+		Marker.CanCollide = false
+		Marker.CanQuery = false
+		Marker.CanTouch = false
+		Marker.Transparency = 1
+	end
+	Leaderboards.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	for _, Board in ipairs(Boardorder) do
+		local List = Leaderboards:WaitForChild(Modelbyboard[Board]):WaitForChild("SurfaceGui"):WaitForChild("ScrollingFrame") :: ScrollingFrame
+		local Template = List:WaitForChild("Template") :: GuiObject
+		Template.Visible = false
+		List.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		Displaybyboard[Board] = { List = List, Template = Template, Rows = {} }
+	end
+
 	Core:GetService("DataService"):Register("Leaderboard", {
 		Load = function() end,
 		Save = function()
@@ -265,10 +342,6 @@ function Leaderboardservice:Init()
 			end
 		end,
 	})
-
-	Remotemanager:OnServerInvoke(self.Name, "GetLeaderboards", function()
-		return Buildpayload()
-	end)
 end
 
 function Leaderboardservice:Start()

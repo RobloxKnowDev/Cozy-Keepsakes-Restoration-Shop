@@ -11,6 +11,8 @@ local Dataservice = {
 }
 
 local Store = DataStoreService:GetDataStore("PlayerData_v1")
+local Readoptions = Instance.new("DataStoreGetOptions")
+Readoptions.UseCache = false
 local Verboselogs = false
 local Isstudio = RunService:IsStudio()
 local Format = 1
@@ -26,7 +28,7 @@ local Maximumsize = 4_000_000
 local Maximumdepth = 32
 local Shutdowndeadline = 27
 local Sectionorder =
-	{ "Cash", "Stats", "Upgrades", "Inventory", "Restoration", "Exposition", "Monetization", "Settings", "Leaderboard", "Codes", "DailyTasks", "Customer" }
+	{ "Cash", "Stats", "Upgrades", "Inventory", "Restoration", "Exposition", "Monetization", "Settings", "Leaderboard", "Codes", "DailyTasks", "Customer", "FreeReward" }
 
 type Section = {
 	Load: (Player, any) -> (),
@@ -640,6 +642,83 @@ function Dataservice:ListVersions(Userid: number, Count: number): (boolean, any)
 		end
 		return Versions
 	end)
+end
+
+function Dataservice:GetSectionOrder(): { string }
+	return table.clone(Sectionorder)
+end
+
+function Dataservice:Peek(Player: Player): (boolean, any, any)
+	local Profile = Profiles[Player]
+	if not Profile then
+		return false, "profile not loaded yet", nil
+	end
+	local Reason = Refusal(Player, Profile)
+	if Reason and not Profile.Errored then
+		return false, Reason, nil
+	end
+	local Snapshot = {}
+	local Problems = {}
+	for _, Name in ipairs(Sectionorder) do
+		local Handlers = Sections[Name]
+		if not Handlers then
+			Problems[Name] = "is not registered"
+		elseif Profile.Unsafe[Name] then
+			Problems[Name] = "failed to load"
+		else
+			local Success, Value = pcall(Handlers.Save, Player)
+			if not Success then
+				Problems[Name] = "failed to read: " .. tostring(Value)
+			elseif Value ~= nil then
+				local Copy, Problem = Copyvalue(Value, 1)
+				if Problem then
+					Problems[Name] = "holds " .. Problem
+				else
+					Snapshot[Name] = Copy
+				end
+			end
+		end
+	end
+	return true, Snapshot, {
+		Seq = Profile.Seq,
+		New = Profile.New,
+		Purchases = table.clone(Profile.Purchases),
+		Problems = Problems,
+		Unsaved = Reason,
+	}
+end
+
+function Dataservice:Read(Userid: number): (boolean, any, any)
+	local Success, Value, Keyinfo = Datastorerequest.Run(Saveattempts, function()
+		return Store:GetAsync(tostring(Userid), Readoptions)
+	end)
+	if not Success then
+		return false, tostring(Value), nil
+	end
+	if Value == nil then
+		return true, nil, nil
+	end
+	local Lock = if type(Value) == "table" then Value._Session else nil
+	local Session = nil
+	if type(Lock) == "table" then
+		local Time = tonumber(Lock.Time) or 0
+		local Job = tostring(Lock.Job)
+		local Studio = Lock.Studio == true
+		Session = {
+			Job = Job,
+			Time = Time,
+			Seq = tonumber(Lock.Seq) or 0,
+			Studio = Studio,
+			Thisserver = not Studio and Job == game.JobId,
+			Active = os.time() - Time < Lockexpiry,
+		}
+	end
+	return true, Value, {
+		Updated = Keyinfo.UpdatedTime,
+		Created = Keyinfo.CreatedTime,
+		Version = Keyinfo.Version,
+		Session = Session,
+	}
 end
 
 function Dataservice:Restore(Userid: number, Version: string): (boolean, string, any)

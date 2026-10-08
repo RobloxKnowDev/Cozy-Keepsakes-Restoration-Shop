@@ -70,6 +70,11 @@ function Controller:RestoreButtonHover(Button: GuiButton)
 	end
 end
 
+function Controller:PopButton(Button: GuiButton): Tween
+	self.buttonScales[Button].Scale = 0.82
+	return self:TweenButton(Button, Buttonshowtweeninfo, 1)
+end
+
 function Controller:RotateSlotText(Slot, Animate: boolean?)
 	local Currenttween = self.slotTextTweens[Slot.Text]
 	if Currenttween then Currenttween:Cancel() end
@@ -87,24 +92,22 @@ end
 function Controller:HideSlotButtons()
 	self.slotsVisible = false
 	for _, Slot in ipairs(self.slotButtons) do
-		self:ResetButton(Slot.Button)
 		self:RotateSlotText(Slot)
-		Slot.Button.Visible = false
-		Slot.Button.Active = false
-		Slot.Button.Interactable = false
+	end
+	for _, Button in ipairs(self.shelfButtons) do
+		self:ResetButton(Button)
+		Button.Visible = false
+		Button.Active = false
+		Button.Interactable = false
 	end
 end
 
 function Controller:ShowSlotButtons()
 	if self.slotsVisible then return end
 	self.slotsVisible = true
-	for _, Slot in ipairs(self.slotButtons) do
-		Slot.Button.Visible = true
-		self.buttonScales[Slot.Button].Scale = 0.82
-		local Showtween = self:TweenButton(Slot.Button, Buttonshowtweeninfo, 1)
-		Showtween.Completed:Once(function(State)
-			if State == Enum.PlaybackState.Completed then self:RestoreButtonHover(Slot.Button) end
-		end)
+	for _, Button in ipairs(self.shelfButtons) do
+		Button.Visible = true
+		self:PopButton(Button)
 	end
 	self:UpdateButtonAvailability()
 end
@@ -118,11 +121,7 @@ end
 
 function Controller:AnimateSlotChange(Slot)
 	if not Slot.Button.Visible then return end
-	self.buttonScales[Slot.Button].Scale = 0.82
-	local Showtween = self:TweenButton(Slot.Button, Buttonshowtweeninfo, 1)
-	Showtween.Completed:Once(function(State)
-		if State == Enum.PlaybackState.Completed then self:RestoreButtonHover(Slot.Button) end
-	end)
+	self:PopButton(Slot.Button)
 end
 
 function Controller:ResolveBlockerMode(): BlockerMode?
@@ -158,31 +157,69 @@ function Controller:CanUseSelectionSlot(Slot): boolean
 	return true
 end
 
+function Controller:SetButtonEnabled(Button: GuiButton, Enabled: boolean)
+	if Button.Active == Enabled then return end
+	Button.Active = Enabled
+	Button.Interactable = Enabled
+	if not Enabled then Shared.ApplyActiveScale(Button, false) end
+end
+
 function Controller:UpdateButtonAvailability()
 	if self.isTransitioning then return end
 	local Currentbutton = if self.isOpen then self.reputationButtonR else self.reputationButtonL
 	local Canuse = self:CanUseButtons()
 	for _, Button in ipairs({ self.reputationButtonL, self.reputationButtonR }) do
-		local Enabled = Canuse and Button == Currentbutton and Button.Visible
+		local Enabled = Button.Visible and (self.leaderboardMode or (Canuse and Button == Currentbutton))
 		Button.Active = Enabled
 		Button.Interactable = Enabled
 	end
-	if not Canuse and self.hoveredButtons[Currentbutton] then
+	if not Canuse and not self.leaderboardMode and self.hoveredButtons[Currentbutton] then
 		self.hoveredButtons[Currentbutton] = false
 		self:TweenButton(Currentbutton, Buttontweeninfo, 1)
 	end
+	self:SetButtonEnabled(
+		self.equipBestButton,
+		self.equipBestButton.Visible
+			and Canuse
+			and self.isOpen
+			and not self.selectPlacementPending
+			and (self.selectFrameOpen or not self.tutorialController.running)
+	)
 	for _, Slot in ipairs(self.slotButtons) do
-		local Enabled = Slot.Button.Visible and ((Canuse and self.isOpen) or self:CanUseSelectionSlot(Slot))
-		local Preservehover = not self.selectFrameOpen
-			and self.blockers.Selection == "Disabled"
-			and self.selectedSlotIndex == Slot.Index
-		Slot.Button.Active = Enabled
-		Slot.Button.Interactable = Enabled
-		if not Enabled and self.hoveredButtons[Slot.Button] then
-			if not Preservehover then self.hoveredButtons[Slot.Button] = false end
-			self:TweenButton(Slot.Button, Buttontweeninfo, 1)
+		self:SetButtonEnabled(
+			Slot.Button,
+			Slot.Button.Visible and ((Canuse and self.isOpen) or self:CanUseSelectionSlot(Slot))
+		)
+	end
+end
+
+function Controller:ApplyButtonMode(Popin: boolean)
+	self.transitionVersion += 1
+	self.isTransitioning = false
+	for _, Button in ipairs({ self.reputationButtonL, self.reputationButtonR }) do
+		self:ResetButton(Button)
+		Button.Visible = false
+		Button.Active = false
+		Button.Interactable = false
+	end
+	if self.blockerMode == "Hidden" then
+		self:HideSlotButtons()
+		return
+	end
+
+	local Currentbutton = if self.isOpen then self.reputationButtonR else self.reputationButtonL
+	for _, Button in ipairs({ self.reputationButtonL, self.reputationButtonR }) do
+		if self.leaderboardMode or Button == Currentbutton then
+			Button.Visible = true
+			if Popin then
+				self:PopButton(Button).Completed:Once(function(State)
+					if State == Enum.PlaybackState.Completed then self:RestoreButtonHover(Button) end
+				end)
+			end
 		end
 	end
+	self:RefreshSlotButtons()
+	self:UpdateButtonAvailability()
 end
 
 function Controller:RefreshButtons()
@@ -193,30 +230,12 @@ function Controller:RefreshButtons()
 	end
 	local Previousmode = self.blockerMode
 	self.blockerMode = Mode
-	self.transitionVersion += 1
-	self.isTransitioning = false
-	for _, Button in ipairs({ self.reputationButtonL, self.reputationButtonR }) do
-		self:ResetButton(Button)
-		Button.Visible = false
-		Button.Active = false
-		Button.Interactable = false
-	end
-	if Mode == "Hidden" then
-		self:HideSlotButtons()
-		return
-	end
+	self:ApplyButtonMode(Previousmode == "Hidden")
+end
 
-	local Button = if self.isOpen then self.reputationButtonR else self.reputationButtonL
-	Button.Visible = true
-	if Previousmode == "Hidden" then
-		self.buttonScales[Button].Scale = 0.82
-		local Showtween = self:TweenButton(Button, Buttonshowtweeninfo, 1)
-		Showtween.Completed:Once(function(State)
-			if State == Enum.PlaybackState.Completed then self:RestoreButtonHover(Button) end
-		end)
-	end
-	self:RefreshSlotButtons()
-	self:UpdateButtonAvailability()
+function Controller:SetLeaderboardMode(Active: boolean)
+	self.leaderboardMode = Active
+	self:ApplyButtonMode(Active)
 end
 
 function Controller:SetBlocker(Source: string, Mode: BlockerMode?)
@@ -238,6 +257,7 @@ function Controller:CloseTopbarFrames()
 	self.dailyRewardController:CloseForSwitch()
 	self.settingController:CloseForSwitch()
 	self.donationController:CloseForSwitch()
+	self.groupRewardController:CloseForSwitch()
 end
 
 function Controller:SetSelectionControlsEnabled(Enabled: boolean)
@@ -246,18 +266,9 @@ function Controller:SetSelectionControlsEnabled(Enabled: boolean)
 	self.selectCloseButton.Interactable = Enabled
 	self.infoCloseButton.Active = Enabled
 	self.infoCloseButton.Interactable = Enabled
-	if self.equipBestButton.Active ~= Cardsenabled then
-		self.equipBestButton.Active = Cardsenabled
-		self.equipBestButton.Interactable = Cardsenabled
-		if not Cardsenabled then Shared.ApplyActiveScale(self.equipBestButton, false) end
-	end
 	for _, Card in ipairs(self.selectCards) do
 		for _, Button in ipairs(Card.Buttons) do
-			if Button.Active ~= Cardsenabled then
-				Button.Active = Cardsenabled
-				Button.Interactable = Cardsenabled
-				if not Cardsenabled then Shared.ApplyActiveScale(Button, false) end
-			end
+			self:SetButtonEnabled(Button, Cardsenabled)
 		end
 	end
 end
@@ -514,7 +525,6 @@ function Controller:CloseSelectionFrame(Instant: boolean?, Fast: boolean?)
 	self.selectionRequestId += 1
 	self.selectFrameAnimationId += 1
 	local Animationid = self.selectFrameAnimationId
-	local Slot = if self.selectedSlotIndex then self.slotButtons[self.selectedSlotIndex] else nil
 	if self.selectFrameTween then self.selectFrameTween:Cancel() end
 	self.selectFrameOpen = false
 	self.selectPlacementPending = false
@@ -526,7 +536,6 @@ function Controller:CloseSelectionFrame(Instant: boolean?, Fast: boolean?)
 		self.selectFrameScale.Scale = 1
 		self.selectedSlotIndex = nil
 		self:SetBlocker("Selection", nil)
-		if Slot then self:RestoreButtonHover(Slot.Button) end
 		return
 	end
 	local Tweeninfo = if Fast then Fastselectframehidetweeninfo else Selectframehidetweeninfo
@@ -538,7 +547,6 @@ function Controller:CloseSelectionFrame(Instant: boolean?, Fast: boolean?)
 		self.selectFrameScale.Scale = 1
 		self.selectedSlotIndex = nil
 		self:SetBlocker("Selection", nil)
-		if Slot then self:RestoreButtonHover(Slot.Button) end
 	end)
 end
 
@@ -627,7 +635,12 @@ function Controller:RemoveDisplayItem(Slotindex: number)
 end
 
 function Controller:EquipBest()
-	if not self.selectFrameOpen or self.selectPlacementPending then return end
+	self:SyncFrameBlockers()
+	if not self.equipBestButton.Active or self.selectPlacementPending then return end
+	if self.displaySpaceLevel == 0 then
+		Core:GetController("MessageController"):Show("Upgrade Display Space to unlock more slots", ErrorMessageGradient)
+		return
+	end
 	local Requestid = self.selectionRequestId
 	self.selectPlacementPending = true
 	self:SetSelectionControlsEnabled(false)
@@ -661,7 +674,7 @@ function Controller:EquipBest()
 		end
 		return
 	end
-	if Iscurrentrequest then self:SetSelectionControlsEnabled(true) end
+	if Iscurrentrequest then self:RefreshSelectionControls() end
 	local Reason = if Success and type(Response) == "table" then Response.Reason else "EquipFailed"
 	local Message = if Reason == "Busy"
 		then "Please wait before changing your display"
@@ -718,14 +731,12 @@ function Controller:SwapButtons(ButtonToHide: GuiButton, ButtonToShow: GuiButton
 			self.isTransitioning = false
 			self:UpdateButtonAvailability()
 			self:RestoreButtonHover(ButtonToShow)
-			for _, Slot in ipairs(self.slotButtons) do
-				self:RestoreButtonHover(Slot.Button)
-			end
 		end)
 	end)
 end
 
 function Controller:Open()
+	if self.leaderboardMode then return end
 	self:CloseTopbarFrames()
 	self:SyncFrameBlockers()
 	if self.isOpen or not self:CanUseButtons() then return end
@@ -758,6 +769,7 @@ end
 
 function Controller:PrepareForRestoration()
 	if self.restorationPrepared then return end
+	if self.leaderboardMode then self.leaderboardController:CloseForSwitch() end
 	self:CloseSelectionFrame(true)
 	self.restorationPrepared = true
 	self.wasOpenBeforeRestoration = self.isOpen
@@ -793,11 +805,7 @@ function Controller:ApplyUpgradeState(State)
 		Slot.Icon.Visible = not Slot.Unlocked and not Canremove
 		Slot.Text.Visible = Slot.Unlocked or Canremove
 		if Slot.Unlocked and not Wasunlocked and Slot.Button.Visible then
-			self.buttonScales[Slot.Button].Scale = 0.82
-			local Showtween = self:TweenButton(Slot.Button, Buttonshowtweeninfo, 1)
-			Showtween.Completed:Once(function(State)
-				if State == Enum.PlaybackState.Completed then self:RestoreButtonHover(Slot.Button) end
-			end)
+			self:PopButton(Slot.Button)
 		end
 	end
 	if self.selectFrameOpen and self.selectedSlotIndex and self.selectedSlotIndex > Level then
@@ -827,7 +835,7 @@ function Controller:Init()
 	self.selectGridLayout = Selectscrollingframe:WaitForChild("UIGridLayout") :: UIGridLayout
 	self.selectTemplate = Selectscrollingframe:WaitForChild("Template") :: GuiObject
 	self.selectCloseButton = Selectframe:WaitForChild("CloseButton") :: GuiButton
-	self.equipBestButton = Selectframe:WaitForChild("EquipBestButton") :: GuiButton
+	self.equipBestButton = Expositionui:WaitForChild("EquipBestButton") :: GuiButton
 	self.blackFrame = Selectframe:WaitForChild("BlackFrame") :: GuiObject
 	self.infoFrame = Infoframe
 	self.infoScale = Shared.EnsureScale(Infoframe)
@@ -847,6 +855,7 @@ function Controller:Init()
 	self.slotTextTweens = {}
 	self.hoveredButtons = {}
 	self.slotButtons = {}
+	self.shelfButtons = {}
 	self.animatedButtons = { self.reputationButtonL, self.reputationButtonR }
 	self.selectCards = {}
 	self.selectCardsById = {}
@@ -871,6 +880,7 @@ function Controller:Init()
 	self.infoItemId = nil
 	self.isOpen = false
 	self.isTransitioning = false
+	self.leaderboardMode = false
 	self.restorationPrepared = false
 	self.transitionVersion = 0
 
@@ -889,11 +899,16 @@ function Controller:Init()
 		Slot.Text.Text = "+"
 		Slot.Text.Rotation = 0
 		Slot.Text.Visible = false
+		table.insert(self.slotButtons, Slot)
+		table.insert(self.shelfButtons, Button)
+	end
+	table.insert(self.shelfButtons, self.equipBestButton)
+
+	for _, Button in ipairs(self.shelfButtons) do
 		Button.Visible = false
 		Button.Active = false
 		Button.Interactable = false
-		table.insert(self.slotButtons, Slot)
-		table.insert(self.animatedButtons, Button)
+		self.buttonScales[Button] = Shared.EnsureScale(Button)
 	end
 
 	for _, Button in ipairs(self.animatedButtons) do
@@ -957,7 +972,10 @@ function Controller:Start()
 	self.dailyRewardController = Core:GetController("DailyRewardController")
 	self.settingController = Core:GetController("SettingController")
 	self.donationController = Core:GetController("DonationController")
+	self.groupRewardController = Core:GetController("GroupRewardController")
 	self.completionController = Core:GetController("CompletionController")
+	self.leaderboardController = Core:GetController("LeaderboardController")
+	self.tutorialController = Core:GetController("TutorialController")
 	Runservice.Heartbeat:Connect(function()
 		local Sequence = Core:GetController("MutationController"):GetGradient("Rainbow")
 		for _, Gradient in ipairs(self.selectRainbowGradients or {}) do
@@ -968,12 +986,26 @@ function Controller:Start()
 	Shared.AnimateButton(self.selectCloseButton, function() return not self.selectCloseButton.Active end)
 	Shared.AnimateButton(self.infoCloseButton, function() return not self.infoCloseButton.Active end)
 	Shared.AnimateButton(self.equipBestButton, function() return not self.equipBestButton.Active end)
-	Core:GetController("GamepadController"):OnActivated(self.reputationButtonL, function() self:Open() end)
-	Core:GetController("GamepadController"):OnActivated(self.reputationButtonR, function() self:Close() end)
+	Core:GetController("GamepadController"):OnActivated(self.reputationButtonL, function()
+		if self.leaderboardMode then
+			self.leaderboardController:Step(-1)
+			return
+		end
+		self:Open()
+	end)
+	Core:GetController("GamepadController"):OnActivated(self.reputationButtonR, function()
+		if self.leaderboardMode then
+			self.leaderboardController:Step(1)
+			return
+		end
+		self:Close()
+	end)
 	Core:GetController("GamepadController"):OnActivated(self.selectCloseButton, function() self:CloseSelectionFrame(false) end)
 	Core:GetController("GamepadController"):OnActivated(self.infoCloseButton, function() self:CloseItemInfo() end)
 	Core:GetController("GamepadController"):OnActivated(self.equipBestButton, function() self:EquipBest() end)
 	for _, Slot in ipairs(self.slotButtons) do
+		Shared.AnimateButton(Slot.Button, function() return not Slot.Button.Active end)
+		Slot.Button.MouseButton1Down:Connect(function() self:CloseTopbarFrames() end)
 		Core:GetController("GamepadController"):OnActivated(Slot.Button, function()
 			self:SyncFrameBlockers()
 			if not Slot.Button.Active then return end

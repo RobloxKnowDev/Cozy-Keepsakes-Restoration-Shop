@@ -151,6 +151,19 @@ function DailyRewardService:Wipe(UserId: number): (boolean, string)
 	return true, if Result == nil then "no save found" else "save erased"
 end
 
+function DailyRewardService:Peek(Player: Player): DailyRewardData?
+	local Data = DataByPlayer[Player]
+	if not Data or not LoadedByPlayer[Player] or ErroredByPlayer[Player] then return nil end
+	return SerializeData(Data)
+end
+
+function DailyRewardService:Read(UserId: number): (boolean, any)
+	local Success, Saved = Datastorerequest.Run(SaveAttempts, function()
+		return Store:GetAsync(tostring(UserId), GetOptions)
+	end)
+	return Success, Saved
+end
+
 function DailyRewardService:SavePlayer(Player: Player): boolean
 	local UserId = Player.UserId
 	ActiveWrites += 1

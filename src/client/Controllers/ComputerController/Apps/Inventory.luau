@@ -1,9 +1,12 @@
+local ContentProvider = game:GetService("ContentProvider")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Mutationconfig = require(ReplicatedStorage.Shared.Config.Mutation)
+local Playershop = require(ReplicatedStorage.Shared.Utils.PlayerShop)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Uigradient = require(ReplicatedStorage.Shared.Utils.UiGradient)
@@ -13,7 +16,13 @@ local Inventory = {}
 local UnknownText = "???"
 local CleanText = "Clean"
 local SellText = "Sell"
+local BusyText = "..."
+local ObjectWaitSeconds = 10
 local DetailsTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local function WaitRestorationObject(ObjectKey: string): Instance?
+	return Playershop(Players.LocalPlayer):WaitForChild("GeneratedItems"):WaitForChild(ObjectKey, ObjectWaitSeconds)
+end
 
 local function GetPercent(Item): number
 	return math.clamp(tonumber(Item.RestorationPercent) or 0, 0, 100)
@@ -46,8 +55,12 @@ local function SetButtonEnabled(Button: GuiButton, Enabled: boolean)
 	if not Enabled then Shared.ApplyActiveScale(Button, false) end
 end
 
+local function AreCardsEnabled(Controller): boolean
+	return not Controller.inventoryInfoFrame.Visible and not Controller.inventoryCleaning
+end
+
 function Inventory.RefreshControls(Controller)
-	local CardsEnabled = not Controller.inventoryInfoFrame.Visible
+	local CardsEnabled = AreCardsEnabled(Controller)
 	for _, Card in ipairs(Controller.inventoryCards) do
 		SetButtonEnabled(Card.Button, CardsEnabled)
 		SetButtonEnabled(Card.ButtonOpen, CardsEnabled)
@@ -91,7 +104,14 @@ function Inventory.SetCardOpen(Controller, Card, Open: boolean)
 	Card.ButtonOpen.Visible = Open
 	Card.Frame.ZIndex = if Open then 10 else 1
 	Inventory.UpdateCanvas(Controller)
-	if Open then Inventory.ScrollToOpenCard(Controller) end
+	if Open then
+		Inventory.ScrollToOpenCard(Controller)
+		task.spawn(function()
+			ContentProvider:PreloadAsync({
+				ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Object"):WaitForChild(Card.Item.ObjectKey),
+			})
+		end)
+	end
 end
 
 function Inventory.ShowItemInfo(Controller, Item, Animate: boolean?)
@@ -134,14 +154,32 @@ function Inventory.CloseItemInfo(Controller)
 	Inventory.RefreshControls(Controller)
 end
 
-function Inventory.Clean(Controller, ItemId: number)
-	local Object = RemoteManager:InvokeServer("RestorationService", "BeginItem", ItemId)
-	if not Object then
+function Inventory.Clean(Controller, Card)
+	local ActionText = Card.ActionButton:WaitForChild("Text") :: TextLabel
+	Controller.inventoryCleaning = true
+	ActionText.Text = BusyText
+	Inventory.RefreshControls(Controller)
+	local Success, Object, Started = pcall(function()
+		return RemoteManager:InvokeServer("RestorationService", "BeginItem", Card.Item.Id)
+	end)
+	if Success and Started and not Object then
+		Object = WaitRestorationObject(Card.Item.ObjectKey)
+		if not Object then
+			RemoteManager:FireServer("RestorationService", "SessionEnded")
+		end
+	end
+	Controller.inventoryCleaning = false
+	ActionText.Text = CleanText
+	Inventory.RefreshControls(Controller)
+	if not Success then
+		error(Object, 0)
+	end
+	if not Started or not Object then
 		return
 	end
 	Controller:Close()
 	task.defer(function()
-		Core:GetController("RestorationController"):Enter()
+		Core:GetController("RestorationController"):Enter(Object)
 	end)
 end
 
@@ -214,7 +252,7 @@ local function CreateCard(Controller, Item, IsOpen: boolean)
 		Item = Item,
 		Done = Done,
 	}
-	local Enabled = not Controller.inventoryInfoFrame.Visible
+	local Enabled = AreCardsEnabled(Controller)
 	for _, Target in ipairs({ Button, ButtonOpen, InfoButton, ActionButton }) do
 		Target.Active = Enabled
 		Target.Interactable = Enabled
@@ -234,7 +272,7 @@ local function CreateCard(Controller, Item, IsOpen: boolean)
 	end)
 	Gamepad:OnActivated(ActionButton, function()
 		if not Done then
-			Inventory.Clean(Controller, Card.Item.Id)
+			Inventory.Clean(Controller, Card)
 		elseif not Controller.sellLocked then
 			Inventory.Sell(Controller, Card.Item.Id)
 		end
@@ -327,6 +365,7 @@ function Inventory.Init(Controller)
 	Controller.inventoryCards = {}
 	Controller.inventoryCardsById = {}
 	Controller.inventoryDirty = false
+	Controller.inventoryCleaning = false
 	Controller.inventoryOpenCard = nil
 	Controller.inventoryInfoItemId = nil
 	Controller.inventoryRainbowGradients = nil

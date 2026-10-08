@@ -206,6 +206,7 @@ function ComputerController:Open()
 	Core:GetController("DailyRewardController"):CloseForSwitch()
 	Core:GetController("SettingController"):CloseForSwitch()
 	Core:GetController("DonationController"):CloseForSwitch()
+	Core:GetController("GroupRewardController"):CloseForSwitch()
 	local CustomerController = Core:GetController("CustomerController")
 	if CustomerController:IsVisible() then CustomerController:CloseOfferUi(true) end
 	self.isOpen = true

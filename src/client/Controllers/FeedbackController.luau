@@ -20,6 +20,7 @@ local FeedbackController = {
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local FormatCurrency = require(ReplicatedStorage.Shared.Utils.CurrencyFormatter)
+local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local MicroTween = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ReturnTween = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
@@ -1201,8 +1202,23 @@ function FeedbackController:BindClicksIn(Root: Instance)
 	Root.DescendantAdded:Connect(Bind)
 end
 
+function FeedbackController:BindTopbarClicks()
+	local function Bind(Topbaricon)
+		Topbaricon.toggled:Connect(function(_, Fromsource)
+			if Fromsource == "User" then
+				self:UiClick()
+			end
+		end)
+	end
+	for _, Topbaricon in pairs(Icon.getIcons()) do
+		Bind(Topbaricon)
+	end
+	Icon.iconAdded:Connect(Bind)
+end
+
 function FeedbackController:Start()
 	self:BindClicksIn(Players.LocalPlayer:WaitForChild("PlayerGui"))
+	self:BindTopbarClicks()
 	self:StartMusic()
 	MarketplaceService.PromptProductPurchaseFinished:Connect(function(_UserId, _ProductId, WasPurchased)
 		if WasPurchased then self:Confirm() end

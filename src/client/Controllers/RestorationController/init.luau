@@ -182,7 +182,7 @@ function Controller:CanEnter(): boolean
 		and not Core:GetController("CompletionController"):IsVisible()
 end
 
-function Controller:Enter()
+function Controller:Enter(Prepared: (Model | BasePart)?)
 	if Activeobject or self.entering then
 		self.pendingEnter = true
 		return
@@ -190,6 +190,7 @@ function Controller:Enter()
 	Core:GetController("DailyRewardController"):CloseForSwitch()
 	Core:GetController("SettingController"):CloseForSwitch()
 	Core:GetController("DonationController"):CloseForSwitch()
+	Core:GetController("GroupRewardController"):CloseForSwitch()
 	local Expositioncontroller = Core:GetController("ExpositionController")
 	Expositioncontroller:PrepareForRestoration()
 	if not self:CanEnter() then
@@ -197,9 +198,12 @@ function Controller:Enter()
 		return
 	end
 	self.pendingEnter = false
-	self.entering = true
-	local Object = Remotemanager:InvokeServer("RestorationService", "BeginSession")
-	self.entering = false
+	local Object = Prepared
+	if not Object then
+		self.entering = true
+		Object = Remotemanager:InvokeServer("RestorationService", "BeginSession")
+		self.entering = false
+	end
 	if not Object or (not Object:IsA("BasePart") and not Object:IsA("Model")) then
 		Expositioncontroller:CancelRestoration()
 		return
@@ -250,10 +254,6 @@ local function Handlegamepadbutton(Keycode: Enum.KeyCode)
 		if Runtime.SelectedName == "Transform" then Interface:Trigger(Interface.LockButton) end
 	elseif Keycode == Enum.KeyCode.ButtonY then
 		Interface:Trigger(Interface.ReturnButton)
-	elseif Keycode == Enum.KeyCode.DPadUp then
-		Core:GetController("InspectionCameraController"):NudgeZoom(1)
-	elseif Keycode == Enum.KeyCode.DPadDown then
-		Core:GetController("InspectionCameraController"):NudgeZoom(-1)
 	end
 end
 

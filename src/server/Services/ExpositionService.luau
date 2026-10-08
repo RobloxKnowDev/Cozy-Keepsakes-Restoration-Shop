@@ -209,11 +209,14 @@ local function Getdisplayreputation(Player: Player): number
 			Reputation += Placement.Item.Reputation
 		end
 	end
-	return Core:GetService("StatsService"):GetReputationContribution(Player, Reputation)
+	return Reputation
 end
 
 local function Refreshdisplayreputation(Player: Player): number
-	return Core:GetService("StatsService"):SetReputation(Player, Getdisplayreputation(Player))
+	local Basereputation = Getdisplayreputation(Player)
+	local Statsservice = Core:GetService("StatsService")
+	Statsservice:SetRankedReputation(Player, Basereputation * Core:GetService("MonetizationService"):GetPassReputationMultiplier(Player))
+	return Statsservice:SetReputation(Player, Statsservice:GetReputationContribution(Player, Basereputation))
 end
 
 local function Builddisplayitems(Display: ShopDisplay): { DisplayEntry }

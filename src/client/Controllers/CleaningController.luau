@@ -27,7 +27,7 @@ assert(
 	)
 )
 assert(
-	Facemapping.GetDecalPoint and Facemapping.TouchesDecal and Facemapping.ShowsDecal,
+	Facemapping.GetDecalPoint and Facemapping.TouchesDecal and Facemapping.ShowsDecal and Facemapping.GetBrushRadius,
 	string.format(
 		"CleaningController: outdated FaceMapping (%d copies in Shared.Utils, delete the duplicates in Studio)",
 		Countcopies("FaceMapping")
@@ -49,6 +49,8 @@ local Occlusionoffset = 0.02
 local Occlusionlength = 64
 local Activecaster = nil
 local Activeobject = nil
+local Activedirtstep = 0
+local Activebrushradius = 0
 
 local function Getfacename(Localnormal: Vector3): string
 	local Absolutex = math.abs(Localnormal.X)
@@ -130,14 +132,16 @@ local Leftovers: { [Decal]: buffer } = {}
 local Leftoverrequests: { [Decal]: number } = {}
 local Leftoverinterval = 0.3
 local Coveragegrid = Cleaningconfig.CoverageGrid
+local Basefadestep = math.ceil(255 / Cleaningconfig.DirtPasses)
 local Overlayimages: { [Instance]: EditableImage } = {}
 local Overlaypending: { [Instance]: boolean } = {}
+local Overlayscales: { [Instance]: Vector2 } = {}
 local Overlaybudget = 56 * 1024 * 1024
 local Preloadframebudget = 0.005
 local Overlayradiusratio = 1 / 16
 local Cottonscale = 4 / 3
 local Brushscale = 1.5
-local Dirtfadestep = math.ceil(255 / Cleaningconfig.DirtPasses)
+local Toothbrushradius = Overlayradiusratio * Brushscale
 local Stainsamplestep = 2
 local Stainspotratio = 0.2
 local Tickmarks: { [Instance]: buffer } = {}
@@ -148,6 +152,14 @@ local Pingmovement = 0.002
 local Dissolvekeep = { 0.45, 0.2, 0 }
 local Dissolveinterval = 0.06
 local Finishassist = Cleaningconfig.FinishAssist
+
+type Pixelsource = { Pixels: buffer, Size: Vector2 }
+
+local Sourcepixels: { [string]: Pixelsource } = {}
+local Sourceloading: { [string]: boolean } = {}
+local Scaledpixels: { [string]: { Scale: number, Source: Pixelsource } } = {}
+local Levelpixels: { [string]: { Image: string, Scale: number, Shrink: Vector2, Source: Pixelsource } } = {}
+local Levelbudget = 16 * 1024 * 1024
 
 export type StainCluster = {
 	Surface: SurfaceGui?,
@@ -193,19 +205,22 @@ local function Applyoverlay(Test: ImageLabel | Decal, Created: EditableImage)
 		Test.ImageContent = Content.fromObject(Created)
 	end
 	Overlayimages[Test] = Created
+	Overlayscales[Test] = Vector2.one * math.min(Created.Size.X, Created.Size.Y)
 	Test.Destroying:Connect(function()
 		Overlayimages[Test] = nil
 		Overlaypending[Test] = nil
+		Overlayscales[Test] = nil
 		Tickmarks[Test] = nil
 		Lastfades[Test] = nil
 		Created:Destroy()
 	end)
 end
 
-local function Shrinkpixels(Pixels: buffer, Size: Vector2, Scale: number): (buffer, Vector2)
-	local Sourcewidth, Sourceheight = Size.X, Size.Y
-	local Width = math.max(math.floor(Sourcewidth * Scale), 1)
-	local Height = math.max(math.floor(Sourceheight * Scale), 1)
+local function Shrinkpixels(Source: Pixelsource, Scalex: number, Scaley: number): Pixelsource
+	local Pixels = Source.Pixels
+	local Sourcewidth, Sourceheight = Source.Size.X, Source.Size.Y
+	local Width = math.max(math.floor(Sourcewidth * Scalex), 1)
+	local Height = math.max(math.floor(Sourceheight * Scaley), 1)
 	local Result = buffer.create(Width * Height * 4)
 	local Minxs = table.create(Width, 0)
 	local Maxxs = table.create(Width, 0)
@@ -239,15 +254,105 @@ local function Shrinkpixels(Pixels: buffer, Size: Vector2, Scale: number): (buff
 			buffer.writeu32(Result, (Y * Width + X) * 4, buffer.readu32(Pixels, Best * 4))
 		end
 	end
-	return Result, Vector2.new(Width, Height)
+	return { Pixels = Result, Size = Vector2.new(Width, Height) }
 end
 
-local function Preloaddecals(Decals: { Decal }, Caster)
+local function Loadsource(Image: string): Pixelsource?
+	while Sourceloading[Image] do
+		task.wait()
+	end
+	if not Sourcepixels[Image] then
+		Sourceloading[Image] = true
+		local Success, Result = pcall(function()
+			local Editable = Assetservice:CreateEditableImageAsync(Content.fromUri(Image))
+			local Source = { Pixels = Editable:ReadPixelsBuffer(Vector2.zero, Editable.Size), Size = Editable.Size }
+			Editable:Destroy()
+			return Source
+		end)
+		if Success then
+			Sourcepixels[Image] = Result
+		else
+			warn("CleaningController: EditableImage failed for " .. Image .. ": " .. tostring(Result))
+		end
+		Sourceloading[Image] = nil
+	end
+	return Sourcepixels[Image]
+end
+
+local function Getscaled(Image: string, Source: Pixelsource, Scale: number): Pixelsource
+	if Scale == 1 then
+		return Source
+	end
+	local Cached = Scaledpixels[Image]
+	if not Cached or Cached.Scale ~= Scale then
+		Cached = { Scale = Scale, Source = Shrinkpixels(Source, Scale, Scale) }
+		Scaledpixels[Image] = Cached
+	end
+	return Cached.Source
+end
+
+local function Levelkey(Image: string, Scale: number, Shrink: Vector2): string
+	return Image .. "|" .. Scale .. "|" .. Shrink.X .. "|" .. Shrink.Y
+end
+
+local function Getlevel(Image: string, Scale: number, Base: Pixelsource, Shrink: Vector2): Pixelsource
+	if Shrink == Vector2.one then
+		return Base
+	end
+	local Key = Levelkey(Image, Scale, Shrink)
+	local Cached = Levelpixels[Key]
+	if Cached then
+		return Cached.Source
+	end
+	local Parent, Parentshrink = Base, Vector2.one
+	for _, Entry in pairs(Levelpixels) do
+		if
+			Entry.Image == Image
+			and Entry.Scale == Scale
+			and Entry.Shrink.X >= Shrink.X
+			and Entry.Shrink.Y >= Shrink.Y
+			and Entry.Shrink.X * Entry.Shrink.Y < Parentshrink.X * Parentshrink.Y
+		then
+			Parent, Parentshrink = Entry.Source, Entry.Shrink
+		end
+	end
+	local Level = Shrinkpixels(Parent, Shrink.X / Parentshrink.X, Shrink.Y / Parentshrink.Y)
+	Levelpixels[Key] = { Image = Image, Scale = Scale, Shrink = Shrink, Source = Level }
+	return Level
+end
+
+local function Trimlevels(Keys: { [string]: boolean })
+	local Bytes = 0
+	for _, Entry in pairs(Levelpixels) do
+		Bytes += buffer.len(Entry.Source.Pixels)
+	end
+	if Bytes <= Levelbudget then
+		return
+	end
+	for Key in pairs(Levelpixels) do
+		if not Keys[Key] then
+			Levelpixels[Key] = nil
+		end
+	end
+end
+
+local function Preloaddecals(Decals: { Decal })
+	local Shrinks: { [Decal]: Vector2 } = {}
 	for _, Decal in ipairs(Decals) do
 		Overlaypending[Decal] = true
+		local Radius = Facemapping.GetBrushRadius(
+			(Decal.Parent :: BasePart).Size,
+			Decal.Face.Name,
+			Toothbrushradius,
+			Activebrushradius
+		)
+		Shrinks[Decal] = Vector2.new(
+			2 ^ -math.round(math.log(Radius.X / Toothbrushradius, 2)),
+			2 ^ -math.round(math.log(Radius.Y / Toothbrushradius, 2))
+		)
 	end
 	task.spawn(function()
-		local Sources: { [string]: EditableImage } = {}
+		local Sources: { [string]: Pixelsource? } = {}
 		local Images = {}
 		for _, Decal in ipairs(Decals) do
 			if not table.find(Images, Decal.Texture) then
@@ -257,14 +362,7 @@ local function Preloaddecals(Decals: { Decal }, Caster)
 		local Remaining = #Images
 		for _, Image in ipairs(Images) do
 			task.spawn(function()
-				local Success, Created = pcall(function()
-					return Assetservice:CreateEditableImageAsync(Content.fromUri(Image))
-				end)
-				if Success then
-					Sources[Image] = Created
-				else
-					warn("CleaningController: EditableImage failed for " .. Image .. ": " .. tostring(Created))
-				end
+				Sources[Image] = Loadsource(Image)
 				Remaining -= 1
 			end)
 		end
@@ -275,43 +373,50 @@ local function Preloaddecals(Decals: { Decal }, Caster)
 		for _, Decal in ipairs(Decals) do
 			local Source = Sources[Decal.Texture]
 			if Source then
-				Total += Source.Size.X * Source.Size.Y * 4
+				Total += Source.Size.X * Source.Size.Y * 4 * Shrinks[Decal].X * Shrinks[Decal].Y
 			end
 		end
 		local Scale = math.min(1, math.sqrt(Overlaybudget / math.max(Total, 1)))
-		local Pixels: { [string]: buffer } = {}
-		local Sizes: { [string]: Vector2 } = {}
-		for Image, Source in pairs(Sources) do
-			local Full = Source:ReadPixelsBuffer(Vector2.zero, Source.Size)
-			if Scale < 1 then
-				Pixels[Image], Sizes[Image] = Shrinkpixels(Full, Source.Size, Scale)
-			else
-				Pixels[Image], Sizes[Image] = Full, Source.Size
-			end
-			Source:Destroy()
-		end
-		local Started = os.clock()
+		local Keys = {}
 		for _, Decal in ipairs(Decals) do
+			Keys[Levelkey(Decal.Texture, Scale, Shrinks[Decal])] = true
+		end
+		Trimlevels(Keys)
+		local Order = table.clone(Decals)
+		table.sort(Order, function(First, Second)
+			return Shrinks[First].X * Shrinks[First].Y > Shrinks[Second].X * Shrinks[Second].Y
+		end)
+		local Started = os.clock()
+		for _, Decal in ipairs(Order) do
 			if os.clock() - Started > Preloadframebudget then
 				task.wait()
 				Started = os.clock()
 			end
 			local Image = Decal.Texture
-			if Decal.Parent and Pixels[Image] then
-				local Success, Created = pcall(function()
-					local Overlay = Assetservice:CreateEditableImage({ Size = Sizes[Image] })
-					Overlay:WritePixelsBuffer(Vector2.zero, Sizes[Image], Pixels[Image])
-					return Overlay
-				end)
-				if Success then
-					Applyoverlay(Decal, Created)
-				else
-					warn("CleaningController: EditableImage failed for " .. Decal:GetFullName() .. ": " .. tostring(Created))
+			local Source = Sources[Image]
+			if not Source then
+				Overlaypending[Decal] = false
+			elseif Decal.Parent then
+				local Base = Getscaled(Image, Source, Scale)
+				local Level = Getlevel(Image, Scale, Base, Shrinks[Decal])
+				if Decal.Parent then
+					local Success, Created = pcall(function()
+						local Overlay = Assetservice:CreateEditableImage({ Size = Level.Size })
+						Overlay:WritePixelsBuffer(Vector2.zero, Level.Size, Level.Pixels)
+						return Overlay
+					end)
+					if Success then
+						Applyoverlay(Decal, Created)
+						Overlayscales[Decal] = Level.Size / Base.Size * math.min(Base.Size.X, Base.Size.Y)
+					else
+						Overlaypending[Decal] = false
+						warn("CleaningController: EditableImage failed for " .. Decal:GetFullName() .. ": " .. tostring(Created))
+					end
 				end
 			end
-		end
-		if Caster then
-			Caster:Load()
+			if not Decal.Parent then
+				Overlaypending[Decal] = nil
+			end
 		end
 	end)
 end
@@ -319,7 +424,7 @@ end
 local function Getoverlayimage(Test: ImageLabel | Decal): EditableImage?
 	local Editable = Overlayimages[Test]
 	if Editable then return Editable end
-	if Overlaypending[Test] then return nil end
+	if Overlaypending[Test] ~= nil then return nil end
 	Overlaypending[Test] = true
 	task.spawn(function()
 		local Source = if Test:IsA("Decal") then Test.Texture else Test.Image
@@ -327,6 +432,7 @@ local function Getoverlayimage(Test: ImageLabel | Decal): EditableImage?
 			return Assetservice:CreateEditableImageAsync(Content.fromUri(Source))
 		end)
 		if not Success then
+			Overlaypending[Test] = false
 			warn("CleaningController: EditableImage failed for " .. Test:GetFullName() .. ": " .. tostring(Created))
 			return
 		end
@@ -371,6 +477,8 @@ end
 
 local Pendingpoints: { [ImageLabel]: { Vector2 } } = {}
 local Pendingdirt: { [Decal]: { Vector2 } } = {}
+local Pendingticks: { [Decal]: number } = {}
+local Pendingorder: { Decal } = {}
 
 local function Takepoints(Texture: ImageLabel): { Vector2 }?
 	local Points = Pendingpoints[Texture]
@@ -397,29 +505,35 @@ local function Erasetexture(Texture: ImageLabel, Surface: SurfaceGui, Facepoint:
 	Editable:DrawCircle(Center, Radius, Color3.new(0, 0, 0), 1, Enum.ImageCombineType.Overwrite)
 end
 
-local function Fadedecal(Decal: Decal, Localpoint: Vector2, Radiusscale: number)
+local function Fadedecal(Decal: Decal, Localpoint: Vector2, Radius: Vector2)
 	if Localpoint.X < 0 or Localpoint.Y < 0 or Localpoint.X > 1 or Localpoint.Y > 1 then return end
+	local Editable = Getoverlayimage(Decal)
+	if not Editable and Overlaypending[Decal] then return end
 	local Points = Pendingdirt[Decal]
 	if not Points then
 		Points = {}
 		Pendingdirt[Decal] = Points
+		Pendingticks[Decal] = Fadetick
+		table.insert(Pendingorder, Decal)
 	end
-	if #Points < Maxpendingpoints then table.insert(Points, Localpoint) end
-	local Editable = Getoverlayimage(Decal)
+	if #Points >= Maxpendingpoints then return end
+	table.insert(Points, Localpoint)
 	if not Editable then return end
 	local Size = Editable.Size
 	local Width, Height = Size.X, Size.Y
 	local Centerx = math.round(Localpoint.X * Width)
 	local Centery = math.round(Localpoint.Y * Height)
-	local Tick = Fadetick
+	local Tick = Pendingticks[Decal]
 	local Last = Lastfades[Decal]
 	if Last and Last.Tick == Tick and Last.X == Centerx and Last.Y == Centery then return end
 	Lastfades[Decal] = { Tick = Tick, X = Centerx, Y = Centery }
-	local Radius = math.max(math.round(math.min(Width, Height) * Overlayradiusratio * Radiusscale), 2)
-	local Minx = math.max(Centerx - Radius, 0)
-	local Miny = math.max(Centery - Radius, 0)
-	local Maxx = math.min(Centerx + Radius, Width - 1)
-	local Maxy = math.min(Centery + Radius, Height - 1)
+	local Pixelscale = Overlayscales[Decal]
+	local Radiusx = math.max(math.round(Radius.X * Pixelscale.X), 2)
+	local Radiusy = math.max(math.round(Radius.Y * Pixelscale.Y), 2)
+	local Minx = math.max(Centerx - Radiusx, 0)
+	local Miny = math.max(Centery - Radiusy, 0)
+	local Maxx = math.min(Centerx + Radiusx, Width - 1)
+	local Maxy = math.min(Centery + Radiusy, Height - 1)
 	if Minx > Maxx or Miny > Maxy then return end
 	local Regionwidth = Maxx - Minx + 1
 	local Regionheight = Maxy - Miny + 1
@@ -429,20 +543,23 @@ local function Fadedecal(Decal: Decal, Localpoint: Vector2, Radiusscale: number)
 		Marks = buffer.create(Width * Height * 2)
 		Tickmarks[Decal] = Marks
 	end
-	local Radiussquared = Radius * Radius
+	local Radiusxsquared = Radiusx * Radiusx
+	local Radiusysquared = Radiusy * Radiusy
+	local Ellipselimit = Radiusxsquared * Radiusysquared
 	local Changed = false
 	for Y = Miny, Maxy do
 		local Dy = Y - Centery
+		local Rowlimit = Ellipselimit - Dy * Dy * Radiusxsquared
 		for X = Minx, Maxx do
 			local Dx = X - Centerx
-			if Dx * Dx + Dy * Dy <= Radiussquared then
+			if Dx * Dx * Radiusysquared <= Rowlimit then
 				local Markoffset = (Y * Width + X) * 2
 				if buffer.readu16(Marks, Markoffset) ~= Tick then
 					buffer.writeu16(Marks, Markoffset, Tick)
 					local Alphaoffset = ((Y - Miny) * Regionwidth + (X - Minx)) * 4 + 3
 					local Alpha = buffer.readu8(Pixels, Alphaoffset)
 					if Alpha > 0 then
-						buffer.writeu8(Pixels, Alphaoffset, math.max(Alpha - Dirtfadestep, 0))
+						buffer.writeu8(Pixels, Alphaoffset, math.max(Alpha - Activedirtstep, 0))
 						Changed = true
 					end
 				end
@@ -459,6 +576,8 @@ local Overlayframenames = { Ink = true, ScratchesFrame = true }
 function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 	table.clear(Pendingpoints)
 	table.clear(Pendingdirt)
+	table.clear(Pendingticks)
+	table.clear(Pendingorder)
 	table.clear(Leftovers)
 	table.clear(Leftoverrequests)
 	if Activecaster then
@@ -467,9 +586,16 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 	local Caster = Surfacecast.new(Object)
 	Activecaster = Caster
 	Activeobject = Object
+	Activedirtstep = Object:GetAttribute("DirtStep") :: number
+	Activebrushradius = Object:GetAttribute("BrushRadius") :: number
 	Object.Destroying:Connect(function()
 		Caster:Destroy()
 	end)
+	if (Object:GetAttribute("DirtVersion") :: number) >= 3 then
+		task.spawn(function()
+			Caster:Load()
+		end)
+	end
 	local Decals = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if
@@ -489,7 +615,7 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 			end)
 		end
 	end
-	Preloaddecals(Decals, if (Object:GetAttribute("DirtVersion") :: number) >= 3 then Caster else nil)
+	Preloaddecals(Decals)
 end
 
 function Cleaningcontroller:CastSurface(Origin: Vector3, Vector: Vector3): Surfacecast.Hit?
@@ -503,10 +629,17 @@ function Cleaningcontroller:EraseDirtOverlay(
 	Radiusscale: number
 ): boolean
 	local Touched = false
+	local Base = Overlayradiusratio * Radiusscale
+	local Minimum = Activebrushradius * Base / Toothbrushradius
 	for _, Decal in ipairs(Getdirtdecals(Part, Worldposition, Worldnormal)) do
 		if Decal:GetAttribute("Cleaned") ~= true then
 			Touched = true
-			Fadedecal(Decal, Getdecalpoint(Part, Worldposition, Decal.Face.Name), Radiusscale)
+			local Facename = Decal.Face.Name
+			Fadedecal(
+				Decal,
+				Getdecalpoint(Part, Worldposition, Facename),
+				Facemapping.GetBrushRadius(Part.Size, Facename, Base, Minimum)
+			)
 		end
 	end
 	return Touched
@@ -516,7 +649,7 @@ function Cleaningcontroller:QueuePing(Worldposition: Vector3)
 	local Moved = (Worldposition - self.lastPingPosition).Magnitude > Pingmovement
 	self.lastPingPosition = Worldposition
 	local Ratio = Activeobject:GetAttribute("CleanedSpots") / Activeobject:GetAttribute("TotalSpots")
-	if Moved and Ratio >= Finishassist.PingStart and Ratio < 1 then
+	if Moved and Ratio >= math.min(Finishassist.Start, Finishassist.StallStart) and Ratio < 1 then
 		self.pingPending = true
 	end
 end
@@ -524,12 +657,14 @@ end
 function Cleaningcontroller:SendDirt(Toolname: string)
 	if os.clock() - self.lastRequest < Cleaninterval then return end
 	local Strokes = {}
-	for Decal, Points in pairs(Pendingdirt) do
-		if Decal.Parent and Decal:GetAttribute("Cleaned") ~= true and #Strokes < Maxdirtstrokes then
-			table.insert(Strokes, { Target = Decal, Points = Points })
+	while #Strokes < Maxdirtstrokes and #Pendingorder > 0 do
+		local Decal = table.remove(Pendingorder, 1) :: Decal
+		if Decal.Parent and Decal:GetAttribute("Cleaned") ~= true then
+			table.insert(Strokes, { Target = Decal, Points = Pendingdirt[Decal] })
 		end
+		Pendingdirt[Decal] = nil
+		Pendingticks[Decal] = nil
 	end
-	table.clear(Pendingdirt)
 	if #Strokes == 0 and not self.pingPending then return end
 	self.pingPending = false
 	self.lastRequest = os.clock()
@@ -591,27 +726,37 @@ function Cleaningcontroller:Start()
 	Remotemanager:OnClientEvent("RestorationService", "LeftoversCleared", Dissolvecells)
 end
 
-local function Scanpixels(Editable: EditableImage, Localpoint: Vector2, Radiusscale: number)
+function Cleaningcontroller:WarmDirtTextures()
+	for _, Texture in ipairs(Cleaningconfig.DirtTextures) do
+		Loadsource(Texture.Image)
+	end
+end
+
+local function Scanpixels(Editable: EditableImage, Localpoint: Vector2, Radiusscale: number, Pixelscale: Vector2)
 	if Localpoint.X < 0 or Localpoint.Y < 0 or Localpoint.X > 1 or Localpoint.Y > 1 then return nil end
 	local Size = Editable.Size
 	local Width, Height = Size.X, Size.Y
 	local Centerx = math.round(Localpoint.X * Width)
 	local Centery = math.round(Localpoint.Y * Height)
-	local Radius = math.max(math.round(math.min(Width, Height) * Overlayradiusratio * Radiusscale), 2)
-	local Minx = math.max(Centerx - Radius, 0)
-	local Miny = math.max(Centery - Radius, 0)
-	local Maxx = math.min(Centerx + Radius, Width - 1)
-	local Maxy = math.min(Centery + Radius, Height - 1)
+	local Radiusx = math.max(math.round(Pixelscale.X * Overlayradiusratio * Radiusscale), 2)
+	local Radiusy = math.max(math.round(Pixelscale.Y * Overlayradiusratio * Radiusscale), 2)
+	local Stretch = Radiusx / Radiusy
+	local Stepx = math.max(math.round(Stainsamplestep * Radiusx / math.max(Radiusx, Radiusy)), 1)
+	local Stepy = math.max(math.round(Stainsamplestep * Radiusy / math.max(Radiusx, Radiusy)), 1)
+	local Minx = math.max(Centerx - Radiusx, 0)
+	local Miny = math.max(Centery - Radiusy, 0)
+	local Maxx = math.min(Centerx + Radiusx, Width - 1)
+	local Maxy = math.min(Centery + Radiusy, Height - 1)
 	if Minx > Maxx or Miny > Maxy then return nil end
 	local Regionwidth = Maxx - Minx + 1
 	local Regionheight = Maxy - Miny + 1
 	local Pixels = Editable:ReadPixelsBuffer(Vector2.new(Minx, Miny), Vector2.new(Regionwidth, Regionheight))
-	local Radiussquared = Radius * Radius
-	local Spotradiussquared = (Radius * Stainspotratio) ^ 2
+	local Radiussquared = Radiusx * Radiusx
+	local Spotradiussquared = (Radiusx * Stainspotratio) ^ 2
 	local Samples, Weight, Spotweight, Sumx, Sumy, Sumxx, Sumyy = 0, 0, 0, 0, 0, 0, 0
-	for Y = Miny, Maxy, Stainsamplestep do
-		local Dy = Y - Centery
-		for X = Minx, Maxx, Stainsamplestep do
+	for Y = Miny, Maxy, Stepy do
+		local Dy = (Y - Centery) * Stretch
+		for X = Minx, Maxx, Stepx do
 			local Dx = X - Centerx
 			local Distancesquared = Dx * Dx + Dy * Dy
 			if Distancesquared <= Radiussquared then
@@ -630,11 +775,12 @@ local function Scanpixels(Editable: EditableImage, Localpoint: Vector2, Radiussc
 	end
 	if Spotweight == 0 then return nil end
 	local Meanx, Meany = Sumx / Weight, Sumy / Weight
-	local Variance = math.max(Sumxx / Weight - Meanx * Meanx + Sumyy / Weight - Meany * Meany, 0)
+	local Variance = math.max(Sumxx / Weight - Meanx * Meanx + (Sumyy / Weight - Meany * Meany) * Stretch * Stretch, 0)
 	return {
 		Mean = Vector2.new(Meanx, Meany),
 		Spread = math.sqrt(Variance),
-		Radius = Radius,
+		Radius = Radiusx,
+		Aspect = Vector2.new(1, Radiusy / Radiusx),
 		Amount = Weight / (Samples * 255),
 		Spot = Spotweight,
 	}
@@ -645,7 +791,12 @@ local function Scanstain(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: Ve
 	if not Editable then return nil end
 	local Canvaspoint = Surface.AbsolutePosition
 		+ Vector2.new(Facepoint.X * Surface.AbsoluteSize.X, Facepoint.Y * Surface.AbsoluteSize.Y)
-	local Scan = Scanpixels(Editable, (Canvaspoint - Texture.AbsolutePosition) / Texture.AbsoluteSize, Radiusscale)
+	local Scan = Scanpixels(
+		Editable,
+		(Canvaspoint - Texture.AbsolutePosition) / Texture.AbsoluteSize,
+		Radiusscale,
+		Overlayscales[Texture]
+	)
 	if not Scan then return nil end
 	local Pixelscale = Texture.AbsoluteSize / Editable.Size
 	local Canvascenter = Texture.AbsolutePosition - Surface.AbsolutePosition + Scan.Mean * Pixelscale
@@ -654,7 +805,7 @@ local function Scanstain(Texture: ImageLabel, Surface: SurfaceGui, Facepoint: Ve
 		Center = Canvascenter / Surface.AbsoluteSize,
 		Spread = Scan.Spread,
 		Radius = Scan.Radius,
-		Scale = Pixelscale / Surface.AbsoluteSize,
+		Scale = Pixelscale * Scan.Aspect / Surface.AbsoluteSize,
 		Amount = Scan.Amount,
 		Spot = Scan.Spot,
 	}
@@ -663,14 +814,14 @@ end
 local function Scandecal(Decal: Decal, Facepoint: Vector2, Radiusscale: number): StainCluster?
 	local Editable = Overlayimages[Decal]
 	if not Editable then return nil end
-	local Scan = Scanpixels(Editable, Facepoint, Radiusscale)
+	local Scan = Scanpixels(Editable, Facepoint, Radiusscale, Overlayscales[Decal])
 	if not Scan then return nil end
 	return {
 		Decal = Decal,
 		Center = Scan.Mean / Editable.Size,
 		Spread = Scan.Spread,
 		Radius = Scan.Radius,
-		Scale = Vector2.one / Editable.Size,
+		Scale = Scan.Aspect / Editable.Size,
 		Amount = Scan.Amount,
 		Spot = Scan.Spot,
 	}
@@ -722,7 +873,7 @@ function Cleaningcontroller:FindLeftovers(
 				if Remaining > 0 then
 					local Center = Vector2.new((Cell % Coveragegrid + 0.5) / Coveragegrid, (Cell // Coveragegrid + 0.5) / Coveragegrid)
 					if (Center - Point).Magnitude <= Radius then
-						table.insert(Spots, Vector3.new(Center.X, Center.Y, Remaining))
+						table.insert(Spots, Vector3.new(Center.X, Center.Y, math.min(math.ceil(Remaining * Activedirtstep / Basefadestep), Cleaningconfig.DirtPasses)))
 					end
 				end
 			end

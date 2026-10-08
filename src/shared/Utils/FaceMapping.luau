@@ -56,6 +56,21 @@ function FaceMapping.GetDecalPoint(Part: BasePart, Worldposition: Vector3, Facen
 	return FaceMapping.GetPoint(Part, Worldposition, Facename)
 end
 
+function FaceMapping.GetDecalSize(Size: Vector3, Facename: string): Vector2
+	if Facename == "Top" or Facename == "Bottom" then
+		return Vector2.new(Size.X, Size.Z)
+	end
+	if Facename == "Front" or Facename == "Back" then
+		return Vector2.new(Size.X, Size.Y)
+	end
+	return Vector2.new(Size.Z, Size.Y)
+end
+
+function FaceMapping.GetBrushRadius(Size: Vector3, Facename: string, Radius: number, Minimum: number): Vector2
+	local Extent = FaceMapping.GetDecalSize(Size, Facename)
+	return Vector2.new(math.max(Radius, Minimum / Extent.X), math.max(Radius, Minimum / Extent.Y))
+end
+
 function FaceMapping.GetDecalLocalPoint(Size: Vector3, Facename: string, U: number, V: number): Vector3
 	local Half = Size * 0.5
 	if Facename == "Top" then

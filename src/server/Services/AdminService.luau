@@ -1,14 +1,17 @@
 local DataStoreService = game:GetService("DataStoreService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Dailytasksconfig = require(ReplicatedStorage.Shared.Config.DailyTasks)
 local Datastorerequest = require(script.Parent.Parent.Utils.Datastorerequest)
 local Monetizationconfig = require(ReplicatedStorage.Shared.Config.Monetization)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
+local Playerreport = require(script.Parent.Parent.Utils.Playerreport)
 local Remotemanager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Upgradesconfig = require(ReplicatedStorage.Shared.Config.Upgrades)
 
@@ -120,15 +123,15 @@ local function Setban(Userid: number, Entry: any): (boolean, string)
 	return true, "saved"
 end
 
-local function Getban(Userid: number): any
+local function Getban(Userid: number): (boolean, any)
 	local Success, Entry = Datastorerequest.Run(Banattempts, function()
 		return Banstore:GetAsync(tostring(Userid))
 	end)
 	if not Success then
 		warn("AdminService: could not read the ban: " .. tostring(Entry))
-		return nil
+		return false, tostring(Entry)
 	end
-	return Entry
+	return true, Entry
 end
 
 local function Kickeveryone(Reason: string)
@@ -184,7 +187,130 @@ local function Formattime(Milliseconds: number): string
 	return os.date("!%Y-%m-%d %H:%M UTC", math.floor(Milliseconds / 1000))
 end
 
+local function Readpasses(Userid: number, Target: Player?): { { Name: string, Owned: boolean? } }
+	local Ids: { [string]: number } = {}
+	for Name, Id in pairs(Monetizationconfig.GamePasses) do
+		Ids[Name] = Id
+	end
+	if Monetizationconfig.StarterPack.PurchaseType == "GamePass" then
+		Ids.StarterPack = Monetizationconfig.StarterPack.Id
+	end
+	local Passes = {}
+	for Name, Id in pairs(Ids) do
+		local Owned = nil
+		if Target then
+			Owned = Target:GetAttribute("Owns" .. Name)
+		else
+			local Success, Result = pcall(MarketplaceService.UserOwnsGamePassAsync, MarketplaceService, Userid, Id)
+			Owned = if Success then Result == true else nil
+		end
+		table.insert(Passes, { Name = Name, Owned = Owned })
+	end
+	table.sort(Passes, function(Left, Right)
+		return Left.Name < Right.Name
+	end)
+	return Passes
+end
+
+local function Readruntime(Target: Player): { [string]: any }
+	local Monetizationservice = Core:GetService("MonetizationService")
+	local Workbench = Core:GetService("RestorationService"):GetSessionItem(Target)
+	return {
+		Shop = Target:GetAttribute("Shop"),
+		Day = Target:GetAttribute("Day"),
+		Clocktime = Core:GetService("DayNightService"):GetClockTime(Target),
+		Customerstoday = Target:GetAttribute("CustomersToday"),
+		Maxcustomers = Target:GetAttribute("MaxCustomersPerDay"),
+		Customersdone = Target:GetAttribute("CustomersDone") == true,
+		Nextcustomerat = Target:GetAttribute("NextCustomerAt"),
+		Offer = Core:GetService("CustomerService"):GetPendingOffer(Target),
+		Workbench = if Workbench then table.clone(Workbench) else nil,
+		Profittoday = Core:GetService("StatsService"):GetStats(Target).DailyProfit,
+		Serverluck = Monetizationservice:GetServerLuckLevel(),
+		Serverluckendsat = Monetizationservice:GetServerLuckEndsAt(),
+	}
+end
+
+local function Inspect(Arguments: { string }): string
+	if #Arguments < 1 or #Arguments > 2 then
+		return "Usage: inspect <username|userid> [section]"
+	end
+	local Dataservice = Core:GetService("DataService")
+	local Sectionorder = Dataservice:GetSectionOrder()
+	local View = if Arguments[2]
+		then Playerreport.Resolve(Playerreport.Sections(Sectionorder), Arguments[2]) or Arguments[2]
+		else "overview"
+	local Found, Userid, Name = pcall(Finduser, Arguments[1])
+	local Target = if Found then Players:GetPlayerByUserId(Userid) else Findplayer(Arguments[1])
+	if not Found then
+		if not Target then
+			return "Could not look up " .. Arguments[1] .. ": " .. tostring(Userid)
+		end
+		Userid, Name = Target.UserId, Target.Name
+	end
+	local Context: { [string]: any } = {
+		Userid = Userid,
+		Name = Name,
+		Sectionorder = Sectionorder,
+		Here = Target ~= nil,
+		Now = Workspace:GetServerTimeNow(),
+		Clock = os.time(),
+	}
+	if Target then
+		local Peeked, Sections, Meta = Dataservice:Peek(Target)
+		if Peeked then
+			Context.Live = Sections
+			Context.Meta = Meta
+			Context.Runtime = Readruntime(Target)
+		else
+			Context.Liveerror = Sections
+		end
+		local Tutorial = Core:GetService("TutorialService"):Peek(Target)
+		if Tutorial then
+			Context.Tutorial = { Ok = true, Value = Tutorial, Live = true }
+		end
+		local Dailyrewards = Core:GetService("DailyRewardService"):Peek(Target)
+		if Dailyrewards then
+			Context.Dailyrewards = { Ok = true, Value = Dailyrewards, Live = true }
+		end
+	end
+	Context.Readok, Context.Stored, Context.Info = Dataservice:Read(Userid)
+	local Needs = Playerreport.Needs(View)
+	if Needs.Tutorial and not Context.Tutorial then
+		local Ok, Value = Core:GetService("TutorialService"):Read(Userid)
+		Context.Tutorial = { Ok = Ok, Value = if Ok then Value else tostring(Value) }
+	end
+	if Needs.Dailyrewards and not Context.Dailyrewards then
+		local Ok, Value = Core:GetService("DailyRewardService"):Read(Userid)
+		Context.Dailyrewards = { Ok = Ok, Value = if Ok then Value else tostring(Value) }
+	end
+	if Needs.Ban then
+		local Ok, Value = Getban(Userid)
+		Context.Ban = { Ok = Ok, Value = Value }
+	end
+	if Needs.Passes then
+		Context.Passes = Readpasses(Userid, Target)
+	end
+	if Needs.Leaderboard then
+		Context.Leaderboard = Core:GetService("LeaderboardService"):Read(Userid)
+	end
+	if Needs.Group then
+		local Member = Core:GetService("FreeRewardService"):IsInGroup(Userid)
+		Context.Group = { Ok = Member ~= nil, Value = if Member == nil then "group check failed" else Member }
+	end
+	return table.concat(Playerreport.Build(Context, View), "\n")
+end
+
 local Commands = {
+	{
+		Name = "inspect",
+		Usage = "inspect <username|userid> [section]",
+		Description = "Show everything about a player, even offline",
+		Arguments = { "player", "section" },
+		Run = function(_Caller: Player, Arguments: { string }): string
+			return Inspect(Arguments)
+		end,
+	},
 	{
 		Name = "resetdata",
 		Usage = "resetdata <username|userid>",
@@ -548,7 +674,7 @@ end
 
 function Adminservice:Init()
 	local function Enforceban(Player: Player)
-		local Entry = Getban(Player.UserId)
+		local _, Entry = Getban(Player.UserId)
 		if type(Entry) == "table" and Player.Parent then
 			Player:Kick(tostring(Entry.Reason or "You are banned from this game."))
 		end
@@ -615,6 +741,7 @@ function Adminservice:Init()
 				upgrade = Upgradekeys,
 				boost = { "reputation", "sale", "serverluck" },
 				task = Taskkeys,
+				section = Playerreport.Sections(Core:GetService("DataService"):GetSectionOrder()),
 			},
 		}
 	end)

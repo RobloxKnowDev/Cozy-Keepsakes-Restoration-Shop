@@ -1,4 +1,3 @@
-local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -25,8 +24,8 @@ type PlayerUpgradeData = {
 local DataByPlayer: { [Player]: PlayerUpgradeData } = {}
 local DefaultPriceGrowth = 1.5
 
-local function CurrentDay(): number
-	return tonumber(Lighting:GetAttribute("Day")) or 1
+local function CurrentDay(Player: Player): number
+	return Core:GetService("DayNightService"):GetDay(Player)
 end
 
 local function GetDefinition(UpgradeName: string)
@@ -72,7 +71,7 @@ function UpgradeService:EnsurePlayer(Player: Player): PlayerUpgradeData
 	Data = {
 		Levels = Levels,
 		EstimatesUsed = 0,
-		EstimateDay = CurrentDay(),
+		EstimateDay = CurrentDay(Player),
 	}
 	DataByPlayer[Player] = Data
 	return Data
@@ -80,7 +79,7 @@ end
 
 function UpgradeService:ResetDailyUses(Player: Player)
 	local Data = self:EnsurePlayer(Player)
-	local Day = CurrentDay()
+	local Day = CurrentDay(Player)
 	if Data.EstimateDay ~= Day then
 		Data.EstimateDay = Day
 		Data.EstimatesUsed = 0
@@ -263,11 +262,9 @@ function UpgradeService:Init()
 			end
 		end)
 	end)
-	Lighting:GetAttributeChangedSignal("Day"):Connect(function()
-		for _, Player in ipairs(Players:GetPlayers()) do
-			self:ResetDailyUses(Player)
-			self:PushUpgrades(Player)
-		end
+	Core:GetService("DayNightService").DayChanged.Event:Connect(function(Player)
+		self:ResetDailyUses(Player)
+		self:PushUpgrades(Player)
 	end)
 
 	RemoteManager:OnServerInvoke(self.Name, "GetUpgrades", function(Player)

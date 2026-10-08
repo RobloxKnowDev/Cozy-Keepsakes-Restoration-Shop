@@ -120,7 +120,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, 90, 0),
 		},
 		ElectricTrain = {
 			Name = "Electric train",
@@ -131,7 +131,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, -90, 0),
 		},
 		WallClock = {
 			Name = "Wall clock",
@@ -153,7 +153,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, -90, 0),
 		},
 		RecordPlayer = {
 			Name = "Record player",
@@ -175,7 +175,7 @@ return {
 			Rarity = "Rare",
 			Reputation = 22,
 			Sticker = true,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, -90, 0),
 		},
 		VintageGuitar = {
 			Name = "Vintage guitar",
@@ -230,7 +230,7 @@ return {
 			Rarity = "Epic",
 			Reputation = 50,
 			Sticker = true,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, -90, 0),
 		},
 		CuckooClock = {
 			Name = "Cuckoo clock",
@@ -252,7 +252,7 @@ return {
 			Rarity = "Epic",
 			Reputation = 50,
 			Sticker = true,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, -90, 0),
 		},
 		Jukebox = {
 			Name = "Jukebox",
@@ -263,7 +263,7 @@ return {
 			Rarity = "Legendary",
 			Reputation = 110,
 			Sticker = true,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, -90, 0),
 		},
 		AntiqueTelescope = {
 			Name = "Antique telescope",
@@ -307,7 +307,7 @@ return {
 			Rarity = "Legendary",
 			Reputation = 110,
 			Sticker = true,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, 90, 0),
 		},
 		DinosaurSkull = {
 			Name = "Dinosaur skull",
@@ -340,7 +340,7 @@ return {
 			Rarity = "Mythic",
 			Reputation = 240,
 			Sticker = true,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, -90, 0),
 		},
 		MagicMenhir = {
 			Name = "Magic menhir",
@@ -362,7 +362,7 @@ return {
 			Rarity = "Mythic",
 			Reputation = 240,
 			Sticker = false,
-			Rotation = Vector3.new(0, 0, 0),
+			Rotation = Vector3.new(0, 90, 0),
 		},
 	},
 }

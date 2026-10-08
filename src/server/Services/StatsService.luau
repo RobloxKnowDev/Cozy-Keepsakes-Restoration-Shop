@@ -1,4 +1,3 @@
-local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 
@@ -17,6 +16,7 @@ local Statsservice = {
 type PlayerStats = {
 	ItemsSold: number,
 	Reputation: number,
+	RankedReputation: number,
 	RobuxDonated: number,
 	DailyProfit: number,
 	LastDay: number,
@@ -24,8 +24,8 @@ type PlayerStats = {
 
 local StatsByPlayer: { [Player]: PlayerStats } = {}
 
-local function GetCurrentDay(): number
-	return Lighting:GetAttribute("Day") or 1
+local function GetCurrentDay(Player: Player): number
+	return Core:GetService("DayNightService"):GetDay(Player)
 end
 
 local function RoundCurrency(Value: number): number
@@ -38,9 +38,10 @@ function Statsservice:EnsurePlayer(Player: Player): PlayerStats
 		Stats = {
 			ItemsSold = 0,
 			Reputation = 0,
+			RankedReputation = 0,
 			RobuxDonated = 0,
 			DailyProfit = 0,
-			LastDay = GetCurrentDay(),
+			LastDay = GetCurrentDay(Player),
 		}
 		StatsByPlayer[Player] = Stats
 	end
@@ -49,7 +50,7 @@ end
 
 function Statsservice:ResetDailyProfitIfNeeded(Player: Player)
 	local Stats = self:EnsurePlayer(Player)
-	local CurrentDay = GetCurrentDay()
+	local CurrentDay = GetCurrentDay(Player)
 	if Stats.LastDay == CurrentDay then
 		return false
 	end
@@ -110,15 +111,20 @@ function Statsservice:SetReputation(Player: Player, Amount: number): number
 	return Stats.Reputation
 end
 
+function Statsservice:SetRankedReputation(Player: Player, Amount: number)
+	self:EnsurePlayer(Player).RankedReputation = math.max(RoundCurrency(Amount), 0)
+end
+
 function Statsservice:Init()
 	Core:GetService("DataService"):Register("Stats", {
 		Load = function(Player, Saved)
 			local Stats = self:EnsurePlayer(Player)
 			Stats.ItemsSold = math.max(tonumber(Saved.ItemsSold) or 0, 0)
 			Stats.Reputation = math.max(tonumber(Saved.Reputation) or 0, 0)
+			Stats.RankedReputation = math.max(tonumber(Saved.RankedReputation) or 0, 0)
 			Stats.RobuxDonated = math.max(tonumber(Saved.RobuxDonated) or 0, 0)
 			Stats.DailyProfit = 0
-			Stats.LastDay = GetCurrentDay()
+			Stats.LastDay = GetCurrentDay(Player)
 			self:PushStats(Player)
 		end,
 		Save = function(Player)
@@ -126,6 +132,7 @@ function Statsservice:Init()
 			return {
 				ItemsSold = Stats.ItemsSold,
 				Reputation = Stats.Reputation,
+				RankedReputation = Stats.RankedReputation,
 				RobuxDonated = Stats.RobuxDonated,
 			}
 		end,
@@ -146,11 +153,9 @@ function Statsservice:Init()
 		end)
 	end)
 
-	Lighting:GetAttributeChangedSignal("Day"):Connect(function()
-		for _, Player in ipairs(Players:GetPlayers()) do
-			if self:ResetDailyProfitIfNeeded(Player) then
-				self:PushStats(Player)
-			end
+	Core:GetService("DayNightService").DayChanged.Event:Connect(function(Player)
+		if self:ResetDailyProfitIfNeeded(Player) then
+			self:PushStats(Player)
 		end
 	end)
 

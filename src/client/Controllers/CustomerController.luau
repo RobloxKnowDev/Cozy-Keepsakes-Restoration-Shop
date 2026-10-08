@@ -214,6 +214,7 @@ function Customercontroller:ShowPendingOffer()
 	Core:GetController("DailyRewardController"):CloseForSwitch()
 	Core:GetController("SettingController"):CloseForSwitch()
 	Core:GetController("DonationController"):CloseForSwitch()
+	Core:GetController("GroupRewardController"):CloseForSwitch()
 
 	self:ShowOffer(self.pendingOffer)
 end
@@ -376,7 +377,6 @@ function Customercontroller:Respond(Decision: string)
 			tostring(Offer.ImageId or ""),
 			self.rarityGradient
 		)
-		Core:GetController("RestorationController"):Enter()
 	end
 end
 

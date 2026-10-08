@@ -188,6 +188,7 @@ function DailyRewardController:Refresh()
 		self.timeText.Text = FormatDuration(self.state.NextClaimAt - workspace:GetServerTimeNow())
 	end
 	self:SetSwing(Ready)
+	Shared.SetTopbarNotice(self.topbarIcon, Ready)
 end
 
 function DailyRewardController:ApplyState(State)
@@ -206,6 +207,7 @@ function DailyRewardController:Open()
 	end
 	Core:GetController("SettingController"):CloseForSwitch()
 	Core:GetController("DonationController"):CloseForSwitch()
+	Core:GetController("GroupRewardController"):CloseForSwitch()
 	local ComputerController = Core:GetController("ComputerController")
 	local CustomerController = Core:GetController("CustomerController")
 	local ExpositionController = Core:GetController("ExpositionController")

@@ -45,7 +45,7 @@ function Hudcustomercontroller:UpdateTimer()
 	local Remaining = Target - Workspace:GetServerTimeNow()
 	local Active = Target > 0 and Remaining > 0
 	local Canskip = Monetizationconfig.SkipCooldownProductId > 0 and Remaining > Customerconfig.GetSkipThreshold()
-	self.cooldownFrame.Visible = self.hudVisible and Active
+	self.cooldownFrame.Visible = self.hudVisible and Active and not Core:GetController("LeaderboardController"):IsOpen()
 	Uifade.SetVisible(self.cooldownBar, Active)
 	Uifade.SetVisible(self.nextText, Active)
 	if Uifade.SetVisible(self.skipButton, Canskip) and Canskip then

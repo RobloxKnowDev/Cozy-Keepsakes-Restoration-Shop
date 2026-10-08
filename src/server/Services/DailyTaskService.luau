@@ -1,5 +1,3 @@
-local Lighting = game:GetService("Lighting")
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -217,10 +215,8 @@ function DailyTaskService:Init()
 		end,
 	})
 
-	Lighting:GetAttributeChangedSignal("Day"):Connect(function()
-		for _, Player in ipairs(Players:GetPlayers()) do
-			self:Record(Player, "Day", {})
-		end
+	Core:GetService("DayNightService").DayChanged.Event:Connect(function(Player)
+		self:Record(Player, "Day", {})
 	end)
 
 	RemoteManager:OnServerInvoke(self.Name, "GetState", function(Player)

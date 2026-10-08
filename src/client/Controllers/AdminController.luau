@@ -11,9 +11,10 @@ local Admincontroller = {
 
 local Servicename = "AdminService"
 local Togglekey = Enum.KeyCode.F2
-local Consolewidth = 520
+local Consolewidth = 760
 local Rowheight = 26
 local Maximumrows = 6
+local Bottommargin = 40
 local Backgroundcolor = Color3.fromRGB(18, 18, 22)
 local Hintcolor = Color3.fromRGB(150, 150, 160)
 local Textfont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
@@ -49,11 +50,14 @@ function Admincontroller:Buildgui()
 	self.frame.Name = "Console"
 	self.frame.AnchorPoint = Vector2.new(0.5, 0)
 	self.frame.Position = UDim2.new(0.5, 0, 0, 70)
-	self.frame.Size = UDim2.fromOffset(Consolewidth, 40)
+	self.frame.Size = UDim2.new(1, -32, 0, 40)
 	self.frame.BackgroundColor3 = Backgroundcolor
 	self.frame.BackgroundTransparency = 0.1
 	self.frame.BorderSizePixel = 0
 	self.frame.Parent = self.gui
+	local Sizeconstraint = Instance.new("UISizeConstraint")
+	Sizeconstraint.MaxSize = Vector2.new(Consolewidth, math.huge)
+	Sizeconstraint.Parent = self.frame
 	local Corner = Instance.new("UICorner")
 	Corner.CornerRadius = UDim.new(0, 8)
 	Corner.Parent = self.frame
@@ -78,7 +82,7 @@ function Admincontroller:Buildgui()
 	self.list.BackgroundTransparency = 0.1
 	self.list.BorderSizePixel = 0
 	self.list.Position = UDim2.fromOffset(0, 44)
-	self.list.Size = UDim2.fromOffset(Consolewidth, 0)
+	self.list.Size = UDim2.new(1, 0, 0, 0)
 	self.list.CanvasSize = UDim2.fromOffset(0, 0)
 	self.list.ScrollBarThickness = 4
 	self.list.ScrollBarImageColor3 = Hintcolor
@@ -109,7 +113,7 @@ function Admincontroller:Getrow(Order: number): TextLabel
 	return Row
 end
 
-function Admincontroller:Showrows(Lines: { { Text: string, Color: Color3 } })
+function Admincontroller:Showrows(Lines: { { Text: string, Color: Color3 } }, Limit: number)
 	for Order, Line in ipairs(Lines) do
 		local Row = self:Getrow(Order)
 		Row.Text = Line.Text
@@ -119,11 +123,17 @@ function Admincontroller:Showrows(Lines: { { Text: string, Color: Color3 } })
 	for Order = #Lines + 1, #self.rows do
 		self.rows[Order].Visible = false
 	end
-	local Visiblerows = math.min(#Lines, Maximumrows)
+	local Visiblerows = math.min(#Lines, Limit)
 	self.list.Visible = #Lines > 0
-	self.list.Size = UDim2.fromOffset(Consolewidth, Visiblerows * Rowheight + 8)
+	self.list.Size = UDim2.new(1, 0, 0, Visiblerows * Rowheight + 8)
 	self.list.CanvasSize = UDim2.fromOffset(0, #Lines * Rowheight + 8)
 	self.list.CanvasPosition = Vector2.zero
+end
+
+function Admincontroller:Resultrows(): number
+	local Top = self.frame.Position.Y.Offset + self.list.Position.Y.Offset
+	local Room = self.gui.AbsoluteSize.Y - Top - Bottommargin
+	return math.max(math.floor(Room / Rowheight), Maximumrows)
 end
 
 function Admincontroller:Findcommand(Name: string)
@@ -164,18 +174,18 @@ function Admincontroller:Refreshsuggestions()
 				table.insert(Lines, { Text = Command.Usage .. "  —  " .. Command.Description, Color = Hintcolor })
 			end
 		end
-		self:Showrows(Lines)
+		self:Showrows(Lines, Maximumrows)
 		return
 	end
 
 	local Command = self:Findcommand(string.lower(Words[1] or ""))
 	if not Command then
-		self:Showrows({ { Text = "Unknown command", Color = Hintcolor } })
+		self:Showrows({ { Text = "Unknown command", Color = Hintcolor } }, Maximumrows)
 		return
 	end
 	local Kind = Command.Arguments[Index - 1]
 	if not Kind or Kind == "number" then
-		self:Showrows({ { Text = Command.Usage, Color = Hintcolor } })
+		self:Showrows({ { Text = Command.Usage, Color = Hintcolor } }, Maximumrows)
 		return
 	end
 	for _, Option in ipairs(self:Getoptions(Kind)) do
@@ -186,7 +196,7 @@ function Admincontroller:Refreshsuggestions()
 	if #Lines == 0 then
 		table.insert(Lines, { Text = Command.Usage, Color = Hintcolor })
 	end
-	self:Showrows(Lines)
+	self:Showrows(Lines, Maximumrows)
 end
 
 function Admincontroller:Setopen(Open: boolean)
@@ -207,7 +217,7 @@ function Admincontroller:Submit()
 		return
 	end
 	self.input.Text = ""
-	self:Showrows({ { Text = "...", Color = Hintcolor } })
+	task.defer(self.Showrows, self, { { Text = "...", Color = Hintcolor } }, Maximumrows)
 	task.spawn(function()
 		local Result = Remotemanager:InvokeServer(Servicename, "RunCommand", Text)
 		if not self.gui.Enabled then
@@ -217,7 +227,7 @@ function Admincontroller:Submit()
 		for Line in string.gmatch(tostring(Result), "[^\n]+") do
 			table.insert(Lines, { Text = Line, Color = Color3.new(1, 1, 1) })
 		end
-		self:Showrows(Lines)
+		self:Showrows(Lines, self:Resultrows())
 	end)
 end
 

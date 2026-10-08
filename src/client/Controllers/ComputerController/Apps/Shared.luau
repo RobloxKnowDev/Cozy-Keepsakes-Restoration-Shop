@@ -6,6 +6,34 @@ local FormatCurrency = require(ReplicatedStorage.Shared.Utils.CurrencyFormatter)
 local Shared = {}
 local ButtonTween = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ActiveButtonScale = 1.03
+local NoticeText = "!"
+local Topbarnotices = setmetatable({}, { __mode = "k" })
+local Noticelabels = setmetatable({}, { __mode = "k" })
+
+function Shared.SetTopbarNotice(Icon, Active: boolean)
+	local Notice = Topbarnotices[Icon]
+	if Notice and (not Active or Notice.Parent ~= Icon.parentIconUID) then
+		Topbarnotices[Icon] = nil
+		Icon:clearNotices()
+		Notice.Clear:Fire()
+		Notice = nil
+	end
+	if Active and not Notice then
+		local Clear = Instance.new("BindableEvent")
+		Topbarnotices[Icon] = { Clear = Clear, Parent = Icon.parentIconUID }
+		Icon:notify(Clear.Event)
+		if not Noticelabels[Icon] then
+			local Label = Icon.notice:WaitForChild("NoticeLabel")
+			Noticelabels[Icon] = Label
+			Label:GetPropertyChangedSignal("Text"):Connect(function()
+				if Label.Text ~= NoticeText then
+					Label.Text = NoticeText
+				end
+			end)
+		end
+		Noticelabels[Icon].Text = NoticeText
+	end
+end
 
 function Shared.FormatCurrency(Value: number): string
 	return FormatCurrency(Value)

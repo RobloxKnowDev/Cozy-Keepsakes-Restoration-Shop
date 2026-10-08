@@ -3,7 +3,6 @@ local Pathfindingservice = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
-local Lighting = game:GetService("Lighting")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Customerconfig = require(ReplicatedStorage.Shared.Config.Customer)
@@ -101,6 +100,7 @@ type ShopState = {
 	NeedsInstantCustomer: boolean,
 	Directcustomer: boolean,
 	Quickreturn: boolean,
+	Dayended: number?,
 }
 type Passerby = {
 	Direction: number,
@@ -131,7 +131,6 @@ local OfferSerial = 0
 local Customertemplate: Model
 local Wardrobeworkshop: Folder
 local ObjectsByRarity: { [string]: { string } } = {}
-local CurrentDay = 1
 local Stopsready = false
 
 local function Setpendingskips(Player: Player, Count: number)
@@ -148,33 +147,59 @@ local function ReplicateCustomerCount(State: ShopState)
 	State.Player:SetAttribute("MaxCustomersPerDay", GetMaxCustomersPerDay(State.Player))
 end
 
-local function SyncDayState()
-	local Day = Lighting:GetAttribute("Day") or 1
-	if Day ~= CurrentDay then
-		CurrentDay = Day
-		for _, State in pairs(States) do
-			State.ArrivedToday = 0
-			State.NeedsInstantCustomer = true
-		end
+local function CanSpawnMoreCustomersToday(State: ShopState): boolean
+	return State.ArrivedToday < GetMaxCustomersPerDay(State.Player)
+end
+
+local function Reopenday(State: ShopState)
+	if State.Dayended and CanSpawnMoreCustomersToday(State) then
+		State.Dayended = nil
+		State.Player:SetAttribute("CustomersDone", false)
 	end
+end
+
+local function RefreshCustomerCounts()
 	for _, State in pairs(States) do
 		ReplicateCustomerCount(State)
+		Reopenday(State)
 	end
+end
+
+local function StartNewDay(Player: Player)
+	local State = States[Player]
+	if not State then
+		return
+	end
+	State.ArrivedToday = 0
+	State.NeedsInstantCustomer = true
+	State.Dayended = nil
+	Player:SetAttribute("CustomersDone", false)
+	ReplicateCustomerCount(State)
+end
+
+local function EndDay(State: ShopState, Day: number)
+	local Daynightservice = Core:GetService("DayNightService")
+	if States[State.Player] ~= State or State.Dayended ~= Day or Daynightservice:GetDay(State.Player) ~= Day then
+		return
+	end
+	if CanSpawnMoreCustomersToday(State) then
+		Reopenday(State)
+		return
+	end
+	Daynightservice:FastForward(State.Player)
 end
 
 local function CountServedCustomer(State: ShopState)
 	State.ArrivedToday += 1
 	ReplicateCustomerCount(State)
-end
-
-local function IsBusinessHours(): boolean
-	local ClockTime = Lighting.ClockTime
-	return ClockTime >= Daynightconfig.DayStartHour and ClockTime < Daynightconfig.NightStartHour
-end
-
-local function CanSpawnMoreCustomersToday(State: ShopState): boolean
-	SyncDayState()
-	return State.ArrivedToday < GetMaxCustomersPerDay(State.Player)
+	local Daynightservice = Core:GetService("DayNightService")
+	local Day = Daynightservice:GetDay(State.Player)
+	if CanSpawnMoreCustomersToday(State) or State.Dayended == Day or Daynightservice:IsFastForwarding(State.Player) then
+		return
+	end
+	State.Dayended = Day
+	State.Player:SetAttribute("CustomersDone", true)
+	task.delay(Daynightconfig.QuotaMessageDelay, EndDay, State, Day)
 end
 
 local function CollectOfferObjects()
@@ -449,13 +474,16 @@ local function Skipdetours(Shop: Instance)
 end
 
 local function Runtraffic()
+	local Daynightservice = Core:GetService("DayNightService")
 	while true do
 		task.wait(Randomin(Spawngap))
-		local Occupiedshops = 0
-		for _ in pairs(States) do
-			Occupiedshops += 1
+		local Openshops = 0
+		for _, State in pairs(States) do
+			if Daynightservice:IsBusinessHours(State.Player) then
+				Openshops += 1
+			end
 		end
-		if IsBusinessHours() and Passersby < Customerspershop * Occupiedshops then
+		if Passersby < Customerspershop * Openshops then
 			Spawnpasserby()
 		end
 	end
@@ -808,6 +836,7 @@ local function CanPresentOffer(State: ShopState): boolean
 	return not State.PendingOffer
 		and not Restorationservice:HasActiveSession(State.Player)
 		and not Restorationservice:HasActiveObject(State.Player)
+		and not Restorationservice:IsRestoring(State.Player)
 end
 
 local function PresentFrontOffer(State: ShopState)
@@ -898,7 +927,12 @@ local function UpdateCustomerTimer(State: ShopState)
 		Dispatchvisitor(State, Visit, Workspace:GetServerTimeNow())
 		return
 	end
-	if not IsBusinessHours() or not CanSpawnMoreCustomersToday(State) then
+	local Daynightservice = Core:GetService("DayNightService")
+	if
+		not Daynightservice:IsBusinessHours(State.Player)
+		or Daynightservice:IsFastForwarding(State.Player)
+		or not CanSpawnMoreCustomersToday(State)
+	then
 		SetNextCustomerAt(State, 0)
 		return
 	end
@@ -986,8 +1020,7 @@ function Customerservice:Init()
 	Wardrobeworkshop = Instance.new("Folder")
 	Wardrobeworkshop.Name = "CustomerWardrobeWorkshop"
 	Wardrobeworkshop.Parent = ServerStorage
-	SyncDayState()
-	Lighting:GetAttributeChangedSignal("Day"):Connect(SyncDayState)
+	Core:GetService("DayNightService").DayChanged.Event:Connect(StartNewDay)
 	Core:GetService("DataService"):Register("Customer", {
 		Load = function(Player, Saved)
 			local Count = tonumber(Saved.PendingSkips) or 0
@@ -1113,10 +1146,13 @@ function Customerservice:PresentOffer(Player: Player)
 	end
 end
 
+function Customerservice:GetPendingOffer(Player: Player): CustomerOffer?
+	local State = States[Player]
+	return if State and State.PendingOffer then table.clone(State.PendingOffer) else nil
+end
+
 function Customerservice:RefreshCustomerLimit()
-	for _, State in pairs(States) do
-		ReplicateCustomerCount(State)
-	end
+	RefreshCustomerCounts()
 end
 
 function Customerservice:SkipCooldown(Player: Player): boolean
@@ -1171,9 +1207,9 @@ function Customerservice:Start()
 	task.spawn(function()
 		while true do
 			task.wait(5)
-			SyncDayState()
-			if IsBusinessHours() then
-				for _, State in pairs(table.clone(States)) do
+			RefreshCustomerCounts()
+			for _, State in pairs(table.clone(States)) do
+				if Core:GetService("DayNightService"):IsBusinessHours(State.Player) then
 					task.spawn(PresentFrontOffer, State)
 				end
 			end

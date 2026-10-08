@@ -102,8 +102,11 @@ function MonetizationService:GetReputationMultiplier(Player: Player): number
 		local Level = Config.ServerReputationLuck.Levels[ServerLuckLevel]
 		ServerMultiplier = if Level then tonumber(Level.Multiplier) or 1 else 1
 	end
-	local PassMultiplier = if self:OwnsGamePass(Player, "DoubleReputation") then 2 else 1
-	return PersonalMultiplier * ServerMultiplier * PassMultiplier
+	return PersonalMultiplier * ServerMultiplier * self:GetPassReputationMultiplier(Player)
+end
+
+function MonetizationService:GetPassReputationMultiplier(Player: Player): number
+	return if self:OwnsGamePass(Player, "DoubleReputation") then 2 else 1
 end
 
 function MonetizationService:GetShopState(Player: Player)
@@ -189,6 +192,10 @@ function MonetizationService:GetServerLuckLevel(): number
 	return if ServerLuckEndsAt > Now() then ServerLuckLevel else 0
 end
 
+function MonetizationService:GetServerLuckEndsAt(): number
+	return if ServerLuckEndsAt > Now() then ServerLuckEndsAt else 0
+end
+
 function MonetizationService:GrantServerLuck(Level: number, Purchases: number?): boolean
 	if Level < 1 or Level > #Config.ServerReputationLuck.Levels then
 		return false
@@ -209,7 +216,7 @@ function MonetizationService:HandleDeveloperProduct(Player: Player, ProductId: n
 		return Core:GetService("DailyRewardService"):HandleDeveloperProduct(Player, ProductId, PurchaseId)
 	end
 	if ProductId > 0 and tonumber(Config.SkipDayProductId) == ProductId then
-		return Core:GetService("DayNightService"):SkipToNextDayStart()
+		return Core:GetService("DayNightService"):SkipToNextDayStart(Player)
 	end
 	if ProductId > 0 and tonumber(Config.SkipCooldownProductId) == ProductId then
 		return Core:GetService("CustomerService"):SkipCooldown(Player)

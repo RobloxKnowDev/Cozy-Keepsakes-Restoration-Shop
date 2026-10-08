@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local BoostConfig = require(ReplicatedStorage.Shared.Config.Boosts)
+local CleaningConfig = require(ReplicatedStorage.Shared.Config.Cleaning)
 local ObjectConfig = require(ReplicatedStorage.Shared.Config.Object)
 
 local LoadingController = {
@@ -84,7 +85,12 @@ function LoadingController:Start()
 			AddImageId(Secondary, Definition.IdImage)
 		end
 		AddImageId(Secondary, Core:GetController("FeedbackController").purchaseRaysImage)
+		for _, Texture in ipairs(CleaningConfig.DirtTextures) do
+			AddImageId(Secondary, Texture.Image)
+		end
+		table.insert(Secondary, ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Tool"))
 		ContentProvider:PreloadAsync(Secondary)
+		Core:GetController("CleaningController"):WarmDirtTextures()
 	end)
 end
 

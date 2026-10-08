@@ -16,18 +16,13 @@ local Shop = Playershop(Player)
 local Mapcamera = Shop:WaitForChild("Camera")
 local Generateditems = Shop:WaitForChild("GeneratedItems")
 local Planwork = Shop:WaitForChild("Work")
+local Leaderboardcamera: Instance? = nil
 type InspectionTarget = Model | BasePart
 local Target: InspectionTarget? = nil
 local Yaw = 0
 local Pitch = math.rad(-38)
 local Orbittravel = 0
 local Distance = 8
-local Targetdistance = 8
-local Mindistance = 4
-local Maxdistance = 16
-local Pinching = false
-local Pinchstartdistance = 8
-local Touches: { [InputObject]: boolean } = {}
 local Dragging = false
 local Enabled = false
 local Transformmode = "Orbit"
@@ -41,15 +36,12 @@ local Stickdragging = false
 local Stickdeadzone = 0.18
 local Stickorbitspeed = 2.4
 local Stickrotatespeed = 2.6
-local Focusoffset = Vector3.zero
-local Panlimit = 3
-local Startdistancefactor = 1.65
+local Framingfactor = 0.95
+local Minimumdistance = 2.5
 local Cameraclearance = 0.5
 local Maxorbitpitch = math.rad(0)
-local Zoomfocusratio = 0.22 / 0.12
 local Boundsoffset = Vector3.zero
 local Boundsradius = 1
-local Objectstartposition = Vector3.zero
 local Objectselected = false
 local Groundy = 0
 local Safecameradistance = 8
@@ -64,7 +56,7 @@ local Introcameraactive = false
 local Introcameratween: Tween? = nil
 local Cameratransitionactive = false
 local Cameratransitionelapsed = 0
-local Cameratransitionduration = 2
+local Cameratransitionduration = 1.1
 local Cameratransitionstart = CFrame.identity
 local Cameratransitionlooktarget = Vector3.zero
 local Staticcameraduration = 0.45
@@ -75,6 +67,7 @@ local Expositionfieldofview = 80
 local Fieldofview = Defaultfieldofview
 
 type CameraPartOptions = {
+	Folder: Instance?,
 	Duration: number?,
 	LeadTime: number?,
 	FieldOfView: number?,
@@ -108,6 +101,7 @@ local function Begindrag(Input: InputObject, Mode: string)
 	Lastpointer = Pointerposition(Input)
 	Dragaccumulator = Vector2.zero
 	Lockedrotationaxis = nil
+	Cameratransitionactive = false
 end
 
 local function Enddrag()
@@ -140,6 +134,17 @@ local function Pivotobject(Object: InspectionTarget, Pivot: CFrame)
 	else
 		Object.CFrame = Pivot
 	end
+end
+
+local function Rotatearoundcenter(Object: InspectionTarget, Rotation: CFrame)
+	Pivotobject(Object, Objectpivot(Object) * CFrame.new(Boundsoffset) * Rotation * CFrame.new(-Boundsoffset))
+end
+
+local function Framingdistance(): number
+	local Halfvertical = math.rad(Defaultfieldofview * 0.5)
+	local Viewport = Camera.ViewportSize
+	local Halfhorizontal = math.atan(math.tan(Halfvertical) * Viewport.X / Viewport.Y)
+	return math.max(Boundsradius / math.sin(math.min(Halfvertical, Halfhorizontal)) * Framingfactor, Minimumdistance)
 end
 
 local function Verticalhalfextent(Object: InspectionTarget): number
@@ -197,7 +202,7 @@ function Controller:FlipObject()
 end
 
 function Controller:IsDragging(): boolean
-	return Dragging or Stickdragging or Pinching
+	return Dragging or Stickdragging
 end
 
 function Controller:IsIntroCameraReady(): boolean
@@ -218,11 +223,6 @@ end
 
 function Controller:GetFieldOfView(): number
 	return Fieldofview
-end
-
-function Controller:NudgeZoom(Direction: number)
-	if not Target or Completionview or Cameratransitionactive then return end
-	Targetdistance = math.clamp(Targetdistance * (1 - Direction * 0.18), Mindistance, Maxdistance)
 end
 
 function Controller:SetTransformMode(Mode: string)
@@ -267,7 +267,8 @@ local function ShowCameraPart(Name: string, Options: CameraPartOptions?): boolea
 	if Target then
 		return false
 	end
-	local CameraPart = Mapcamera:WaitForChild(Name) :: BasePart
+	local Folder = if Options and Options.Folder then Options.Folder else Mapcamera
+	local CameraPart = Folder:WaitForChild(Name) :: BasePart
 	if not Introcameraactive then
 		Previouscameratype = Camera.CameraType
 		Previouscamerasubject = Camera.CameraSubject
@@ -355,13 +356,18 @@ function Controller:ShowComputerCamera(): boolean
 	return ShowCameraPart("CamPartComputer")
 end
 
+function Controller:ShowLeaderboardCamera(Name: string): boolean
+	Leaderboardcamera = Leaderboardcamera or Workspace:WaitForChild("Map"):WaitForChild("Leaderboards"):WaitForChild("Camera")
+	return ShowCameraPart(Name, {
+		Folder = Leaderboardcamera,
+	})
+end
+
 function Controller:Begin(Object: InspectionTarget)
 	local Shouldtransition = Introcameraactive
 	CancelIntroCameraTween()
 	Target = Object
 	Objectselected = false
-	Focusoffset = Vector3.zero
-	Objectstartposition = Objectpivot(Object).Position
 	Originalobjectrotation = Objectpivot(Object).Rotation
 	Showingback = false
 	Objectrotationgoal = nil
@@ -375,12 +381,7 @@ function Controller:Begin(Object: InspectionTarget)
 	local Boundscframe, Boundssize = Objectbounds(Object)
 	Boundsoffset = Objectpivot(Object):PointToObjectSpace(Boundscframe.Position)
 	Boundsradius = Boundssize.Magnitude * 0.5
-	local Radius = math.max(Boundsradius, 1)
-	Panlimit = math.max(Radius * 0.65, 1)
-	Targetdistance = math.max(Radius * Startdistancefactor, 2.5)
-	Mindistance = Targetdistance
-	Maxdistance = math.max(Radius * 2.5, Mindistance + 1)
-	Distance = Targetdistance
+	Distance = Framingdistance()
 	Safecameradistance = Distance
 
 	if not Introcameraactive then
@@ -404,7 +405,6 @@ function Controller:PrepareCompletion()
 	Completionview = true
 	Enddrag()
 	Setobjectselected(false)
-	Focusoffset = Vector3.zero
 end
 
 function Controller:End()
@@ -423,18 +423,20 @@ function Controller:End()
 end
 
 local function Applystick(Deltatime: number)
-	if Stick.Magnitude < Stickdeadzone or Completionview or Cameratransitionactive then
+	local Rotatemode = Enabled and Transformmode == "Rotate"
+	if Stick.Magnitude < Stickdeadzone or Completionview or (Cameratransitionactive and Rotatemode) then
 		Stickdragging = false
 		return
 	end
 	Stickdragging = true
 	local Direction = Stick.Unit * ((Stick.Magnitude - Stickdeadzone) / (1 - Stickdeadzone))
-	if Enabled and Transformmode == "Rotate" then
+	if Rotatemode then
 		Objectrotationgoal = nil
 		local Angle = Stickrotatespeed * Deltatime
-		Pivotobject(Target, Objectpivot(Target) * CFrame.Angles(Direction.Y * Angle, -Direction.X * Angle, 0))
+		Rotatearoundcenter(Target, CFrame.Angles(Direction.Y * Angle, -Direction.X * Angle, 0))
 		return
 	end
+	Cameratransitionactive = false
 	local Yawdelta = Direction.X * Stickorbitspeed * Deltatime
 	local Pitchdelta = Direction.Y * Stickorbitspeed * Deltatime
 	Yaw -= Yawdelta
@@ -445,29 +447,32 @@ end
 function Controller:Start()
 	Player:GetAttributeChangedSignal("Shop"):Connect(Bindshop)
 	Bindshop()
+	Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+		Distance = Framingdistance()
+	end)
 
 	Userinputservice.InputBegan:Connect(function(Input, Processed)
-		if Processed or not Target or Completionview or Cameratransitionactive then
+		if Processed or not Target or Completionview then
 			return
 		end
 
 		local Isprimary = Input.UserInputType == Enum.UserInputType.MouseButton1
 		local Issecondary = Input.UserInputType == Enum.UserInputType.MouseButton2
-		local Ismiddle = Input.UserInputType == Enum.UserInputType.MouseButton3
 		local Istouch = Input.UserInputType == Enum.UserInputType.Touch
 		local Position = Pointerposition(Input)
-		local Shiftdown = Userinputservice:IsKeyDown(Enum.KeyCode.LeftShift)
-			or Userinputservice:IsKeyDown(Enum.KeyCode.RightShift)
+		local Rotatemode = Enabled and Transformmode == "Rotate"
+		if Cameratransitionactive and (Rotatemode or not (Issecondary or Istouch)) then
+			return
+		end
 
 		if Istouch then
-			Touches[Input] = true
-			if Dragging or Pinching then
+			if Dragging then
 				return
 			end
 			local Ontarget = Ispointerontarget(Position)
 			if Enabled then
 				Setobjectselected(Ontarget)
-				Begindrag(Input, if Transformmode == "Rotate" then "RotateObject" else "OrbitCamera")
+				Begindrag(Input, if Rotatemode then "RotateObject" else "OrbitCamera")
 			elseif not Ontarget then
 				Begindrag(Input, "OrbitCamera")
 			end
@@ -478,10 +483,7 @@ function Controller:Start()
 			Setobjectselected(true)
 		elseif Enabled and Isprimary then
 			Setobjectselected(false)
-		elseif Ismiddle or (Issecondary and Shiftdown) then
-			Begindrag(Input, "Move")
-			Userinputservice.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
-		elseif Issecondary and Enabled and Transformmode == "Rotate" then
+		elseif Issecondary and Rotatemode then
 			Begindrag(Input, "RotateObject")
 			Userinputservice.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
 		elseif Issecondary then
@@ -499,27 +501,6 @@ function Controller:Start()
 			return
 		end
 
-		if Input.UserInputType == Enum.UserInputType.MouseWheel then
-			local Previousdistance = Targetdistance
-			Targetdistance = math.clamp(Targetdistance * (1 - Input.Position.Z * 0.12), Mindistance, Maxdistance)
-			local Mouse = Userinputservice:GetMouseLocation()
-			local Selectedcenteroffset = Objectselected and (Objectpivot(Target).Position.Y - Objectstartposition.Y) or 0
-			local Focus = Objectstartposition + Vector3.new(0, Selectedcenteroffset, 0) + Focusoffset
-			local Ray = Camera:ViewportPointToRay(Mouse.X, Mouse.Y)
-			local Denominator = Ray.Direction:Dot(Camera.CFrame.LookVector)
-			if math.abs(Denominator) > 0.001 then
-				local Depth = (Focus - Ray.Origin):Dot(Camera.CFrame.LookVector) / Denominator
-				if Depth > 0 then
-					local Cursorpoint = Ray.Origin + Ray.Direction * Depth
-					Focusoffset += (Cursorpoint - Focus) * (Previousdistance - Targetdistance) / Previousdistance * Zoomfocusratio
-					if Focusoffset.Magnitude > Panlimit then
-						Focusoffset = Focusoffset.Unit * Panlimit
-					end
-				end
-			end
-			return
-		end
-
 		local Ismousemove = Input.UserInputType == Enum.UserInputType.MouseMovement
 		local Isactivetouch = Input.UserInputType == Enum.UserInputType.Touch and Input == Draginput
 		if Dragging and (Ismousemove or Isactivetouch) then
@@ -533,58 +514,27 @@ function Controller:Start()
 					Lockedrotationaxis = math.abs(Dragaccumulator.X) >= math.abs(Dragaccumulator.Y) and "Y" or "X"
 				end
 				if Lockedrotationaxis == "X" then
-					Pivotobject(Target, Objectpivot(Target) * CFrame.Angles(-Delta.Y * 0.003, 0, 0))
+					Rotatearoundcenter(Target, CFrame.Angles(-Delta.Y * 0.003, 0, 0))
 				elseif Lockedrotationaxis == "Y" then
-					Pivotobject(Target, Objectpivot(Target) * CFrame.Angles(0, -Delta.X * 0.003, 0))
+					Rotatearoundcenter(Target, CFrame.Angles(0, -Delta.X * 0.003, 0))
 				end
 			elseif Dragmode == "OrbitCamera" then
 				Yaw -= Delta.X * 0.008
 				Pitch = math.clamp(Pitch - Delta.Y * 0.008, math.rad(-82), Maxorbitpitch)
 				Orbittravel += math.abs(Delta.X * 0.008) + math.abs(Delta.Y * 0.008)
-			else
-				local Movement = (-Camera.CFrame.RightVector * Delta.X + Camera.CFrame.UpVector * Delta.Y)
-					* Distance
-					* 0.0018
-				Focusoffset += Movement
-				if Focusoffset.Magnitude > Panlimit then
-					Focusoffset = Focusoffset.Unit * Panlimit
-				end
 			end
 		end
 	end)
 
-	local function Resettouches()
-		table.clear(Touches)
-		Pinching = false
+	local function Canceldrag()
 		if Dragging then
 			Enddrag()
 		end
 	end
-	Userinputservice.WindowFocusReleased:Connect(Resettouches)
-	Guiservice.MenuOpened:Connect(Resettouches)
-
-	Userinputservice.TouchPinch:Connect(function(_, Scale, _, State, Processed)
-		if State == Enum.UserInputState.Begin then
-			local Count = 0
-			for _ in Touches do
-				Count += 1
-			end
-			Pinching = Count >= 2 and not Processed and Target ~= nil and not Completionview and not Cameratransitionactive
-			Pinchstartdistance = Targetdistance
-			if Pinching and Dragging then
-				Enddrag()
-			end
-		end
-		if Pinching and Target and not Completionview and not Cameratransitionactive then
-			Targetdistance = math.clamp(Pinchstartdistance / Scale, Mindistance, Maxdistance)
-		end
-		if State == Enum.UserInputState.End or State == Enum.UserInputState.Cancel then
-			Pinching = false
-		end
-	end)
+	Userinputservice.WindowFocusReleased:Connect(Canceldrag)
+	Guiservice.MenuOpened:Connect(Canceldrag)
 
 	Userinputservice.InputEnded:Connect(function(Input)
-		Touches[Input] = nil
 		if not Dragging then
 			return
 		end
@@ -592,7 +542,6 @@ function Controller:Start()
 			Input == Draginput
 			or Input.UserInputType == Enum.UserInputType.MouseButton1
 			or Input.UserInputType == Enum.UserInputType.MouseButton2
-			or Input.UserInputType == Enum.UserInputType.MouseButton3
 		then
 			Enddrag()
 		end
@@ -605,17 +554,17 @@ function Controller:Start()
 		Applystick(Deltatime)
 
 		local Alpha = 1 - math.exp(-18 * Deltatime)
-		Distance += (Targetdistance - Distance) * Alpha
 		if Objectrotationgoal then
 			local Flipalpha = 1 - math.exp(-10 * Deltatime)
 			local Currentpivot = Objectpivot(Target)
+			local Center = Currentpivot * Boundsoffset
 			local Nextrotation = Currentpivot.Rotation:Lerp(Objectrotationgoal, Flipalpha)
-			Pivotobject(Target, CFrame.new(Currentpivot.Position) * Nextrotation)
+			Pivotobject(Target, CFrame.new(Center) * Nextrotation * CFrame.new(-Boundsoffset))
 			if
 				Nextrotation.LookVector:Dot(Objectrotationgoal.LookVector) > 0.9999
 				and Nextrotation.UpVector:Dot(Objectrotationgoal.UpVector) > 0.9999
 			then
-				Pivotobject(Target, CFrame.new(Objectpivot(Target).Position) * Objectrotationgoal)
+				Pivotobject(Target, CFrame.new(Center) * Objectrotationgoal * CFrame.new(-Boundsoffset))
 				Objectrotationgoal = nil
 			end
 		end
@@ -630,10 +579,7 @@ function Controller:Start()
 		Adjustedy = Currentposition.Y + (Desiredobjecty - Currentposition.Y) * Heightalpha
 		Pivotobject(Target, CFrame.new(Currentposition.X, Adjustedy, Currentposition.Z) * Objectpivot(Target).Rotation)
 
-		local Selectedcenteroffset = Objectselected and (Adjustedy - Objectstartposition.Y) or 0
-		local Focus = if Completionview
-			then Objectstartposition
-			else Objectstartposition + Vector3.new(0, Selectedcenteroffset, 0) + Focusoffset
+		local Focus = Objectpivot(Target) * Boundsoffset
 		local Orbit = CFrame.fromEulerAnglesYXZ(Pitch, Yaw, 0)
 		local Orbitdirection = Orbit:VectorToWorldSpace(Vector3.new(0, 0, 1))
 		local Direction = Orbitdirection * Distance
@@ -660,18 +606,14 @@ function Controller:Start()
 			local Collisionalpha = 1 - math.exp(-8 * Deltatime)
 			Safecameradistance += (Alloweddistance - Safecameradistance) * Collisionalpha
 		end
-		local Boundscenter = Objectpivot(Target) * Boundsoffset
 		local Clearradius = Boundsradius + Cameraclearance
-		local Fromcenter = Focus - Boundscenter
-		local Along = Fromcenter:Dot(Orbitdirection)
-		local Clearancedistance = -Along + math.sqrt(math.max(Along * Along - Fromcenter:Dot(Fromcenter) + Clearradius * Clearradius, 0))
-		Safecameradistance = math.max(Safecameradistance, Clearancedistance)
+		Safecameradistance = math.max(Safecameradistance, Clearradius)
 		local Safeposition = Focus + Orbitdirection * Safecameradistance
 		local Desiredcamera = CFrame.lookAt(Safeposition, Focus)
 		if Cameratransitionactive then
 			Cameratransitionelapsed += Deltatime
 			local Progress = math.clamp(Cameratransitionelapsed / Cameratransitionduration, 0, 1)
-			local Easedprogress = Tweenservice:GetValue(Progress, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+			local Easedprogress = Tweenservice:GetValue(Progress, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
 			local Traveldistance = (Safeposition - Cameratransitionstart.Position).Magnitude
 			local Arc = math.clamp(Traveldistance * 0.06, 0.5, 2) * math.sin(Easedprogress * math.pi)
 			local Position = Cameratransitionstart.Position:Lerp(Safeposition, Easedprogress) + Vector3.new(0, Arc, 0)
@@ -685,9 +627,9 @@ function Controller:Start()
 		else
 			Camera.CFrame = Camera.CFrame:Lerp(Desiredcamera, Alpha)
 		end
-		local Camerafromcenter = Camera.CFrame.Position - Boundscenter
+		local Camerafromcenter = Camera.CFrame.Position - Focus
 		if Camerafromcenter.Magnitude < Clearradius then
-			Camera.CFrame = CFrame.new(Boundscenter + Camerafromcenter.Unit * Clearradius) * Camera.CFrame.Rotation
+			Camera.CFrame = CFrame.new(Focus + Camerafromcenter.Unit * Clearradius) * Camera.CFrame.Rotation
 		end
 	end)
 end

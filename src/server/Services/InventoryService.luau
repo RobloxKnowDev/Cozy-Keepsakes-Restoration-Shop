@@ -7,6 +7,8 @@ local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Objectconfig = require(Replicatedstorage.Shared.Config.Object)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
+local Minimumsoldpercent = 1
+
 local Inventoryservice = {
 	Name = "InventoryService",
 	Priority = 7,
@@ -232,6 +234,7 @@ end
 
 function Inventoryservice:AddPurchasedItem(Player: Player, ObjectKey: string, Maximums: any, PurchasePrice: number): RestoredItem
 	local Definition = Objectconfig.Object[ObjectKey]
+	Core:GetService("RestorationService"):Warmobject(ObjectKey)
 	return self:AddRestoredItem(Player, {
 		Id = 0,
 		ObjectKey = ObjectKey,
@@ -322,7 +325,9 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	local Item = table.remove(Items, Index)
 	local SaleValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 	Core:GetService("CashService"):AddCash(Player, SaleValue)
-	Core:GetService("StatsService"):AddItemsSold(Player, 1)
+	if Item.RestorationPercent >= Minimumsoldpercent then
+		Core:GetService("StatsService"):AddItemsSold(Player, 1)
+	end
 	if SaleValue > 0 then
 		RecordSale(Player, Item, SaleValue)
 	end
@@ -338,12 +343,16 @@ function Inventoryservice:SellAllRestoredItems(Player: Player)
 	local Items = self:EnsurePlayer(Player)
 	local SoldItems = {}
 	local TotalValue = 0
+	local Counted = 0
 
 	for Index = #Items, 1, -1 do
 		local Item = table.remove(Items, Index)
 		table.insert(SoldItems, 1, CloneItem(Item))
 		local SaleValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 		TotalValue += SaleValue
+		if Item.RestorationPercent >= Minimumsoldpercent then
+			Counted += 1
+		end
 		if SaleValue > 0 then
 			RecordSale(Player, Item, SaleValue)
 		end
@@ -351,7 +360,9 @@ function Inventoryservice:SellAllRestoredItems(Player: Player)
 
 	if #SoldItems > 0 then
 		Core:GetService("CashService"):AddCash(Player, TotalValue)
-		Core:GetService("StatsService"):AddItemsSold(Player, #SoldItems)
+	end
+	if Counted > 0 then
+		Core:GetService("StatsService"):AddItemsSold(Player, Counted)
 	end
 
 	self:PushItems(Player)

@@ -34,12 +34,15 @@ function TopbarController:Start()
 	if not self.isPhone then
 		return
 	end
-	self.menuIcon:setMenu({
+	local Menuicons = {
 		Core:GetController("DonationController").topbarIcon,
 		Core:GetController("DailyRewardController").topbarIcon,
 		Core:GetController("GroupRewardController").topbarIcon,
+		Core:GetController("LeaderboardController").topbarIcon,
 		Core:GetController("SettingController").topbarIcon,
-	})
+	}
+	self.menuIcon:setMenu(Menuicons)
+	self.menuIcon:modifyTheme({ "Menu", "MaxIcons", #Menuicons })
 end
 
 return TopbarController

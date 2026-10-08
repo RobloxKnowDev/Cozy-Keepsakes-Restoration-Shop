@@ -1,5 +1,4 @@
 local Assetservice = game:GetService("AssetService")
-local Workspace = game:GetService("Workspace")
 
 local Surfacecast = {}
 Surfacecast.__index = Surfacecast
@@ -138,6 +137,7 @@ function Surfacecast.new(Object: Instance)
 	local Partparams = RaycastParams.new()
 	Partparams.FilterType = Enum.RaycastFilterType.Include
 	return setmetatable({
+		World = Object:FindFirstAncestorWhichIsA("WorldRoot") :: WorldRoot,
 		Solids = Solids,
 		Params = Params,
 		Partparams = Partparams,
@@ -146,7 +146,7 @@ function Surfacecast.new(Object: Instance)
 	}, Surfacecast)
 end
 
-function Surfacecast:Load()
+function Surfacecast:Load(): boolean
 	local Pending = 0
 	local Failed = 0
 	local Lasterror = nil
@@ -188,10 +188,11 @@ function Surfacecast:Load()
 	if Failed > 0 then
 		warn(string.format("SurfaceCast: %d meshes stay on collision geometry: %s", Failed, tostring(Lasterror)))
 	end
+	return Failed == 0
 end
 
 function Surfacecast:Cast(Origin: Vector3, Vector: Vector3): Hit?
-	local Result = Workspace:Raycast(Origin, Vector, self.Params)
+	local Result = self.World:Raycast(Origin, Vector, self.Params)
 	local Best = if Result then Fromresult(Result) else nil
 	for Part, Entry in pairs(self.Meshes) do
 		local Hit = Castmesh(Part :: MeshPart, Entry, Origin, Vector, if Best then Best.Distance else Vector.Magnitude)
@@ -208,7 +209,7 @@ function Surfacecast:CastPart(Part: BasePart, Origin: Vector3, Vector: Vector3):
 		return Castmesh(Part :: MeshPart, Entry, Origin, Vector, Vector.Magnitude)
 	end
 	self.Partparams.FilterDescendantsInstances = { Part }
-	local Result = Workspace:Raycast(Origin, Vector, self.Partparams)
+	local Result = self.World:Raycast(Origin, Vector, self.Partparams)
 	return if Result then Fromresult(Result) else nil
 end
 
