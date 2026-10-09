@@ -19,6 +19,26 @@ return {
 		{ Image = "rbxassetid://87402903792010", Pattern = "Clumps", ZIndex = 5 },
 		{ Image = "rbxassetid://79361514123085", Pattern = "Dust", ZIndex = 1 },
 	},
+	ScratchTextures = {
+		{ Name = "Sc1", Image = "rbxassetid://136943980377010" },
+		{ Name = "Sc2", Image = "rbxassetid://136672328215757" },
+		{ Name = "Sc3", Image = "rbxassetid://83560616974311" },
+		{ Name = "Sc4", Image = "rbxassetid://125503304178483" },
+		{ Name = "Sc5", Image = "rbxassetid://133481586301479" },
+		{ Name = "Sc6", Image = "rbxassetid://118963385146541" },
+		{ Name = "Sc7", Image = "rbxassetid://91657620068126" },
+	},
+	RandomScratch = {
+		Count = 1,
+		Size = { Min = 0.3, Max = 0.45 },
+		MinVisible = 0.9,
+		MinCells = 12,
+		Attempts = 64,
+		Shrink = 0.85,
+		ShrinkRun = 8,
+		MinSide = 0.25,
+		FaceCap = 0.8,
+	},
 	BrushMinimumRadius = 0.075,
 	CleaningSpeed = {
 		BaseCleaningSpeed = 1,
@@ -32,6 +52,12 @@ return {
 			Legendary = 1,
 			Mythic = 1,
 		},
+		DirtProgressShare = 0.7,
+		SpotSeconds = {
+			Ink = 10,
+			Scratch = 8,
+			Sticker = 5,
+		},
 	},
 	FinishAssist = {
 		Start = 0.97,
@@ -43,6 +69,7 @@ return {
 		StallGain = 0.0003,
 		StallFloor = 0.0005,
 		SnapRatio = 0.995,
+		StainSnapRatio = 0.92,
 		SnapCells = 2,
 	},
 }

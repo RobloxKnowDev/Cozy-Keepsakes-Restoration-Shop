@@ -51,6 +51,18 @@ local Rownames = {
 	Ink = "InkFrame",
 	Scratch = "ScratchesFrame",
 }
+local Dirtsurfacenames = {
+	UiTop = true,
+	UiBottom = true,
+	UiLeft = true,
+	UiRight = true,
+	UiFront = true,
+	UiBack = true,
+}
+local Staindecalnames = {
+	InkStain = true,
+	ScratchStain = true,
+}
 
 local function Pivotof(Object: RestorationObject): CFrame
 	return Object:IsA("Model") and Object:GetPivot() or Object.CFrame
@@ -69,6 +81,35 @@ local function Pivotto(Object: RestorationObject, Cframe: CFrame)
 	else
 		Object.CFrame = Cframe
 	end
+end
+
+local function Clonepreview(Object: RestorationObject): RestorationObject
+	Object.Archivable = true
+	local Clone = Object:Clone()
+	Clone:WaitForChild("RestorationSpots"):Destroy()
+	local Sticker = Clone:FindFirstChild("Sticker")
+	if Sticker then
+		Sticker:Destroy()
+	end
+	for _, Item in Clone:GetDescendants() do
+		if Item:IsA("BasePart") then
+			Item.Anchored = true
+			Item.CanCollide = false
+			Item.CanQuery = false
+			Item.CanTouch = false
+		elseif Item:IsA("SurfaceGui") and Dirtsurfacenames[Item.Name] then
+			Item.Enabled = false
+		elseif Item:IsA("Decal") and (Cleaningconfig.DirtDecals[Item.Name] or Staindecalnames[Item.Name]) then
+			Item:Destroy()
+		end
+	end
+	if Clone:IsA("BasePart") then
+		Clone.Anchored = true
+		Clone.CanCollide = false
+		Clone.CanQuery = false
+		Clone.CanTouch = false
+	end
+	return Clone
 end
 
 function Completioncontroller:EnsurePreviewObjects()
@@ -527,25 +568,7 @@ function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> 
 	end
 
 	if self.viewport and self.world then
-		Object.Archivable = true
-		local Clone = Object:Clone()
-		for _, Item in Clone:GetDescendants() do
-			if Item:IsA("BasePart") then
-				Item.Anchored = true
-				Item.CanCollide = false
-				Item.CanQuery = false
-				Item.CanTouch = false
-			elseif Item:IsA("Decal") and Cleaningconfig.DirtDecals[Item.Name] then
-				Item:Destroy()
-			end
-		end
-		if Clone:IsA("BasePart") then
-			Clone.Anchored = true
-			Clone.CanCollide = false
-			Clone.CanQuery = false
-			Clone.CanTouch = false
-		end
-
+		local Clone = Clonepreview(Object)
 		local Objectkey = tostring(Object:GetAttribute("ObjectKey"))
 		Pivotto(Clone, CFrame.Angles(0, math.rad(90), 0) * Getobjectrotation(Objectkey))
 		Clone.Parent = self.world

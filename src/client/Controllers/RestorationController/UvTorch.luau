@@ -24,9 +24,7 @@ local Lit = false
 local Lastscan = 0
 local Lastupdate = os.clock()
 local Halocanvassize = 256
-local Halo: ImageLabel? = nil
 local Haloimage: EditableImage? = nil
-local Halosurface: SurfaceGui? = nil
 local Halocanvas: EditableImage? = nil
 local Halodecal: Decal? = nil
 local Halodirt: Decal? = nil
@@ -74,25 +72,6 @@ local function Buildhaloimage(): EditableImage
 	end
 	Image:WritePixelsBuffer(Vector2.zero, Vector2.new(Haloimagesize, Haloimagesize), Pixels)
 	return Image
-end
-
-local function Gethalo(): ImageLabel
-	if Halo then return Halo end
-	if not Haloimage then Haloimage = Buildhaloimage() end
-	local Label = Instance.new("ImageLabel")
-	Label.Name = "UvHalo"
-	Label.BackgroundTransparency = 1
-	Label.ScaleType = Enum.ScaleType.Fit
-	Label.AnchorPoint = Vector2.new(0.5, 0.5)
-	Label.ImageContent = Content.fromObject(Haloimage)
-	Label.ImageColor3 = Uvcolor
-	Label.ImageTransparency = 1
-	Label.Visible = false
-	Label.Destroying:Connect(function()
-		if Halo == Label then Halo, Halosurface = nil, nil end
-	end)
-	Halo = Label
-	return Label
 end
 
 local function Gethalodecal(): Decal
@@ -174,15 +153,6 @@ local function Hideglow()
 	end
 end
 
-local function Detachsurfacehalo()
-	Halosurface = nil
-	if Halo then
-		Halo.Visible = false
-		Halo.ImageTransparency = 1
-		Halo.Parent = nil
-	end
-end
-
 local function Detachdecalhalo()
 	Halodirt = nil
 	if Halodecal then
@@ -194,7 +164,6 @@ end
 local function Hidehalo()
 	Halotarget.Alpha = 0
 	Halostate.Alpha = 0
-	Detachsurfacehalo()
 	Detachdecalhalo()
 	Hideglow()
 end
@@ -235,26 +204,14 @@ local function Scan(Context)
 	local Halopixels = math.clamp(Found.Spread * 2.2 + Found.Radius * 0.25, Found.Radius * 0.45, Found.Radius * 1.15)
 	local Extent = 2 * Halopixels / Haloringratio
 	local Size = Vector2.new(Extent * Found.Scale.X, Extent * Found.Scale.Y)
-	if Found.Decal then
-		Detachsurfacehalo()
-		local Decal = Gethalodecal()
-		if Halodirt ~= Found.Decal then
-			local Moved = Halodirt == nil or Halodirt.Parent ~= Found.Decal.Parent or Halodirt.Face ~= Found.Decal.Face
-			Halodirt = Found.Decal
-			Decal.Face = Found.Decal.Face
-			Decal.ZIndex = Halozindex
-			Decal.Parent = Found.Decal.Parent
-			if Moved then
-				Halostate.Center, Halostate.Size, Halostate.Alpha = Found.Center, Size * 1.5, 0
-			end
-		end
-	else
-		Detachdecalhalo()
-		local Label = Gethalo()
-		if Halosurface ~= Found.Surface then
-			Halosurface = Found.Surface
-			Label.ZIndex = Halozindex
-			Label.Parent = Found.Surface
+	local Decal = Gethalodecal()
+	if Halodirt ~= Found.Decal then
+		local Moved = Halodirt == nil or Halodirt.Parent ~= Found.Decal.Parent or Halodirt.Face ~= Found.Decal.Face
+		Halodirt = Found.Decal
+		Decal.Face = Found.Decal.Face
+		Decal.ZIndex = Halozindex
+		Decal.Parent = Found.Decal.Parent
+		if Moved then
 			Halostate.Center, Halostate.Size, Halostate.Alpha = Found.Center, Size * 1.5, 0
 		end
 	end
@@ -285,7 +242,7 @@ local function Animatehalo(Deltatime: number)
 		Glowstate += (Glowtarget - Glowstate) * (1 - math.exp(-Halosmoothing * Deltatime))
 		Glowdecal.Transparency = 1 - Glowstate * (0.85 + 0.15 * math.sin(os.clock() * Halobreathspeed * 2))
 	end
-	if not Halo and not Halodecal then return end
+	if not Halodecal then return end
 	local Blend = 1 - math.exp(-Halosmoothing * Deltatime)
 	Halostate.Center = Halostate.Center:Lerp(Halotarget.Center, Blend)
 	Halostate.Size = Halostate.Size:Lerp(Halotarget.Size, Blend)
@@ -293,13 +250,7 @@ local function Animatehalo(Deltatime: number)
 	local Clock = os.clock()
 	local Breath = 1 + Halobreathamount * math.sin(Clock * Halobreathspeed)
 	local Shimmer = 0.92 + 0.08 * math.sin(Clock * Halobreathspeed * 2)
-	if Halo then
-		Halo.Position = UDim2.fromScale(Halostate.Center.X, Halostate.Center.Y)
-		Halo.Size = UDim2.fromScale(Halostate.Size.X * Breath, Halostate.Size.Y * Breath)
-		Halo.ImageTransparency = 1 - Halostate.Alpha * Shimmer
-		Halo.Visible = Halostate.Alpha > 0.02
-	end
-	if Halodecal and Halodirt then
+	if Halodirt then
 		Drawhalodecal(Halodecal, Breath, Shimmer)
 	end
 end

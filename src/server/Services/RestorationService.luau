@@ -2,7 +2,6 @@ local Assetservice = game:GetService("AssetService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Serverstorage = game:GetService("ServerStorage")
-local Tweenservice = game:GetService("TweenService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
@@ -14,6 +13,7 @@ local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Roundedtexture = require(Replicatedstorage.Shared.Utils.RoundedTexture)
 local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
 local Restorationpercent = require(Replicatedstorage.Shared.Utils.RestorationPercent)
+local Stainlayout = require(Replicatedstorage.Shared.Utils.StainLayout)
 local Surfacecast = require(Replicatedstorage.Shared.Utils.SurfaceCast)
 
 local Restorationservice = {
@@ -33,7 +33,6 @@ local Restorationservice = {
 		CompleteRestoration = "Function",
 		CompletePeel = "Event",
 		CancelPeel = "Event",
-		CleanSpot = "Event",
 		SessionEnded = "Event",
 		UseCleanAll = "Function",
 	},
@@ -41,17 +40,17 @@ local Restorationservice = {
 
 local Dirtcleaninterval = 0.05
 local Dirtburst = 3
-local Scratchcleaninterval = Dirtcleaninterval
-local Inkcleaninterval = Scratchcleaninterval
+local Stainburst = 16
 local Coveragegridwidth = Cleaningconfig.CoverageGrid
 local Coveragecellcount = Coveragegridwidth * Coveragegridwidth
 local Brushradii = { CottonTip = 1 / 12, ToothBrush = 3 / 32 }
-local Texturebrushradius = Vector2.new(Brushradii.ToothBrush, Brushradii.ToothBrush)
+local Stainbrushradius = Brushradii.ToothBrush
 local Maxcleanpoints = 32
 local Maxdirtstrokes = 8
 local Finishassist = Cleaningconfig.FinishAssist
 local Pingstart = math.min(Finishassist.Start, Finishassist.StallStart)
-local Dirtversion = 4
+local Dirtversion = 5
+local Scratchversion = 5
 local Meshcastversion = 3
 local Mindirtshareversion = 4
 local Premarkframebudget = 0.005
@@ -66,10 +65,38 @@ local Dirtsurfacenames = {
 local Dirtdecalnames = Cleaningconfig.DirtDecals
 local Dirttools = { CottonTip = true, ToothBrush = true }
 local Cleanalltool = "CleanAll"
-local Spothealth = { Sticker = 3 }
-local Toolpower = { CottonTip = 1, HeatGun = 1, Polish = 1, Solvent = 1, ToothBrush = 1, Tweezers = 1 }
-local Toolsforspot = { Sticker = "Tweezers" }
-type CoverageEntry = { Cells: { number }, Hits: number, Free: number, Premarked: number, Passes: number, Units: number, Alpha: { number } }
+local Dirttargetfloor = 0.4
+local Dirtzindex = 0
+for _, Texture in ipairs(Cleaningconfig.DirtTextures) do
+	Dirtzindex = math.max(Dirtzindex, Texture.ZIndex)
+end
+local Stainframes = { Ink = "Ink", ScratchesFrame = "Scratch" }
+local Stainkinds = {
+	Ink = { Decal = "InkStain", Liquid = "HasSolvent", Zindex = Dirtzindex + 2 },
+	Scratch = { Decal = "ScratchStain", Liquid = "HasPolish", Zindex = Dirtzindex + 1 },
+}
+local Stainedge = 1e-6
+local Stampslack = 1e-6
+local Stainmaximumspan = 2
+local Randomscratch = Cleaningconfig.RandomScratch
+local Scratchtextures = Cleaningconfig.ScratchTextures
+local Scratchshape = { Ratio = 0, Inset = 0 }
+local Scratchseedoffset = 2654435769
+local Scratchpixelsperstud = 100
+local Scratchfallbackcells = math.max(1, math.ceil(Randomscratch.MinCells / 2))
+local Downwardlimit = -0.5
+local Turnedfaces = { Top = true, Bottom = true }
+type CoverageEntry = {
+	Cells: { number },
+	Hits: number,
+	Free: number,
+	Premarked: number,
+	Passes: number,
+	Units: number,
+	Alpha: { number },
+	Kind: string?,
+	Source: ImageLabel?,
+}
 local Coverage: { [RestorationObject]: { [Instance]: CoverageEntry } } = {}
 
 type CoverageMask = { Alpha: { number }, Premarked: number }
@@ -78,13 +105,13 @@ local Dirtfadestep = math.ceil(255 / Cleaningconfig.DirtPasses)
 local Strokeinterval = 0.075
 local Strokeefficiency = 0.55
 local Maskcache: { [string]: CoverageMask } = {}
+local Solidalpha = table.create(Coveragecellcount, 255)
 local Reachability: { [string]: buffer } = {}
 local Warmqueue: { string } = {}
 local Coldtemplates: { [string]: boolean } = {}
 local Warming = false
 local Objecttemplates: Folder
 local Warmworld: WorldModel
-local Textureframenames = { Ink = true, ScratchesFrame = true }
 local Frontfacerank = { Front = 1, Back = 2, Top = 3, Left = 4, Right = 5, Bottom = 6 }
 local Workbenchturndegrees = -90
 
@@ -140,7 +167,7 @@ local function Warmmasks(Object: RestorationObject)
 		end
 	end
 	for _, Descendant in ipairs(Object:GetDescendants()) do
-		if Descendant:IsA("ImageLabel") and Descendant.Name == "Texture" and Textureframenames[Descendant.Parent.Name] then
+		if Descendant:IsA("ImageLabel") and Descendant.Name == "Texture" and Stainframes[Descendant.Parent.Name] then
 			Addmissing(Descendant.Image, Roundedtexture.GetShape(Descendant))
 		elseif Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
 			local Shape = Roundedtexture.GetShape(Descendant)
@@ -188,6 +215,68 @@ local function Buildcoverageentry(Source: Instance, Image: string, Passes: numbe
 		Free += Passes - Needed
 	end
 	return { Cells = Cells, Hits = Free, Free = Free, Premarked = Mask.Premarked, Passes = Passes, Units = Units, Alpha = Mask.Alpha }
+end
+
+local function Stainseparated(Origin: Vector2, Along: Vector2, Across: Vector2, Maskcolumn: number, Maskrow: number): boolean
+	local Normalx, Normaly = -Along.Y, Along.X
+	local Scale = math.sqrt(Normalx * Normalx + Normaly * Normaly) * Coveragegridwidth
+	local Low = (Origin.X * Normalx + Origin.Y * Normaly) * Coveragegridwidth / Scale
+	local Span = (Across.X * Normalx + Across.Y * Normaly) / Scale
+	local Middle = ((Maskcolumn + 0.5) * Normalx + (Maskrow + 0.5) * Normaly) / Scale
+	local Reach = 0.5 * (math.abs(Normalx) + math.abs(Normaly)) / Scale
+	return math.min(Low + math.max(Span, 0), Middle + Reach) - math.max(Low + math.min(Span, 0), Middle - Reach) <= Stainedge
+end
+
+local function Stainalpha(Layout: Stainlayout.Layout, Alpha: { number }, Column: number, Row: number): number
+	local Origin = Stainlayout.GetTexturePoint(Layout, Vector2.new(Column / Coveragegridwidth, Row / Coveragegridwidth))
+	local Lowu, Lowv, Highu, Highv = math.huge, math.huge, -math.huge, -math.huge
+	for Corner = 0, 3 do
+		local Point = Stainlayout.GetTexturePoint(
+			Layout,
+			Vector2.new((Column + Corner % 2) / Coveragegridwidth, (Row + Corner // 2) / Coveragegridwidth)
+		)
+		Lowu, Highu = math.min(Lowu, Point.X), math.max(Highu, Point.X)
+		Lowv, Highv = math.min(Lowv, Point.Y), math.max(Highv, Point.Y)
+	end
+	Lowu, Lowv = math.max(Lowu, 0) + Stainedge, math.max(Lowv, 0) + Stainedge
+	Highu, Highv = math.min(Highu, 1) - Stainedge, math.min(Highv, 1) - Stainedge
+	if Lowu >= Highu or Lowv >= Highv then
+		return 0
+	end
+	local Darkest = 0
+	for Maskrow = math.floor(Lowv * Coveragegridwidth), math.ceil(Highv * Coveragegridwidth) - 1 do
+		for Maskcolumn = math.floor(Lowu * Coveragegridwidth), math.ceil(Highu * Coveragegridwidth) - 1 do
+			local Value = Alpha[Maskrow * Coveragegridwidth + Maskcolumn + 1]
+			if
+				Value > Darkest
+				and not Stainseparated(Origin, Layout.Inverseu, Layout.Inversev, Maskcolumn, Maskrow)
+				and not Stainseparated(Origin, Layout.Inversev, Layout.Inverseu, Maskcolumn, Maskrow)
+			then
+				Darkest = Value
+			end
+		end
+	end
+	return Darkest
+end
+
+local function Buildstainentry(Layout: Stainlayout.Layout, Kind: string, Alpha: { number }): CoverageEntry
+	local Cells = table.create(Coveragecellcount, 1)
+	local Facealpha = table.create(Coveragecellcount, 0)
+	local Free = Coveragecellcount
+	local Minimum, Maximum = Layout.Minimum, Layout.Maximum
+	local Firstcolumn = math.max(math.floor(Minimum.X * Coveragegridwidth), 0)
+	local Lastcolumn = math.min(math.ceil(Maximum.X * Coveragegridwidth), Coveragegridwidth) - 1
+	for Row = math.max(math.floor(Minimum.Y * Coveragegridwidth), 0), math.min(math.ceil(Maximum.Y * Coveragegridwidth), Coveragegridwidth) - 1 do
+		for Column = Firstcolumn, Lastcolumn do
+			local Index = Row * Coveragegridwidth + Column + 1
+			Facealpha[Index] = Stainalpha(Layout, Alpha, Column, Row)
+			if Facealpha[Index] > Visiblealpha then
+				Cells[Index] = 0
+				Free -= 1
+			end
+		end
+	end
+	return { Cells = Cells, Hits = Free, Free = Free, Premarked = Free, Passes = 1, Units = 1, Alpha = Facealpha, Kind = Kind, Source = Layout.Texture }
 end
 
 local function Brushfootprint(Entry: CoverageEntry, Radius: Vector2): number
@@ -277,14 +366,24 @@ local function Lazycaster(Object: RestorationObject, Version: number)
 	return Get, Release
 end
 
-local function Knowncells(Objectkey: string, Version: number, Decal: Decal): buffer
-	local Key = Objectkey .. "|" .. math.min(Version, Meshcastversion) .. "|" .. (Decal:GetAttribute("DirtSlot") :: number)
+local function Knownbuffer(Key: string): buffer
 	local Known = Reachability[Key]
 	if not Known then
 		Known = buffer.create(Coveragecellcount)
 		Reachability[Key] = Known
 	end
 	return Known
+end
+
+local function Knowncells(Objectkey: string, Version: number, Decal: Decal): buffer
+	return Knownbuffer(Objectkey .. "|" .. math.min(Version, Meshcastversion) .. "|" .. (Decal:GetAttribute("DirtSlot") :: number))
+end
+
+local function Stainknowncells(Objectkey: string, Version: number, Surface: SurfaceGui): buffer
+	if Surface:GetAttribute("Generated") == true then
+		return Knownbuffer(Objectkey .. "|" .. math.min(Version, Meshcastversion) .. "|" .. (Surface:GetAttribute("DirtSlot") :: number))
+	end
+	return Knownbuffer(Objectkey .. "|" .. math.min(Version, Meshcastversion) .. "|S" .. (Surface:GetAttribute("StainSlot") :: number))
 end
 
 local function Resolvereach(Object: RestorationObject, Getcaster: () -> (any, boolean), Decal: Decal, Known: buffer, Entry: CoverageEntry?): buffer
@@ -338,22 +437,455 @@ local function Premarkunreachable(Entry: CoverageEntry, Object: RestorationObjec
 	return Entry.Premarked < Coveragecellcount
 end
 
+local function Findsticker(Object: RestorationObject): BasePart?
+	local Sticker = if Config.Object[Object.Name].Sticker then Object:FindFirstChild("Sticker") else nil
+	if not Sticker then
+		return nil
+	end
+	assert(Sticker:IsA("BasePart"), "RestorationService: " .. Sticker:GetFullName() .. " must be a BasePart")
+	Sticker.CanCollide = false
+	Sticker.CanQuery = false
+	return Sticker
+end
+
+local function Collectstains(Object: RestorationObject, Sticker: BasePart?): { Stainlayout.Layout }
+	local Layouts = {}
+	local Inked = {}
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if not Descendant:IsA("GuiObject") then
+			continue
+		end
+		assert(Descendant.Name ~= "DirtFrame", "RestorationService: " .. Descendant:GetFullName() .. " is no longer used, delete it")
+		local Kind = Stainframes[Descendant.Name]
+		if not Kind then
+			continue
+		end
+		assert(
+			Kind ~= "Scratch" or Descendant:GetAttribute("Generated") == true or Object.Name == Config.Offer.TutorialObject,
+			"RestorationService: " .. Descendant:GetFullName() .. " is no longer used, scratches are generated by the game: delete it"
+		)
+		local Surface = Descendant.Parent
+		assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " must be inside a SurfaceGui")
+		assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " must use a valid Ui name")
+		local Part = Surface.Parent
+		assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " must be inside a BasePart")
+		assert(
+			not Sticker or Part ~= Sticker and not Part:IsDescendantOf(Sticker),
+			"RestorationService: " .. Surface:GetFullName() .. " must not be on the Sticker, the peel destroys it"
+		)
+		assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " must be enabled")
+		assert(
+			Surface.Face.Name == string.sub(Surface.Name, 3),
+			"RestorationService: the face of " .. Surface:GetFullName() .. " does not match its name"
+		)
+		assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " must be visible")
+		if Kind == "Ink" then
+			assert(not Inked[Surface], "RestorationService: " .. Surface:GetFullName() .. " has more than one Ink, keep a single Ink per SurfaceGui")
+			Inked[Surface] = true
+		end
+		local Texture = Descendant:FindFirstChild("Texture")
+		assert(Texture, "RestorationService: " .. Descendant:GetFullName() .. " has no Texture, add an ImageLabel named Texture")
+		assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " must be an ImageLabel")
+		assert(Texture.Visible, "RestorationService: " .. Texture:GetFullName() .. " must be visible")
+		assert(
+			Texture.ImageTransparency < 1,
+			"RestorationService: " .. Texture:GetFullName() .. " is invisible (ImageTransparency 1), lower its ImageTransparency"
+		)
+		local Layout = Stainlayout.GetLayout(Texture)
+		assert(
+			math.max(Layout.Axisu.Magnitude, Layout.Axisv.Magnitude) <= Stainmaximumspan,
+			"RestorationService: "
+				.. Texture:GetFullName()
+				.. " is more than twice the size of the "
+				.. Layout.Facename
+				.. " face of "
+				.. Layout.Part:GetFullName()
+				.. ", make it smaller than that face"
+		)
+		table.insert(Layouts, Layout)
+	end
+	return Layouts
+end
+
+local function Createstaindecal(Layout: Stainlayout.Layout, Kind: string): Decal
+	local Decal = Instance.new("Decal")
+	Decal.Name = Stainkinds[Kind].Decal
+	Decal.Face = Layout.Face
+	Decal.Texture = Layout.Texture.Image
+	Decal.ZIndex = Stainkinds[Kind].Zindex
+	Decal.Transparency = 1
+	Decal:SetAttribute("Cleaned", false)
+	local Source = Instance.new("ObjectValue")
+	Source.Name = "Source"
+	Source.Value = Layout.Texture
+	Source.Parent = Decal
+	Decal.Parent = Layout.Part
+	return Decal
+end
+
+type ScratchSlot = {
+	Part: BasePart,
+	Face: Enum.NormalId,
+	Facename: string,
+	Dirtslot: number,
+	Reach: buffer,
+	Forbidden: { boolean },
+	Allowed: { number },
+	Area: number,
+	Cellarea: number,
+	Shortside: number,
+	Canvas: Vector2,
+}
+
+type ScratchCandidate = {
+	Slot: ScratchSlot,
+	Centre: Vector2,
+	Side: number,
+	Rotation: number,
+	Entry: CoverageEntry,
+	Inside: boolean,
+	Reachable: number,
+	Share: number,
+}
+
+local function Scratchmask(Image: string): { number }
+	local Success, Mask = pcall(Buildmask, Image, Scratchshape)
+	if Success then
+		return Mask.Alpha
+	end
+	warn("RestorationService: could not read the scratch texture " .. Image .. ", it is placed as a full square: " .. tostring(Mask))
+	local Solid = { Alpha = Solidalpha, Premarked = 0 }
+	Maskcache[Image .. "|" .. Roundedtexture.GetKey(Scratchshape)] = Solid
+	return Solid.Alpha
+end
+
+local function Clipslab(Start: number, Speed: number, Extent: number, Low: number, High: number): (number, number)
+	if math.abs(Speed) < 1e-9 then
+		if math.abs(Start) > Extent then
+			return 1, 0
+		end
+		return Low, High
+	end
+	local First, Second = (-Extent - Start) / Speed, (Extent - Start) / Speed
+	return math.max(Low, math.min(First, Second)), math.min(High, math.max(First, Second))
+end
+
+local function Raymeetsbox(Origin: Vector3, Direction: Vector3, Half: Vector3): boolean
+	local Low, High = Clipslab(Origin.X, Direction.X, Half.X, 0, math.huge)
+	Low, High = Clipslab(Origin.Y, Direction.Y, Half.Y, Low, High)
+	Low, High = Clipslab(Origin.Z, Direction.Z, Half.Z, Low, High)
+	return Low <= High
+end
+
+local function Forbidaround(Slot: ScratchSlot, Index: number)
+	local Column, Row = (Index - 1) % Coveragegridwidth, (Index - 1) // Coveragegridwidth
+	for Nearrow = math.max(Row - 1, 0), math.min(Row + 1, Coveragegridwidth - 1) do
+		for Nearcolumn = math.max(Column - 1, 0), math.min(Column + 1, Coveragegridwidth - 1) do
+			Slot.Forbidden[Nearrow * Coveragegridwidth + Nearcolumn + 1] = true
+		end
+	end
+end
+
+local function Forbidsticker(Slot: ScratchSlot, Sticker: BasePart, Inflate: number)
+	local Part = Slot.Part
+	local Half = Sticker.Size / 2 + Vector3.new(Inflate, Inflate, Inflate)
+	local Normal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Slot.Face))
+	local Depth = math.abs(Vector3.FromNormalId(Slot.Face):Dot(Part.Size)) / 2
+	local Lowu, Lowv, Highu, Highv = math.huge, math.huge, -math.huge, -math.huge
+	local Outward = false
+	for Corner = 0, 7 do
+		local Point = Sticker.CFrame:PointToWorldSpace(Half * Vector3.new(Corner % 2 * 2 - 1, Corner // 2 % 2 * 2 - 1, Corner // 4 * 2 - 1))
+		local Facepoint = Facemapping.GetDecalPoint(Part, Point, Slot.Facename)
+		Lowu, Highu = math.min(Lowu, Facepoint.X), math.max(Highu, Facepoint.X)
+		Lowv, Highv = math.min(Lowv, Facepoint.Y), math.max(Highv, Facepoint.Y)
+		Outward = Outward or Normal:Dot(Point - Part.Position) >= Depth
+	end
+	if not Outward then
+		return
+	end
+	local Direction = Sticker.CFrame:VectorToObjectSpace(Normal)
+	for Row = math.max(math.floor(Lowv * Coveragegridwidth), 0), math.min(math.floor(Highv * Coveragegridwidth), Coveragegridwidth - 1) do
+		for Column = math.max(math.floor(Lowu * Coveragegridwidth), 0), math.min(math.floor(Highu * Coveragegridwidth), Coveragegridwidth - 1) do
+			local Point = Part.CFrame:PointToWorldSpace(
+				Facemapping.GetDecalLocalPoint(Part.Size, Slot.Facename, (Column + 0.5) / Coveragegridwidth, (Row + 0.5) / Coveragegridwidth)
+			)
+			if Raymeetsbox(Sticker.CFrame:PointToObjectSpace(Point), Direction, Half) then
+				Slot.Forbidden[Row * Coveragegridwidth + Column + 1] = true
+			end
+		end
+	end
+end
+
+local function Refreshslot(Slot: ScratchSlot)
+	local Allowed = {}
+	for Index = 1, Coveragecellcount do
+		if buffer.readu8(Slot.Reach, Index - 1) == 1 and not Slot.Forbidden[Index] then
+			table.insert(Allowed, Index)
+		end
+	end
+	Slot.Allowed = Allowed
+	Slot.Area = #Allowed * Slot.Cellarea
+end
+
+local function Scratchslots(
+	Object: RestorationObject,
+	Sticker: BasePart?,
+	Stains: { Stainlayout.Layout },
+	Version: number,
+	Getcaster: () -> (any, boolean),
+	Inflate: number
+): { ScratchSlot }
+	local Slots = {}
+	local Taken: { [Instance]: { [string]: boolean } } = {}
+	local Started = os.clock()
+	for _, Decal in ipairs(Object:GetDescendants()) do
+		if not Decal:IsA("Decal") or not Dirtdecalnames[Decal.Name] then
+			continue
+		end
+		local Part = Decal.Parent :: BasePart
+		assert(Part:IsA("BasePart"), "RestorationService: " .. Decal:GetFullName() .. " must be inside a BasePart")
+		local Facename = Decal.Face.Name
+		local Faces = Taken[Part] or {}
+		Taken[Part] = Faces
+		if Faces[Facename] or Sticker and (Part == Sticker or Part:IsDescendantOf(Sticker)) then
+			continue
+		end
+		Faces[Facename] = true
+		if Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Decal.Face)).Y < Downwardlimit then
+			continue
+		end
+		local Extent = Facemapping.GetDecalSize(Part.Size, Facename)
+		local Slot: ScratchSlot = {
+			Part = Part,
+			Face = Decal.Face,
+			Facename = Facename,
+			Dirtslot = Decal:GetAttribute("DirtSlot") :: number,
+			Reach = Resolvereach(Object, Getcaster, Decal, Knowncells(Object.Name, Version, Decal)),
+			Forbidden = table.create(Coveragecellcount, false),
+			Allowed = {},
+			Area = 0,
+			Cellarea = Extent.X * Extent.Y / Coveragecellcount,
+			Shortside = math.min(Extent.X, Extent.Y),
+			Canvas = if Turnedfaces[Facename] then Vector2.new(Extent.Y, Extent.X) else Extent,
+		}
+		if Sticker then
+			Forbidsticker(Slot, Sticker, Inflate)
+		end
+		for _, Layout in ipairs(Stains) do
+			if Stainframes[Layout.Frame.Name] == "Ink" and Layout.Part == Part and Layout.Face == Decal.Face then
+				local Success, Mask = pcall(Buildmask, Layout.Texture.Image, Roundedtexture.GetShape(Layout.Texture))
+				local Entry = Buildstainentry(Layout, "Ink", if Success then Mask.Alpha else Solidalpha)
+				for Index = 1, Coveragecellcount do
+					if Entry.Cells[Index] < Entry.Passes and buffer.readu8(Slot.Reach, Index - 1) == 1 then
+						Forbidaround(Slot, Index)
+					end
+				end
+			end
+		end
+		Refreshslot(Slot)
+		table.insert(Slots, Slot)
+		if os.clock() - Started > Premarkframebudget then
+			task.wait()
+			Started = os.clock()
+		end
+	end
+	return Slots
+end
+
+local function Pickslot(Slots: { ScratchSlot }, Generator: Random): ScratchSlot?
+	local Total = 0
+	for _, Slot in ipairs(Slots) do
+		Total += Slot.Area
+	end
+	if Total <= 0 then
+		return nil
+	end
+	local Roll = Generator:NextNumber() * Total
+	local Last = nil
+	for _, Slot in ipairs(Slots) do
+		if Slot.Area > 0 then
+			Last = Slot
+			Roll -= Slot.Area
+			if Roll < 0 then
+				return Slot
+			end
+		end
+	end
+	return Last
+end
+
+local function Newscratchgui(Image: string): (SurfaceGui, Frame, ImageLabel)
+	local Surface = Instance.new("SurfaceGui")
+	Surface.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	Surface.PixelsPerStud = Scratchpixelsperstud
+	Surface:SetAttribute("Generated", true)
+	local Frame = Instance.new("Frame")
+	Frame.Name = "ScratchesFrame"
+	Frame.BackgroundTransparency = 1
+	Frame.AnchorPoint = Vector2.new(0.5, 0.5)
+	Frame:SetAttribute("Generated", true)
+	local Texture = Instance.new("ImageLabel")
+	Texture.Name = "Texture"
+	Texture.Image = Image
+	Texture.BackgroundTransparency = 1
+	Texture.ScaleType = Enum.ScaleType.Stretch
+	Texture.Size = UDim2.fromScale(1, 1)
+	Texture.Parent = Frame
+	Frame.Parent = Surface
+	return Surface, Frame, Texture
+end
+
+local function Placescratchgui(Surface: SurfaceGui, Frame: GuiObject, Slot: ScratchSlot, Centre: Vector2, Side: number, Rotation: number)
+	Surface.Name = "Ui" .. Slot.Facename
+	Surface.Face = Slot.Face
+	Surface:SetAttribute("DirtSlot", Slot.Dirtslot)
+	Frame.Position = if Turnedfaces[Slot.Facename] then UDim2.fromScale(Centre.Y, 1 - Centre.X) else UDim2.fromScale(Centre.X, Centre.Y)
+	Frame.Size = UDim2.fromScale(Side / Slot.Canvas.X, Side / Slot.Canvas.Y)
+	Frame.Rotation = Rotation
+end
+
+local function Betterfallback(Candidate: ScratchCandidate, Best: ScratchCandidate?): boolean
+	if not Best then
+		return true
+	end
+	if Candidate.Inside ~= Best.Inside then
+		return Candidate.Inside
+	end
+	if Candidate.Reachable ~= Best.Reachable then
+		return Candidate.Reachable > Best.Reachable
+	end
+	return Candidate.Share > Best.Share
+end
+
+local function Removeauthoredscratches(Object: RestorationObject)
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("GuiObject") and Descendant.Name == "ScratchesFrame" then
+			Descendant:Destroy()
+		end
+	end
+end
+
+local function Generatescratches(
+	Object: RestorationObject,
+	Sticker: BasePart?,
+	Stains: { Stainlayout.Layout },
+	Seed: number,
+	Version: number,
+	Getcaster: () -> (any, boolean)
+)
+	local Generator = Random.new(Seed + Scratchseedoffset)
+	local Objectsize = if Object:IsA("Model") then Object:GetExtentsSize() else Object.Size
+	local Scale = Objectsize.Magnitude / 2
+	local Slots = Scratchslots(Object, Sticker, Stains, Version, Getcaster, Cleaningconfig.BrushMinimumRadius * Scale)
+	local Holder = Instance.new("Part")
+	local Candidate, Candidateframe, Candidatetexture = Newscratchgui(Scratchtextures[1].Image)
+	Candidate.Parent = Holder
+	local Pool = {}
+	local Started = os.clock()
+	for _ = 1, Randomscratch.Count do
+		if #Pool == 0 then
+			for Index = 1, #Scratchtextures do
+				Pool[Index] = Index
+			end
+		end
+		local Image = Scratchtextures[table.remove(Pool, Generator:NextInteger(1, #Pool))].Image
+		local Alpha = Scratchmask(Image)
+		Candidatetexture.Image = Image
+		local Chosen: ScratchCandidate? = nil
+		local Shrink = 1
+		for Attempt = 1, Randomscratch.Attempts do
+			local Slot = Pickslot(Slots, Generator)
+			if not Slot then
+				break
+			end
+			local Cell = Slot.Allowed[Generator:NextInteger(1, #Slot.Allowed)] - 1
+			local Centre = Vector2.new(
+				(Cell % Coveragegridwidth + Generator:NextNumber()) / Coveragegridwidth,
+				(Cell // Coveragegridwidth + Generator:NextNumber()) / Coveragegridwidth
+			)
+			local Rotation = Generator:NextNumber() * 360
+			local Side = Generator:NextNumber(Randomscratch.Size.Min, Randomscratch.Size.Max) * Scale
+			Side = math.max(math.min(Side, Slot.Shortside * Randomscratch.FaceCap) * Shrink, Randomscratch.MinSide)
+			Holder.Size = Slot.Part.Size
+			Placescratchgui(Candidate, Candidateframe, Slot, Centre, Side, Rotation)
+			local Layout = Stainlayout.GetLayout(Candidatetexture)
+			if math.max(Layout.Axisu.Magnitude, Layout.Axisv.Magnitude) <= Stainmaximumspan then
+				local Entry = Buildstainentry(Layout, "Scratch", Alpha)
+				local Required, Reachable, Blocked = 0, 0, false
+				for Index = 1, Coveragecellcount do
+					if Entry.Cells[Index] < Entry.Passes then
+						Required += 1
+						Blocked = Blocked or Slot.Forbidden[Index]
+						if buffer.readu8(Slot.Reach, Index - 1) == 1 then
+							Reachable += 1
+						end
+					end
+				end
+				local Inside = Layout.Minimum.X >= 0 and Layout.Minimum.Y >= 0 and Layout.Maximum.X <= 1 and Layout.Maximum.Y <= 1
+				local Placed: ScratchCandidate = {
+					Slot = Slot,
+					Centre = Centre,
+					Side = Side,
+					Rotation = Rotation,
+					Entry = Entry,
+					Inside = Inside,
+					Reachable = Reachable,
+					Share = if Required > 0 then Reachable / Required else 0,
+				}
+				if Inside and not Blocked and Required >= Randomscratch.MinCells and Reachable >= Required * Randomscratch.MinVisible then
+					Chosen = Placed
+					break
+				end
+				if not Blocked and Reachable >= Scratchfallbackcells and Betterfallback(Placed, Chosen) then
+					Chosen = Placed
+				end
+			end
+			if Attempt % Randomscratch.ShrinkRun == 0 then
+				Shrink *= Randomscratch.Shrink
+			end
+			if os.clock() - Started > Premarkframebudget then
+				task.wait()
+				Started = os.clock()
+			end
+		end
+		if not Chosen then
+			warn("RestorationService: " .. Object:GetFullName() .. " has no visible dirt face for its random scratch")
+			break
+		end
+		local Surface, Frame = Newscratchgui(Image)
+		Placescratchgui(Surface, Frame, Chosen.Slot, Chosen.Centre, Chosen.Side, Chosen.Rotation)
+		Surface.Parent = Chosen.Slot.Part
+		for Index = 1, Coveragecellcount do
+			if Chosen.Entry.Cells[Index] < Chosen.Entry.Passes then
+				Forbidaround(Chosen.Slot, Index)
+			end
+		end
+		Refreshslot(Chosen.Slot)
+	end
+	Holder:Destroy()
+end
+
 local function Warmtemplate(Objectkey: string)
 	local Object = Objecttemplates:WaitForChild(Objectkey):Clone() :: RestorationObject
 	local Getcaster, Releasecaster = Lazycaster(Object, Dirtversion)
 	local Success, Failure = pcall(function()
-		local Sticker = if Config.Object[Objectkey].Sticker then Object:FindFirstChild("Sticker") else nil
-		if Sticker then
-			(Sticker :: BasePart).CanQuery = false
-		end
+		local Sticker = Findsticker(Object)
 		Object.Parent = Warmworld
 		for _, Decal in ipairs(Object:GetDescendants()) do
 			if Decal:IsA("Decal") and Dirtdecalnames[Decal.Name] then
 				local Known = Knowncells(Objectkey, Dirtversion, Decal)
 				if Resolvereach(Object, Getcaster, Decal, Known) ~= Known then
 					Coldtemplates[Objectkey] = true
-					break
+					return
 				end
+			end
+		end
+		for _, Layout in ipairs(Collectstains(Object, Sticker)) do
+			local Kind = Stainframes[Layout.Frame.Name]
+			local Known = Stainknowncells(Objectkey, Dirtversion, Layout.Surface)
+			if Resolvereach(Object, Getcaster, Createstaindecal(Layout, Kind), Known, Buildstainentry(Layout, Kind, Solidalpha)) ~= Known then
+				Coldtemplates[Objectkey] = true
+				return
 			end
 		end
 	end)
@@ -402,11 +934,9 @@ local Mutationbyobject: { [Instance]: string } = {}
 
 local Sessions: { [Player]: RestorationObject } = {}
 local Sessionitem: { [Player]: any } = {}
-local Lastclean: { [Player]: number } = {}
 local Dirtallowance: { [Player]: number } = {}
+local Stainallowance: { [Player]: { [Instance]: number } } = {}
 local Stallevents: { [Player]: number } = {}
-local Lastscratchclean: { [Player]: number } = {}
-local Lastinkclean: { [Player]: number } = {}
 local Peeling: { [Player]: BasePart } = {}
 local Activeobjects: { [Player]: RestorationObject } = {}
 local Pendingcleanall: { [Player]: number } = {}
@@ -489,26 +1019,123 @@ local function Revealmutation(Object: RestorationObject, Immediate: boolean?)
 	end)
 end
 
+local function Hidestain(Entry: CoverageEntry)
+	local Texture = Entry.Source :: ImageLabel
+	local Frame = Texture.Parent :: GuiObject
+	Texture:SetAttribute("Remaining", 0)
+	Frame:SetAttribute("Cleaned", true)
+	Frame.Visible = false
+end
+
+local function Completestain(Decal: Instance, Entry: CoverageEntry)
+	Hidestain(Entry)
+	Decal:SetAttribute("Cleaned", true)
+end
+
+local function Dropstain(Object: RestorationObject, Decal: Instance, Entry: CoverageEntry)
+	Hidestain(Entry)
+	Coverage[Object][Decal] = nil
+	Decal:Destroy()
+end
+
 local Precleankinds = {
-	ScratchesFrame = { Kind = "Scratch", Units = 1, Weighted = false },
+	Scratch = { Kind = "Scratch", Units = 1, Weighted = false },
 	Ink = { Kind = "Ink", Units = 1, Weighted = false },
 }
 
 local Progresskinds = { "Dirt", "Ink", "Scratch", "Sticker" }
 local Precleansnapratio = 0.85
 
-local function Captureprogress(Object: RestorationObject): { [string]: number }
-	local Progress = {}
+local function Staintextures(Object: RestorationObject): { ImageLabel }
+	local Textures = {}
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("GuiObject") and Stainframes[Descendant.Name] then
+			table.insert(Textures, Descendant:WaitForChild("Texture") :: ImageLabel)
+		end
+	end
+	return Textures
+end
+
+local function Keynumber(Value: number, Decimals: number): string
+	local Scale = 10 ^ Decimals
+	local Rounded = math.round(Value * Scale)
+	if Rounded == 0 then
+		return "0"
+	end
+	local Text = string.format("%." .. Decimals .. "f", Rounded / Scale)
+	if Decimals == 0 then
+		return Text
+	end
+	return (string.gsub(string.gsub(Text, "0+$", ""), "%.$", ""))
+end
+
+local function Keyudim(Value: UDim2): string
+	return Keynumber(Value.X.Scale, 3) .. "," .. Keynumber(Value.X.Offset, 0) .. "," .. Keynumber(Value.Y.Scale, 3) .. "," .. Keynumber(Value.Y.Offset, 0)
+end
+
+local function Stainsignature(Texture: ImageLabel): string
+	local Frame = Texture.Parent :: GuiObject
+	local Surface = Frame.Parent :: SurfaceGui
+	local Size = (Surface.Parent :: BasePart).Size
+	return table.concat({
+		Frame.Name,
+		Surface.Name,
+		Keynumber(Size.X, 3) .. "," .. Keynumber(Size.Y, 3) .. "," .. Keynumber(Size.Z, 3),
+		Keyudim(Frame.Position),
+		Keyudim(Frame.Size),
+		Keynumber(Frame.Rotation, 2),
+		Keynumber(Frame.AnchorPoint.X, 3) .. "," .. Keynumber(Frame.AnchorPoint.Y, 3),
+		Keyudim(Texture.Position),
+		Keyudim(Texture.Size),
+		Keynumber(Texture.Rotation, 2),
+		Texture.Image,
+	}, "|")
+end
+
+local function Stainkeys(Object: RestorationObject): { [string]: ImageLabel }
+	local Keys = {}
+	for _, Texture in ipairs(Staintextures(Object)) do
+		local Signature = Stainsignature(Texture)
+		local Key = Signature
+		local Count = 1
+		while Keys[Key] do
+			Count += 1
+			Key = Signature .. "#" .. Count
+		end
+		Keys[Key] = Texture
+	end
+	return Keys
+end
+
+local function Captureprogress(Object: RestorationObject): { [string]: any }
+	local Progress: { [string]: any } = {}
 	for _, Kind in ipairs(Progresskinds) do
 		Progress[Kind] = tonumber(Object:GetAttribute("Cleaned_" .. Kind)) or 0
+		Progress[Kind .. "Total"] = Object:GetAttribute("Total_" .. Kind)
 	end
 	Progress.DirtSeed = Object:GetAttribute("DirtSeed")
 	Progress.DirtVersion = Object:GetAttribute("DirtVersion")
-	Progress.DirtTotal = Object:GetAttribute("Total_Dirt")
+	local Stains = {}
+	for Key, Texture in pairs(Stainkeys(Object)) do
+		Stains[Key] = 1 - (Texture:GetAttribute("Remaining") :: number)
+	end
+	Progress.Stains = Stains
 	return Progress
 end
 
-local function Precleanobject(Object: RestorationObject, Ratio: number, Progress: { [string]: number }?)
+local function Savedstainshares(Object: RestorationObject, Progress: { [string]: any }?): { [Instance]: number }?
+	local Saved = if Progress then Progress.Stains else nil
+	if type(Saved) ~= "table" or Saved[1] ~= nil then
+		return nil
+	end
+	local Shares = {}
+	for Key, Texture in pairs(Stainkeys(Object)) do
+		Shares[Texture] = tonumber(Saved[Key]) or 0
+	end
+	return Shares
+end
+
+local function Precleanobject(Object: RestorationObject, Ratio: number, Progress: { [string]: any }?)
 	if Ratio <= 0 then
 		return
 	end
@@ -516,14 +1143,26 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 	local Target = Totalspots * math.clamp(Ratio, 0, 1)
 	local Dirtweight = tonumber(Object:GetAttribute("DirtWeight")) or 1
 	local Cleanedbykind = {}
+	local Missing = {}
+	local Missingtotal = 0
 	for _, Kind in ipairs(Progresskinds) do
 		local Total = tonumber(Object:GetAttribute("Total_" .. Kind)) or 0
 		local Stored = if Progress then tonumber(Progress[Kind]) or 0 else Total * math.clamp(Ratio, 0, 1)
-		local Savedtotal = if Progress and Kind == "Dirt" then tonumber(Progress.DirtTotal) or 0 else 0
+		local Savedtotal = if Progress then tonumber(Progress[Kind .. "Total"]) or 0 else 0
 		if Savedtotal > 0 then
 			Stored *= Total / Savedtotal
+		elseif Progress and Kind ~= "Dirt" and Stored <= 0 and Total > 0 then
+			Missing[Kind] = Total
+			Missingtotal += Total
 		end
 		Cleanedbykind[Kind] = math.clamp(Stored, 0, Total)
+	end
+	if Missingtotal > 0 then
+		local Restored = Cleanedbykind.Dirt * Dirtweight + Cleanedbykind.Ink + Cleanedbykind.Scratch + Cleanedbykind.Sticker
+		local Shortfall = math.clamp(Target - Restored, 0, Missingtotal)
+		for Kind, Total in pairs(Missing) do
+			Cleanedbykind[Kind] = Total * Shortfall / Missingtotal
+		end
 	end
 
 	local Hideable = table.clone(Cleanedbykind)
@@ -532,22 +1171,24 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 		Hidden[Kind] = 0
 	end
 	local Cleaned = 0
+	local Stainshares = Savedstainshares(Object, Progress)
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		local Isdirt = Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] == true
+		local Stain = if Isdirt then nil else Coverage[Object][Descendant]
 		local Entry = if Isdirt
 			then { Kind = "Dirt", Units = Coverage[Object][Descendant].Units, Weighted = true }
-			else Precleankinds[Descendant.Name]
-		if
-			Entry
-			and (Isdirt or Descendant:IsA("GuiObject") and Descendant.Visible)
-			and Hideable[Entry.Kind] >= Entry.Units * Precleansnapratio
-		then
-			if Isdirt then
+			elseif Stain then Precleankinds[Stain.Kind]
+			else nil
+		local Hide = if Stain and Stainshares
+			then Stainshares[Stain.Source :: ImageLabel] >= Precleansnapratio
+			elseif Entry then Hideable[Entry.Kind] >= Entry.Units * Precleansnapratio
+			else false
+		if Entry and Hide then
+			if Stain then
+				Dropstain(Object, Descendant, Stain)
+			else
 				Coverage[Object][Descendant] = nil
 				Descendant:Destroy()
-			else
-				Descendant.Visible = false
-				Descendant:SetAttribute("Cleaned", true)
 			end
 			Hideable[Entry.Kind] = math.max(Hideable[Entry.Kind] - Entry.Units, 0)
 			Hidden[Entry.Kind] += Entry.Units
@@ -555,12 +1196,19 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 		end
 	end
 	for _, Kind in ipairs(Progresskinds) do
+		local Total = tonumber(Object:GetAttribute("Total_" .. Kind)) or 0
 		Cleanedbykind[Kind] = math.max(Cleanedbykind[Kind], Hidden[Kind])
+		if Total - Cleanedbykind[Kind] < 0.000001 then
+			Cleanedbykind[Kind] = Total
+		end
 	end
 	local Keptdirt = {}
 	local Keptpasses = 0
+	local Keptstains = { Ink = {}, Scratch = {} }
 	for Source, Entry in pairs(Coverage[Object]) do
-		if Source:IsA("Decal") then
+		if Entry.Kind then
+			table.insert(Keptstains[Entry.Kind], Source)
+		elseif Source:IsA("Decal") then
 			table.insert(Keptdirt, Entry)
 			Keptpasses += Coveragecellcount * Entry.Passes - Entry.Free
 		end
@@ -569,6 +1217,16 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 		Entry.Units = ((tonumber(Object:GetAttribute("Total_Dirt")) or 0) - Cleanedbykind.Dirt)
 			* (Coveragecellcount * Entry.Passes - Entry.Free)
 			/ Keptpasses
+	end
+	for Kind, Decals in pairs(Keptstains) do
+		local Left = (tonumber(Object:GetAttribute("Total_" .. Kind)) or 0) - Cleanedbykind[Kind]
+		for _, Decal in ipairs(Decals) do
+			if Left <= 0 then
+				Dropstain(Object, Decal, Coverage[Object][Decal])
+			else
+				Coverage[Object][Decal].Units = Left / #Decals
+			end
+		end
 	end
 
 	local Sticker = Object.RestorationSpots:FindFirstChild("Sticker")
@@ -580,8 +1238,13 @@ local function Precleanobject(Object: RestorationObject, Ratio: number, Progress
 	for _, Kind in ipairs(Progresskinds) do
 		Object:SetAttribute("Cleaned_" .. Kind, Cleanedbykind[Kind])
 	end
-	local Restored = Cleanedbykind.Dirt * Dirtweight + Cleanedbykind.Ink + Cleanedbykind.Scratch + Cleanedbykind.Sticker
-	Object:SetAttribute("CleanedSpots", if Progress then math.min(Restored, Totalspots) else math.max(Cleaned, Target))
+	local Restored = if Progress
+		then math.min(Cleanedbykind.Dirt * Dirtweight + Cleanedbykind.Ink + Cleanedbykind.Scratch + Cleanedbykind.Sticker, Totalspots)
+		else math.max(Cleaned, Target)
+	if Totalspots - Restored < 0.000001 then
+		Restored = Totalspots
+	end
+	Object:SetAttribute("CleanedSpots", Restored)
 	Revealmutation(Object, true)
 end
 
@@ -702,7 +1365,14 @@ local function Pickdirttexture(Generator: Random, Excludedpattern: string?)
 	return Choices[Generator:NextInteger(1, #Choices)]
 end
 
-local function Initializedirt(Object: RestorationObject, Singleface: boolean, Seed: number, Version: number): number
+local function Initializedirt(
+	Object: RestorationObject,
+	Singleface: boolean,
+	Seed: number,
+	Version: number,
+	Getcaster: () -> (any, boolean),
+	Spotseconds: number?
+): number
 	local Generator = Random.new(Seed)
 	local Styled = Version >= 2 and not Singleface
 	local Decals = {}
@@ -747,7 +1417,6 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean, Se
 		Totalarea += Facearea(Decal)
 	end
 	local Mindirtshare = if Singleface or Version < Mindirtshareversion then 0 else Cleaningconfig.MinDirtShare
-	local Getcaster, Releasecaster = Lazycaster(Object, Version)
 	for _, Decal in ipairs(Decals) do
 		local Wanted = Kept < Keptcount or Keptarea < Totalarea * Mindirtshare
 		local Texture = if Styled and Wanted then Pickdirttexture(Generator, nil) else nil
@@ -786,12 +1455,10 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean, Se
 			Decal:Destroy()
 		end
 	end
-	if Releasecaster() then
-		Prioritizewarmup(Object.Name)
-	end
 	local Speed = Cleaningconfig.CleaningSpeed
 	local Target = Speed.TargetCleaningDuration * Speed.RarityDuration[Object:GetAttribute("Rarity")] * Keptarea / Totalarea
-	local Step = if Singleface then Dirtfadestep else Dirtstep(Keptentries, Footprints, Target)
+	local Dirttarget = math.max(Target - (Spotseconds or 0), Target * Dirttargetfloor)
+	local Step = if Singleface then Dirtfadestep else Dirtstep(Keptentries, Footprints, Dirttarget)
 	local Opaquepasses = 0
 	for _, Entry in ipairs(Keptentries) do
 		Restepentry(Entry, Step)
@@ -809,81 +1476,48 @@ local function Initializedirt(Object: RestorationObject, Singleface: boolean, Se
 	return Totaldirt
 end
 
-local function Initializescratches(Object: RestorationObject): number
-	local Totalscratches = 0
-	for _, Descendant in ipairs(Object:GetDescendants()) do
-		if Descendant:IsA("GuiObject") and Descendant.Name == "ScratchesFrame" then
-			local Surface = Descendant.Parent
-			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " must be inside a SurfaceGui")
-			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " must use a valid Ui name")
-			local Part = Surface.Parent
-			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " must be inside a BasePart")
-			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " must be enabled")
-			assert(
-				Surface.Face.Name == string.sub(Surface.Name, 3),
-				"RestorationService: the face of " .. Surface:GetFullName() .. " does not match its name"
+local function Initializestains(
+	Object: RestorationObject,
+	Layouts: { Stainlayout.Layout },
+	Version: number,
+	Getcaster: () -> (any, boolean)
+): (number, number)
+	local Totals = { Ink = 0, Scratch = 0 }
+	local Entries = {}
+	for Index, Layout in ipairs(Layouts) do
+		local Texture = Layout.Texture
+		local Success, Mask = pcall(Buildmask, Texture.Image, Roundedtexture.GetShape(Texture))
+		if not Success then
+			warn("RestorationService: could not read " .. Texture.Image .. ": " .. tostring(Mask))
+		end
+		assert(not Success or Mask.Premarked < Coveragecellcount, "RestorationService: " .. Texture:GetFullName() .. " is fully transparent")
+		Entries[Index] = Buildstainentry(Layout, Stainframes[Layout.Frame.Name], if Success then Mask.Alpha else Solidalpha)
+	end
+	local Blocked: string? = nil
+	for Index, Layout in ipairs(Layouts) do
+		local Entry = Entries[Index]
+		local Kind = Entry.Kind :: string
+		local Decal = Createstaindecal(Layout, Kind)
+		if not Premarkunreachable(Entry, Object, Getcaster, Decal, Stainknowncells(Object.Name, Version, Layout.Surface)) and not Blocked then
+			Blocked = string.format(
+				"RestorationService: no pixel of %s can be cleaned on the %s face of %s, move it onto a visible part of that face",
+				Layout.Texture:GetFullName(),
+				Layout.Facename,
+				Layout.Part:GetFullName()
 			)
-			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " must be visible")
-			local Texture = Descendant:WaitForChild("Texture")
-			assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " must be an ImageLabel")
-			Texture:SetAttribute("Remaining", 1)
-			Texture:SetAttribute("HasPolish", false)
-			Descendant:SetAttribute("Cleaned", false)
-			Coverage[Object][Descendant] = Buildcoverageentry(Texture, Texture.Image, 1, 1)
-			Totalscratches += 1
 		end
+		Coverage[Object][Decal] = Entry
+		Layout.Texture:SetAttribute("Remaining", 1)
+		Layout.Texture:SetAttribute(Stainkinds[Kind].Liquid, false)
+		Layout.Frame:SetAttribute("Cleaned", false)
+		Totals[Kind] += 1
 	end
-	Object:SetAttribute("Total_Scratch", Totalscratches)
-	Object:SetAttribute("Cleaned_Scratch", 0)
-	return Totalscratches
-end
-
-local function Initializeink(Object: RestorationObject): number
-	local Totalink = 0
-	for _, Descendant in ipairs(Object:GetDescendants()) do
-		if Descendant:IsA("GuiObject") and Descendant.Name == "Ink" then
-			local Surface = Descendant.Parent
-			assert(Surface and Surface:IsA("SurfaceGui"), "RestorationService: " .. Descendant:GetFullName() .. " must be inside a SurfaceGui")
-			assert(Dirtsurfacenames[Surface.Name], "RestorationService: " .. Surface:GetFullName() .. " must use a valid Ui name")
-			local Part = Surface.Parent
-			assert(Part and Part:IsA("BasePart"), "RestorationService: " .. Surface:GetFullName() .. " must be inside a BasePart")
-			assert(Surface.Enabled, "RestorationService: " .. Surface:GetFullName() .. " must be enabled")
-			assert(Surface.Face.Name == string.sub(Surface.Name, 3), "RestorationService: the face of " .. Surface:GetFullName() .. " does not match its name")
-			assert(Descendant.Visible, "RestorationService: " .. Descendant:GetFullName() .. " must be visible")
-			local Texture = Descendant:WaitForChild("Texture")
-			assert(Texture:IsA("ImageLabel"), "RestorationService: " .. Texture:GetFullName() .. " must be an ImageLabel")
-			Texture:SetAttribute("Remaining", 1)
-			Texture:SetAttribute("HasSolvent", false)
-			Descendant:SetAttribute("Cleaned", false)
-			Coverage[Object][Descendant] = Buildcoverageentry(Texture, Texture.Image, 1, 1)
-			Totalink += 1
-		end
-	end
-	Object:SetAttribute("Total_Ink", Totalink)
+	assert(not Blocked, Blocked)
+	Object:SetAttribute("Total_Ink", Totals.Ink)
 	Object:SetAttribute("Cleaned_Ink", 0)
-	return Totalink
-end
-
-local function Validscratchimage(Object: RestorationObject, Target: any): boolean
-	if typeof(Target) ~= "Instance" or not Target:IsA("ImageLabel") or not Target:IsDescendantOf(Object) then return false end
-	local Scratchframe = Target.Parent
-	if not Scratchframe or Scratchframe.Name ~= "ScratchesFrame" or not Scratchframe:IsA("GuiObject") or not Scratchframe.Visible then return false end
-	local Surface = Scratchframe.Parent
-	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled or not Dirtsurfacenames[Surface.Name] then return false end
-	if not Surface.Parent or not Surface.Parent:IsA("BasePart") then return false end
-	if Surface.Face.Name ~= string.sub(Surface.Name, 3) then return false end
-	return Target.Name == "Texture" and Target:GetAttribute("Remaining") ~= nil
-end
-
-local function Validinkimage(Object: RestorationObject, Target: any): boolean
-	if typeof(Target) ~= "Instance" or not Target:IsA("ImageLabel") or not Target:IsDescendantOf(Object) then return false end
-	local Inkframe = Target.Parent
-	if not Inkframe or Inkframe.Name ~= "Ink" or not Inkframe:IsA("GuiObject") or not Inkframe.Visible then return false end
-	local Surface = Inkframe.Parent
-	if not Surface or not Surface:IsA("SurfaceGui") or not Surface.Enabled or not Dirtsurfacenames[Surface.Name] then return false end
-	if not Surface.Parent or not Surface.Parent:IsA("BasePart") then return false end
-	if Surface.Face.Name ~= string.sub(Surface.Name, 3) then return false end
-	return Target.Name == "Texture" and Target:GetAttribute("Remaining") ~= nil
+	Object:SetAttribute("Total_Scratch", Totals.Scratch)
+	Object:SetAttribute("Cleaned_Scratch", 0)
+	return Totals.Ink, Totals.Scratch
 end
 
 local function Validpoints(Points: any): boolean
@@ -941,6 +1575,32 @@ local function Stampcells(Entry: CoverageEntry, Points: { Vector2 }, Radius: Vec
 	return Newhits
 end
 
+local function Stampstain(Entry: CoverageEntry, Points: { Vector2 }, Radius: Vector2): number
+	local Newhits = 0
+	local Halfcell = 0.5 / Coveragegridwidth
+	for _, Point in ipairs(Points) do
+		local X = math.clamp(Point.X, 0, 1)
+		local Y = math.clamp(Point.Y, 0, 1)
+		local Mincolumn = math.max(math.floor((X - Radius.X) * Coveragegridwidth), 0)
+		local Maxcolumn = math.min(math.floor((X + Radius.X) * Coveragegridwidth), Coveragegridwidth - 1)
+		local Minrow = math.max(math.floor((Y - Radius.Y) * Coveragegridwidth), 0)
+		local Maxrow = math.min(math.floor((Y + Radius.Y) * Coveragegridwidth), Coveragegridwidth - 1)
+		for Row = Minrow, Maxrow do
+			local Distancey = math.max(math.abs(Y - (Row + 0.5) / Coveragegridwidth) - Halfcell, 0) / Radius.Y
+			for Column = Mincolumn, Maxcolumn do
+				local Index = Row * Coveragegridwidth + Column + 1
+				local Distancex = math.max(math.abs(X - (Column + 0.5) / Coveragegridwidth) - Halfcell, 0) / Radius.X
+				if Entry.Cells[Index] < Entry.Passes and Distancex * Distancex + Distancey * Distancey <= 1 + Stampslack then
+					Entry.Cells[Index] += 1
+					Newhits += 1
+				end
+			end
+		end
+	end
+	Entry.Hits += Newhits
+	return Newhits
+end
+
 local function Iscovered(Entry: CoverageEntry): boolean
 	return Entry.Hits >= Coveragecellcount * Entry.Passes
 end
@@ -970,13 +1630,17 @@ local function Markdirtcleaned(Player: Player, Target: Decal, Toolname: string)
 	end
 end
 
-local function Settledirt(Player: Player, Target: Decal, Entry: CoverageEntry, Toolname: string): number
-	local Credited = 0
+local function Snapentry(Entry: CoverageEntry, Ratio: number): number
 	local Remaining = Coveragecellcount * Entry.Passes - Entry.Hits
-	local Snap = math.max((Coveragecellcount * Entry.Passes - Entry.Free) * (1 - Finishassist.SnapRatio), Finishassist.SnapCells * Entry.Passes)
+	local Snap = math.max((Coveragecellcount * Entry.Passes - Entry.Free) * (1 - Ratio), Finishassist.SnapCells * Entry.Passes)
 	if not Iscovered(Entry) and Remaining <= Snap then
-		Credited = Fillentry(Entry)
+		return Fillentry(Entry)
 	end
+	return 0
+end
+
+local function Settledirt(Player: Player, Target: Decal, Entry: CoverageEntry, Toolname: string): number
+	local Credited = Snapentry(Entry, Finishassist.SnapRatio)
 	if Iscovered(Entry) and Target:GetAttribute("Cleaned") ~= true then
 		Markdirtcleaned(Player, Target, Toolname)
 	end
@@ -1000,18 +1664,15 @@ local function Finishobject(Player: Player, Object: RestorationObject)
 	Peeling[Player] = nil
 	for Target, Entry in pairs(Coverage[Object]) do
 		Fillentry(Entry)
-		if Target:IsA("Decal") then
-			if Target:GetAttribute("Cleaned") ~= true then
-				Markdirtcleaned(Player, Target, Cleanalltool)
-			end
-		else
-			(Target :: GuiObject).Visible = false
-			Target:SetAttribute("Cleaned", true)
-			Target:WaitForChild("Texture"):SetAttribute("Remaining", 0)
+		if Entry.Kind then
+			Completestain(Target, Entry)
+		elseif Target:GetAttribute("Cleaned") ~= true then
+			Markdirtcleaned(Player, Target :: Decal, Cleanalltool)
 		end
 	end
 	for _, Child in ipairs(Object:WaitForChild("RestorationSpots"):GetChildren()) do
-		if Child:GetAttribute("SpotKind") and (Child :: BasePart).CanQuery then
+		if Child:GetAttribute("SpotKind") then
+			(Child :: BasePart).CanQuery = false
 			Child:Destroy()
 		end
 	end
@@ -1031,17 +1692,29 @@ local function Setcleanedspots(Player: Player, Object: RestorationObject, Value:
 	Revealmutation(Object)
 end
 
+local function Getdirtratio(Object: RestorationObject): number
+	local Totaldirt = tonumber(Object:GetAttribute("Total_Dirt")) or 0
+	if Totaldirt <= 0 then
+		return 0
+	end
+	return math.clamp((tonumber(Object:GetAttribute("Cleaned_Dirt")) or 0) / Totaldirt, 0, 1)
+end
+
+local function Getdirtspots(Object: RestorationObject): number
+	return (tonumber(Object:GetAttribute("Total_Dirt")) or 0) * (tonumber(Object:GetAttribute("DirtWeight")) or 1)
+end
+
 local function Assistfloor(Object: RestorationObject, Stalled: boolean): number
-	local Ratio = Getcompletionratio(Object)
+	local Ratio = Getdirtratio(Object)
 	local Active = Ratio >= Finishassist.Start or Stalled and Ratio >= Finishassist.StallStart
 	if not Active or Ratio >= 1 then
 		return 0
 	end
 	if Ratio < Finishassist.Start then
-		return Finishassist.StallFloor * (tonumber(Object:GetAttribute("TotalSpots")) or 0)
+		return Finishassist.StallFloor * Getdirtspots(Object)
 	end
 	local Advance = (math.max(Ratio - Finishassist.Start, 0) / (1 - Finishassist.Start)) ^ Finishassist.Curve
-	return (Finishassist.MinGain + (Finishassist.MaxGain - Finishassist.MinGain) * Advance) * (tonumber(Object:GetAttribute("TotalSpots")) or 0)
+	return (Finishassist.MinGain + (Finishassist.MaxGain - Finishassist.MinGain) * Advance) * Getdirtspots(Object)
 end
 
 local function Recordstall(Player: Player, Ratio: number, Gain: number, Stallspots: number): boolean
@@ -1106,7 +1779,7 @@ end
 local function Remainingdecals(Object: RestorationObject)
 	local List = {}
 	for Target, Entry in pairs(Coverage[Object]) do
-		if Target:IsA("Decal") and not Iscovered(Entry) then
+		if not Entry.Kind and not Iscovered(Entry) then
 			table.insert(List, { Target = Target, Entry = Entry, Points = {} })
 		end
 	end
@@ -1170,6 +1843,77 @@ local function Cleanallobject(Player: Player): RestorationObject?
 	return Object
 end
 
+local function Allowrequest(Allowances: { [any]: number }, Key: any, Burst: number): boolean
+	local Now = os.clock()
+	local Allowed = Allowances[Key] or Now
+	if Now < Allowed - Dirtcleaninterval * (Burst - 1) then
+		return false
+	end
+	Allowances[Key] = math.max(Now, Allowed) + Dirtcleaninterval
+	return true
+end
+
+local function Cleanstain(Player: Player, Kind: string, Target: any, Points: any)
+	local Sessionobject = Sessions[Player]
+	if not Sessionobject then
+		return
+	end
+	local Entry = Coverage[Sessionobject][Target]
+	if not Entry or Entry.Kind ~= Kind or not Validpoints(Points) then
+		return
+	end
+	local Source = Entry.Source :: ImageLabel
+	if Source:GetAttribute(Stainkinds[Kind].Liquid) ~= true or Iscovered(Entry) then
+		return
+	end
+	local Allowances = Stainallowance[Player]
+	if not Allowances then
+		Allowances = {}
+		Stainallowance[Player] = Allowances
+	end
+	if not Allowrequest(Allowances, Target, Stainburst) then
+		return
+	end
+	local Radius = Facemapping.GetBrushRadius((Target.Parent :: BasePart).Size, Target.Face.Name, Stainbrushradius, Sessionobject:GetAttribute("BrushRadius"))
+	local Opaquecells = Coveragecellcount * Entry.Passes - Entry.Free
+	local Newlycovered = Stampstain(Entry, Points, Radius) + Snapentry(Entry, Finishassist.StainSnapRatio)
+	if Newlycovered <= 0 then
+		return
+	end
+	Source:SetAttribute("Remaining", (Coveragecellcount * Entry.Passes - Entry.Hits) / Opaquecells)
+	if Iscovered(Entry) then
+		Completestain(Target, Entry)
+	end
+	local Total = tonumber(Sessionobject:GetAttribute("Total_" .. Kind)) or 0
+	local Previous = tonumber(Sessionobject:GetAttribute("Cleaned_" .. Kind)) or 0
+	local Cleaned = math.min(Previous + Newlycovered * Entry.Units / Opaquecells, Total)
+	if Total - Cleaned < 0.000001 then
+		Cleaned = Total
+	end
+	Sessionobject:SetAttribute("Cleaned_" .. Kind, Cleaned)
+	local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
+	local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Cleaned - Previous, Totalspots)
+	if Totalspots - Cleanedspots < 0.000001 then
+		Cleanedspots = Totalspots
+	end
+	Setcleanedspots(Player, Sessionobject, Cleanedspots)
+end
+
+local function Applyliquid(Player: Player, Kind: string, Target: any)
+	local Sessionobject = Sessions[Player]
+	if not Sessionobject then
+		return
+	end
+	for _, Entry in pairs(Coverage[Sessionobject]) do
+		if Entry.Source == Target and Entry.Kind == Kind then
+			if not Iscovered(Entry) then
+				Target:SetAttribute(Stainkinds[Kind].Liquid, true)
+			end
+			return
+		end
+	end
+end
+
 local function Createspots(Object: RestorationObject, Singleface: boolean, Seed: number, Version: number)
 	Coverage[Object] = {}
 	Warmmasks(Object)
@@ -1182,20 +1926,36 @@ local function Createspots(Object: RestorationObject, Singleface: boolean, Seed:
 	Folder.Name = "RestorationSpots"
 	Folder.Parent = Object
 
-	local Hassticker = Config.Object[Object.Name].Sticker
-	local Sticker = if Hassticker then Object:FindFirstChild("Sticker") else nil
-	if Sticker then
-		Sticker.CanQuery = false
+	local Speed = Cleaningconfig.CleaningSpeed
+	local Sticker = Findsticker(Object)
+	local Generating = Version >= Scratchversion and not Singleface and Randomscratch.Count > 0
+	if Generating and Object.Name == Config.Offer.TutorialObject then
+		Removeauthoredscratches(Object)
 	end
-	local Totaldirt = Initializedirt(Object, Singleface, Seed, Version)
-	local Totalscratches = Initializescratches(Object)
-	local Totalink = if Hassticker then Initializeink(Object) else 0
+	local Stains = Collectstains(Object, Sticker)
+	local Getcaster, Releasecaster = Lazycaster(Object, Version)
+	local Totaldirt, Totalink, Totalscratches = 0, 0, 0
+	local Success, Failure = pcall(function()
+		if Generating then
+			Generatescratches(Object, Sticker, Stains, Seed, Version, Getcaster)
+			Stains = Collectstains(Object, Sticker)
+		end
+		local Spotseconds = if Sticker then Speed.SpotSeconds.Sticker else 0
+		for _, Layout in ipairs(Stains) do
+			Spotseconds += Speed.SpotSeconds[Stainframes[Layout.Frame.Name]]
+		end
+		Totaldirt = Initializedirt(Object, Singleface, Seed, Version, Getcaster, Spotseconds)
+		Totalink, Totalscratches = Initializestains(Object, Stains, Version, Getcaster)
+	end)
+	if Releasecaster() then
+		Prioritizewarmup(Object.Name)
+	end
+	if not Success then
+		error(Failure, 0)
+	end
 	local Totalsticker = 0
 	if Sticker then
-		assert(Sticker:IsA("BasePart"), "RestorationService: " .. Sticker:GetFullName() .. " must be a BasePart")
 		Sticker:SetAttribute("SpotKind", "Sticker")
-		Sticker:SetAttribute("Health", Spothealth.Sticker)
-		Sticker.CanCollide = false
 		Sticker.CanQuery = true
 		Sticker.CanTouch = false
 		Sticker.Massless = true
@@ -1206,7 +1966,7 @@ local function Createspots(Object: RestorationObject, Singleface: boolean, Seed:
 	Object:SetAttribute("Cleaned_Sticker", 0)
 	local Otherspots = Totalscratches + Totalink + Totalsticker
 	assert(Totaldirt + Otherspots > 0, "RestorationService: " .. Object:GetFullName() .. " has nothing to clean")
-	local Dirtshare = math.random(67, 73) / 100
+	local Dirtshare = Speed.DirtProgressShare
 	local Dirtweight = if Totaldirt > 0 and Otherspots > 0 then math.min(1, Otherspots * Dirtshare / ((1 - Dirtshare) * Totaldirt)) else 1
 	Object:SetAttribute("DirtWeight", Dirtweight)
 	Object:SetAttribute("TotalSpots", Totaldirt * Dirtweight + Otherspots)
@@ -1222,7 +1982,7 @@ function Restorationservice:PrepareObject(
 	Owner: Player,
 	Maximums: ObjectMaximums?,
 	Percent: number?,
-	Progress: { [string]: number }?
+	Progress: { [string]: any }?
 ): RestorationObject
 	Releaseactiveobject(Owner)
 	local Object = Spawnconfiguredobject(Objectname, Core:GetService("ShopService"):GetShop(Owner), Maximums)
@@ -1289,10 +2049,14 @@ function Restorationservice:Init()
 	Objecttemplates = Replicatedstorage:WaitForChild("Asset"):WaitForChild("Object") :: Folder
 	for _, Template in ipairs(Objecttemplates:GetChildren()) do
 		local Slot = 0
+		local Stainslot = 0
 		for _, Descendant in ipairs(Template:GetDescendants()) do
 			if Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
 				Slot += 1
 				Descendant:SetAttribute("DirtSlot", Slot)
+			elseif Descendant:IsA("SurfaceGui") and Dirtsurfacenames[Descendant.Name] then
+				Stainslot += 1
+				Descendant:SetAttribute("StainSlot", Stainslot)
 			end
 		end
 	end
@@ -1315,11 +2079,9 @@ function Restorationservice:Init()
 			Peeling[Player] = nil
 			Sessionitem[Player] = nil
 			Sessions[Player] = nil
-			Lastclean[Player] = nil
 			Dirtallowance[Player] = nil
+			Stainallowance[Player] = nil
 			Stallevents[Player] = nil
-			Lastscratchclean[Player] = nil
-			Lastinkclean[Player] = nil
 			Pendingcleanall[Player] = nil
 			Releaseactiveobject(Player)
 		end,
@@ -1430,11 +2192,9 @@ function Restorationservice:Init()
 			Spot:SetAttribute("PeelingBy", nil)
 		end
 		Peeling[Player] = nil
-		Lastclean[Player] = nil
 		Dirtallowance[Player] = nil
+		Stainallowance[Player] = nil
 		Stallevents[Player] = nil
-		Lastscratchclean[Player] = nil
-		Lastinkclean[Player] = nil
 
 		local Sessioniteminstance = Sessionitem[Player]
 		Sessionitem[Player] = nil
@@ -1478,10 +2238,12 @@ function Restorationservice:Init()
 		end
 		Peeling[Player] = nil
 		Spot.CanQuery = false
+		local Previous = tonumber(Object:GetAttribute("Cleaned_Sticker")) or 0
+		local Cleanedsticker = math.max(math.min(Previous + 1, tonumber(Object:GetAttribute("Total_Sticker")) or 0), Previous)
 		local Totalspots = tonumber(Object:GetAttribute("TotalSpots")) or 0
-		local Cleanedspots = math.min((tonumber(Object:GetAttribute("CleanedSpots")) or 0) + 1, Totalspots)
+		local Cleanedspots = math.min((tonumber(Object:GetAttribute("CleanedSpots")) or 0) + Cleanedsticker - Previous, Totalspots)
 		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Object:SetAttribute("Cleaned_Sticker", (Object:GetAttribute("Cleaned_Sticker") or 0) + 1)
+		Object:SetAttribute("Cleaned_Sticker", Cleanedsticker)
 		Setcleanedspots(Player, Object, Cleanedspots)
 		Spot:Destroy()
 	end)
@@ -1498,77 +2260,19 @@ function Restorationservice:Init()
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "ApplyInkSolvent", function(Player, Target)
-		local Sessionobject = Sessions[Player]
-		if not Sessionobject or not Validinkimage(Sessionobject, Target) then return end
-		if (Target:GetAttribute("Remaining") or 0) <= 0 then return end
-		Target:SetAttribute("HasSolvent", true)
+		Applyliquid(Player, "Ink", Target)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "ApplyScratchPolish", function(Player, Target)
-		local Sessionobject = Sessions[Player]
-		if not Sessionobject or not Validscratchimage(Sessionobject, Target) then return end
-		if (Target:GetAttribute("Remaining") or 0) <= 0 then return end
-		Target:SetAttribute("HasPolish", true)
+		Applyliquid(Player, "Scratch", Target)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanInk", function(Player, Target, Points)
-		local Sessionobject = Sessions[Player]
-		if not Sessionobject or not Validinkimage(Sessionobject, Target) then return end
-		if Target:GetAttribute("HasSolvent") ~= true then return end
-		if not Validpoints(Points) then return end
-		local Entry = Coverage[Sessionobject][Target.Parent]
-		if not Entry then return end
-		local Now = os.clock()
-		if Now - (Lastinkclean[Player] or 0) < Inkcleaninterval then return end
-		Lastinkclean[Player] = Now
-
-		local Newlycovered = Stampcells(Entry, Points, Texturebrushradius)
-		if Newlycovered <= 0 then return end
-		local Opaquecells = Coveragecellcount - Entry.Premarked
-		local Removedink = Newlycovered / (Opaquecells * Entry.Passes)
-		Target:SetAttribute("Remaining", 1 - (Entry.Hits - Entry.Premarked * Entry.Passes) / (Opaquecells * Entry.Passes))
-		if Iscovered(Entry) then Target.Parent:SetAttribute("Cleaned", true) end
-
-		local Totalink = tonumber(Sessionobject:GetAttribute("Total_Ink")) or 0
-		local Previouscleanedink = tonumber(Sessionobject:GetAttribute("Cleaned_Ink")) or 0
-		local Cleanedink = math.min(Previouscleanedink + Removedink, Totalink)
-		if Totalink - Cleanedink < 0.000001 then Cleanedink = Totalink end
-		local Appliedprogress = Cleanedink - Previouscleanedink
-		Sessionobject:SetAttribute("Cleaned_Ink", Cleanedink)
-		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
-		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress, Totalspots)
-		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Setcleanedspots(Player, Sessionobject, Cleanedspots)
+		Cleanstain(Player, "Ink", Target, Points)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanScratch", function(Player, Target, Points)
-		local Sessionobject = Sessions[Player]
-		if not Sessionobject or not Validscratchimage(Sessionobject, Target) then return end
-		if Target:GetAttribute("HasPolish") ~= true then return end
-		if not Validpoints(Points) then return end
-		local Entry = Coverage[Sessionobject][Target.Parent]
-		if not Entry then return end
-		local Now = os.clock()
-		if Now - (Lastscratchclean[Player] or 0) < Scratchcleaninterval then return end
-		Lastscratchclean[Player] = Now
-
-		local Newlycovered = Stampcells(Entry, Points, Texturebrushradius)
-		if Newlycovered <= 0 then return end
-		local Opaquecells = Coveragecellcount - Entry.Premarked
-		local Removedscratch = Newlycovered / (Opaquecells * Entry.Passes)
-		Target:SetAttribute("Remaining", 1 - (Entry.Hits - Entry.Premarked * Entry.Passes) / (Opaquecells * Entry.Passes))
-		if Iscovered(Entry) then Target.Parent:SetAttribute("Cleaned", true) end
-
-		local Totalscratches = tonumber(Sessionobject:GetAttribute("Total_Scratch")) or 0
-		local Previouscleanedscratches = tonumber(Sessionobject:GetAttribute("Cleaned_Scratch")) or 0
-		local Cleanedscratches = math.min(Previouscleanedscratches + Removedscratch, Totalscratches)
-		if Totalscratches - Cleanedscratches < 0.000001 then Cleanedscratches = Totalscratches end
-		local Appliedprogress = Cleanedscratches - Previouscleanedscratches
-		Sessionobject:SetAttribute("Cleaned_Scratch", Cleanedscratches)
-		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
-		local Cleanedspots = math.min((tonumber(Sessionobject:GetAttribute("CleanedSpots")) or 0) + Appliedprogress, Totalspots)
-		if Totalspots - Cleanedspots < 0.000001 then Cleanedspots = Totalspots end
-		Setcleanedspots(Player, Sessionobject, Cleanedspots)
+		Cleanstain(Player, "Scratch", Target, Points)
 	end)
 
 	Remotemanager:OnServerInvoke(self.Name, "GetLeftovers", function(Player, Targets)
@@ -1602,12 +2306,9 @@ function Restorationservice:Init()
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Dirttools[Toolname] then return end
 		if type(Strokes) ~= "table" or #Strokes > Maxdirtstrokes then return end
-		local Ratio = Getcompletionratio(Sessionobject)
+		local Ratio = Getdirtratio(Sessionobject)
 		if #Strokes == 0 and Ratio < Pingstart then return end
-		local Now = os.clock()
-		local Allowed = Dirtallowance[Player] or Now
-		if Now < Allowed - Dirtcleaninterval * (Dirtburst - 1) then return end
-		Dirtallowance[Player] = math.max(Now, Allowed) + Dirtcleaninterval
+		if not Allowrequest(Dirtallowance, Player, Dirtburst) then return end
 
 		local Minimumradius = Sessionobject:GetAttribute("BrushRadius") * Brushradii[Toolname] / Brushradii.ToothBrush
 		local Removeddirt = 0
@@ -1635,7 +2336,7 @@ function Restorationservice:Init()
 		end
 		local Dirtweight = tonumber(Sessionobject:GetAttribute("DirtWeight")) or 1
 		local Totalspots = tonumber(Sessionobject:GetAttribute("TotalSpots")) or 0
-		local Stallspots = Totalspots * math.min(Sessionobject:GetAttribute("DirtStep") / Dirtfadestep, 1)
+		local Stallspots = Getdirtspots(Sessionobject) * math.min(Sessionobject:GetAttribute("DirtStep") / Dirtfadestep, 1)
 		local Stalled = Recordstall(Player, Ratio, Removeddirt * Dirtweight, Stallspots)
 		local Shortfall = Assistfloor(Sessionobject, Stalled) - Removeddirt * Dirtweight
 		if Shortfall > 0 then
@@ -1653,72 +2354,12 @@ function Restorationservice:Init()
 		Setcleanedspots(Player, Sessionobject, Cleanedspots)
 	end)
 
-	Remotemanager:OnServerEvent(self.Name, "CleanSpot", function(Player, Spot, Toolname)
-		local Sessionobject = Sessions[Player]
-		if not Sessionobject then
-			return
-		end
-		if typeof(Spot) ~= "Instance" or not Spot:IsA("BasePart") then
-			return
-		end
-		local Spots = Sessionobject:FindFirstChild("RestorationSpots")
-		if not Spots or not Spot:IsDescendantOf(Spots) then
-			return
-		end
-		local Kind = Spot:GetAttribute("SpotKind")
-		local Allowedtools = Toolsforspot[Kind]
-		local Isallowed = Allowedtools == Toolname
-		if type(Allowedtools) == "table" then
-			Isallowed = table.find(Allowedtools, Toolname) ~= nil
-		end
-		if not Isallowed then
-			return
-		end
-		local Now = os.clock()
-		if Now - (Lastclean[Player] or 0) < 0.045 then
-			return
-		end
-		Lastclean[Player] = Now
-		local Health = (Spot:GetAttribute("Health") or 1) - (Toolpower[Toolname] or 0)
-		if Health <= 0 then
-			Sessionobject:SetAttribute("Cleaned_" .. Kind, (Sessionobject:GetAttribute("Cleaned_" .. Kind) or 0) + 1)
-			if Kind == "Sticker" and Toolname == "Tweezers" then
-				Spot.CanQuery = false
-				local Weld = Spot:FindFirstChildOfClass("WeldConstraint")
-				if Weld then
-					Weld:Destroy()
-				end
-				Spot.Anchored = true
-				local Peeldirection = Spot.CFrame.LookVector
-				local Peeledcframe = Spot.CFrame + Peeldirection * 0.65 + Vector3.new(0, 0.28, 0)
-				Peeledcframe *= CFrame.Angles(math.rad(55), math.rad(18), math.rad(30))
-				local Tween = Tweenservice:Create(Spot, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					CFrame = Peeledcframe,
-					Transparency = 1,
-					Size = Vector3.new(Spot.Size.X * 0.72, Spot.Size.Y * 0.72, Spot.Size.Z),
-				})
-				Tween:Play()
-				Tween.Completed:Once(function()
-					Spot:Destroy()
-				end)
-			else
-				Spot:Destroy()
-			end
-			Setcleanedspots(Player, Sessionobject, (Sessionobject:GetAttribute("CleanedSpots") or 0) + 1)
-		else
-			Spot:SetAttribute("Health", Health)
-			Spot.Transparency = math.clamp(Spot.Transparency + 0.35, 0, 0.85)
-		end
-	end)
-
 	Remotemanager:OnServerEvent(self.Name, "SessionEnded", function(Player)
 		local Sessionobject = Sessions[Player]
 		Sessions[Player] = nil
-		Lastclean[Player] = nil
 		Dirtallowance[Player] = nil
+		Stainallowance[Player] = nil
 		Stallevents[Player] = nil
-		Lastscratchclean[Player] = nil
-		Lastinkclean[Player] = nil
 		if Sessionobject then Returnsessionitem(Player, Sessionobject) end
 		if Sessionobject and Activeobjects[Player] == Sessionobject then Releaseactiveobject(Player) end
 		Core:GetService("CustomerService"):PresentOffer(Player)
@@ -1731,11 +2372,16 @@ function Restorationservice:Start()
 		return Left.Name < Right.Name
 	end)
 	for _, Template in ipairs(Templates) do
-		table.insert(Warmqueue, Template.Name)
+		if Config.Object[Template.Name] then
+			table.insert(Warmqueue, Template.Name)
+		end
 	end
 	task.spawn(function()
 		Warmmasks(Objecttemplates:WaitForChild(Config.Offer.TutorialObject) :: RestorationObject)
 	end)
+	for _, Texture in ipairs(Scratchtextures) do
+		task.spawn(Scratchmask, Texture.Image)
+	end
 	Runwarmup()
 end
 

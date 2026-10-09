@@ -164,6 +164,10 @@ local function Anchordisplayobject(Object: DisplayObject)
 end
 
 local function Cleandisplayobject(Object: DisplayObject)
+	local Sticker = Object:FindFirstChild("Sticker")
+	if Sticker then
+		Sticker:Destroy()
+	end
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("SurfaceGui") and Dirtsurfacenames[Descendant.Name] then
 			Descendant.Enabled = false
@@ -293,8 +297,8 @@ function Expositionservice:RestoreDisplayItem(Player: Player, Slotindex: number,
 		return false
 	end
 	local Object = Template:Clone() :: DisplayObject
-	Attachmutationvfx(Object, Item)
 	Cleandisplayobject(Object)
+	Attachmutationvfx(Object, Item)
 	Anchordisplayobject(Object)
 	Object.Name = "Display_" .. Player.UserId .. "_" .. Slotindex
 	Object:SetAttribute("OwnerUserId", Player.UserId)
@@ -341,8 +345,8 @@ function Expositionservice:PlaceDisplayItem(Player: Player, Slotindex: any, Item
 		error("ExpositionService: model '" .. Item.ObjectKey .. "' must be a Model or a BasePart")
 	end
 	local Object = Template:Clone() :: DisplayObject
-	Attachmutationvfx(Object, Item)
 	Cleandisplayobject(Object)
+	Attachmutationvfx(Object, Item)
 	Anchordisplayobject(Object)
 	local Slotcframe = Display.SlotAttachments[Slotindex].WorldCFrame * CFrame.Angles(0, math.rad(Displayturndegrees), 0)
 	Pivotdisplayobject(Object, Slotcframe * Getobjectrotation(Item.ObjectKey))

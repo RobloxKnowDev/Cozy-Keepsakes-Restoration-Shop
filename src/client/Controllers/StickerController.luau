@@ -31,6 +31,18 @@ local function Isfirstsurface(Result: RaycastResult, Surface): boolean
 	return not Surface or Result.Distance <= Surface.Distance + Stickertolerance
 end
 
+local function Setimagesvisible(Spot: BasePart, Visible: boolean)
+	local Modifier = if Visible then 0 else 1
+	Spot.LocalTransparencyModifier = Modifier
+	for _, Child in ipairs(Spot:GetChildren()) do
+		if Child:IsA("Decal") then
+			Child.LocalTransparencyModifier = Modifier
+		elseif Child:IsA("SurfaceGui") then
+			Child.Enabled = Visible
+		end
+	end
+end
+
 function Stickercontroller:Init()
 	self.gui = Players.LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("PackageUi")
 	self.camera = Workspace.CurrentCamera
@@ -52,6 +64,11 @@ function Stickercontroller:ClearLoose()
 			Loose.CanQuery = false
 			Loose.CanCollide = false
 			Tweenservice:Create(Loose, Loosefadetween, { Transparency = 1 }):Play()
+			for _, Child in ipairs(Loose:GetChildren()) do
+				if Child:IsA("Decal") then
+					Tweenservice:Create(Child, Loosefadetween, { Transparency = 1 }):Play()
+				end
+			end
 			Debris:AddItem(Loose, 0.35)
 		end
 	end
@@ -155,7 +172,7 @@ function Stickercontroller:Begin(Object: Model | BasePart, Tooltip: Attachment?,
 	Clone.CanQuery = false
 	Clone.CanTouch = false
 	Clone.Parent = self.generatedItems
-	Spot.LocalTransparencyModifier = 1
+	Setimagesvisible(Spot, false)
 	self.spot, self.clone = Spot, Clone
 	self.startMouse = Userinputservice:GetMouseLocation()
 	self.lastMouse = self.startMouse
@@ -245,11 +262,11 @@ function Stickercontroller:Release()
 		end
 	else
 		Debris:AddItem(Clone, 2)
+		Remotemanager:FireServer("RestorationService", "CancelPeel", Spot)
 		task.delay(0.9, function()
-			if Spot.Parent then
-				Spot.LocalTransparencyModifier = 0
+			if Spot.Parent and self.spot ~= Spot then
+				Setimagesvisible(Spot, true)
 			end
-			Remotemanager:FireServer("RestorationService", "CancelPeel", Spot)
 		end)
 	end
 end

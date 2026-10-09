@@ -10,6 +10,8 @@ local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Upgradesconfig = require(Replicatedstorage.Shared.Config.Upgrades)
+local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
+local Stainlayout = require(Replicatedstorage.Shared.Utils.StainLayout)
 local Uvtorch = require(script.Parent.RestorationController.UvTorch)
 
 local Tutorialcontroller = {
@@ -87,6 +89,8 @@ local Gestures = {
 }
 local Steptweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Pulsetweeninfo = TweenInfo.new(0.65, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+local Staincorners = { Vector2.new(0, 0), Vector2.new(1, 0), Vector2.new(0, 1), Vector2.new(1, 1) }
+local Stainlayouts = setmetatable({} :: { [ImageLabel]: Stainlayout.Layout }, { __mode = "k" })
 
 local function Makeshade(Parent: ScreenGui, Name: string): Frame
 	local Shade = Instance.new("Frame")
@@ -241,11 +245,28 @@ function Tutorialcontroller:Projectrect(Points: { Vector3 }): (Vector2?, Vector2
 	return Minimum, Maximum - Minimum
 end
 
-function Tutorialcontroller:Getsurfacerect(Target: GuiObject): (Vector2?, Vector2?)
-	local Surface = Target:FindFirstAncestorWhichIsA("SurfaceGui")
-	if not Surface then
-		return nil, nil
+function Tutorialcontroller:Getstainrect(Texture: ImageLabel): (Vector2?, Vector2?, boolean?)
+	local Layout = Stainlayouts[Texture]
+	if not Layout then
+		Layout = Stainlayout.GetLayout(Texture)
+		Stainlayouts[Texture] = Layout
 	end
+	local Part = Layout.Part
+	local Points = {}
+	for _, Corner in ipairs(Staincorners) do
+		local Facepoint = Stainlayout.GetFacePoint(Layout, Corner)
+		local Localpoint = Facemapping.GetDecalLocalPoint(Part.Size, Layout.Facename, Facepoint.X, Facepoint.Y)
+		table.insert(Points, Part.CFrame:PointToWorldSpace(Localpoint))
+	end
+	local Center = (Points[1] + Points[4]) * 0.5
+	local Worldnormal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Layout.Face))
+	local Toviewer = Workspace.CurrentCamera.CFrame.Position - Center
+	local Position, Size = self:Projectrect(Points)
+	return Position, Size, Toviewer.Unit:Dot(Worldnormal) <= 0
+end
+
+function Tutorialcontroller:Getsurfacerect(Target: GuiObject): (Vector2?, Vector2?)
+	local Surface = Target:FindFirstAncestorWhichIsA("SurfaceGui") :: SurfaceGui
 	local Part = Surface.Adornee or Surface.Parent
 	if not Part or not Part:IsA("BasePart") then
 		return nil, nil
@@ -255,6 +276,14 @@ function Tutorialcontroller:Getsurfacerect(Target: GuiObject): (Vector2?, Vector
 		return nil, nil
 	end
 	return self:Getfacerect(Part, Surface.Face.Name, Target.AbsolutePosition / Canvas, Target.AbsoluteSize / Canvas)
+end
+
+local function Isstaintexture(Target: GuiObject): boolean
+	local Frame = Target.Parent
+	return Target:IsA("ImageLabel")
+		and Target.Name == "Texture"
+		and Frame ~= nil
+		and (Frame.Name == Framenamebykind.Ink or Frame.Name == Framenamebykind.Scratch)
 end
 
 function Tutorialcontroller:Getdecalrect(Target: Decal): (Vector2?, Vector2?)
@@ -288,15 +317,8 @@ local function Thinaxis(Target: BasePart): Vector3
 end
 
 local function Isbehindobject(Target: BasePart): boolean
-	local Object = Core:GetController("RestorationController"):GetActiveObject()
-	if not Object then
-		return false
-	end
-	local Center = if Object:IsA("Model") then (Object:GetBoundingBox()).Position else Object.Position
-	local Visibleside = Thinaxis(Target)
-	if Visibleside:Dot(Target.Position - Center) > 0 then
-		Visibleside = -Visibleside
-	end
+	local Image = Target:FindFirstChildWhichIsA("Decal") or Target:FindFirstChildWhichIsA("SurfaceGui")
+	local Visibleside = if Image then Target.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Image.Face)) else Thinaxis(Target)
 	return Visibleside:Dot(Workspace.CurrentCamera.CFrame.Position - Target.Position) <= 0
 end
 
@@ -333,6 +355,9 @@ function Tutorialcontroller:Resolvetarget(): (Vector2?, Vector2?, boolean?)
 			return nil, nil
 		end
 		if Target:FindFirstAncestorWhichIsA("SurfaceGui") then
+			if Isstaintexture(Target) then
+				return self:Getstainrect(Target :: ImageLabel)
+			end
 			return self:Getsurfacerect(Target)
 		end
 		return self:Getguirect(Target)

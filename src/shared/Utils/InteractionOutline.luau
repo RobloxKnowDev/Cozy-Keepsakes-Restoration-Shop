@@ -6,6 +6,10 @@ local Outlinecolor = Color3.fromRGB(255, 255, 255)
 local Outlinetransparency = 0
 local Depthmode = Enum.HighlightDepthMode.AlwaysOnTop
 
+local Container = Instance.new("Folder")
+Container.Name = "InteractionOutlines"
+Container.Parent = Workspace
+
 function InteractionOutline.Create(Name: string): Highlight
 	local Outline = Instance.new("Highlight")
 	Outline.Name = Name
@@ -14,7 +18,7 @@ function InteractionOutline.Create(Name: string): Highlight
 	Outline.OutlineColor = Outlinecolor
 	Outline.OutlineTransparency = Outlinetransparency
 	Outline.Enabled = false
-	Outline.Parent = Workspace
+	Outline.Parent = Container
 	return Outline
 end
 

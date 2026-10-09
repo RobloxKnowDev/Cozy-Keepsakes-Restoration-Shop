@@ -83,8 +83,12 @@ function FaceMapping.GetDecalLocalPoint(Size: Vector3, Facename: string, U: numb
 end
 
 local function Getmeshnormal(Decal: Decal, Worldnormal: Vector3): Vector3
-	local Part = Decal.Parent :: TriangleMeshPart
-	return (Part.CFrame:VectorToObjectSpace(Worldnormal) * Part.Size / Part.MeshSize).Unit
+	local Part = Decal.Parent :: BasePart
+	local Localnormal = Part.CFrame:VectorToObjectSpace(Worldnormal)
+	if Part:IsA("TriangleMeshPart") then
+		return (Localnormal * Part.Size / (Part :: TriangleMeshPart).MeshSize).Unit
+	end
+	return Localnormal.Unit
 end
 
 function FaceMapping.ShowsDecal(Decal: Decal, Worldnormal: Vector3): boolean
