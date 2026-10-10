@@ -43,6 +43,7 @@ return {
 	CleaningSpeed = {
 		BaseCleaningSpeed = 1,
 		TargetCleaningDuration = 85,
+		TutorialCleaningDuration = 25,
 		MinCleaningMultiplier = 0.15,
 		MaxCleaningMultiplier = 4,
 		RarityDuration = {

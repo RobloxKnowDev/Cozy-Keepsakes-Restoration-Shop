@@ -9,6 +9,7 @@ return {
 		EmergencyObject = "AlarmClock",
 		TutorialObject = "PhotoFrame",
 		TutorialDirtFace = "Left",
+		TutorialBackFace = "Right",
 	},
 
 	Object = {

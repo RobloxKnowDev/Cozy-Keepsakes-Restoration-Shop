@@ -24,11 +24,13 @@ local Isstudio = RunService:IsStudio()
 local Loadattempts = 5
 local Saveattempts = 3
 local Maximumstep = 1000
+local Stepversion = 2
 local Shutdowndeadline = 25
 local Completedbyplayer: { [Player]: boolean } = {}
 local Loadedbyplayer: { [Player]: boolean } = {}
 local Objectdonebyplayer: { [Player]: boolean } = {}
 local Stepbyplayer: { [Player]: number } = {}
+local Stepversionbyplayer: { [Player]: number } = {}
 local Boughtbyplayer: { [Player]: boolean } = {}
 local Blockedbyplayer: { [Player]: boolean } = {}
 local Erroredbyplayer: { [Player]: boolean } = {}
@@ -43,11 +45,19 @@ local function Sanitizestep(Value: any): number?
 	return math.clamp(math.floor(Value), 1, Maximumstep)
 end
 
+local function Sanitizeversion(Value: any): number
+	if type(Value) ~= "number" or Value ~= Value or Value == math.huge then
+		return 1
+	end
+	return math.max(math.floor(Value), 1)
+end
+
 local function Clearplayer(Player: Player)
 	Completedbyplayer[Player] = nil
 	Loadedbyplayer[Player] = nil
 	Objectdonebyplayer[Player] = nil
 	Stepbyplayer[Player] = nil
+	Stepversionbyplayer[Player] = nil
 	Boughtbyplayer[Player] = nil
 	Blockedbyplayer[Player] = nil
 	Erroredbyplayer[Player] = nil
@@ -64,6 +74,7 @@ end
 local function Loadplayer(Player: Player)
 	Completedbyplayer[Player] = false
 	Stepbyplayer[Player] = 1
+	Stepversionbyplayer[Player] = Stepversion
 	Boughtbyplayer[Player] = false
 	while Savingbyuserid[Player.UserId] do
 		task.wait()
@@ -80,6 +91,7 @@ local function Loadplayer(Player: Player)
 		if type(Saved) == "table" then
 			Completedbyplayer[Player] = Saved.Completed == true
 			Stepbyplayer[Player] = Sanitizestep(tonumber(Saved.Step)) or 1
+			Stepversionbyplayer[Player] = Sanitizeversion(Saved.Version)
 		else
 			Completedbyplayer[Player] = Saved == true
 		end
@@ -109,6 +121,7 @@ function Tutorialservice:Wipe(Userid: number): (boolean, string)
 		Completedbyplayer[Player] = false
 		Objectdonebyplayer[Player] = nil
 		Stepbyplayer[Player] = 1
+		Stepversionbyplayer[Player] = Stepversion
 		Boughtbyplayer[Player] = false
 	end
 	while Savingbyuserid[Userid] do
@@ -124,11 +137,15 @@ function Tutorialservice:Wipe(Userid: number): (boolean, string)
 	return true, "erased"
 end
 
-function Tutorialservice:Peek(Player: Player): { Completed: boolean, Step: number }?
+function Tutorialservice:Peek(Player: Player): { Completed: boolean, Step: number, Version: number }?
 	if not Loadedbyplayer[Player] or Erroredbyplayer[Player] then
 		return nil
 	end
-	return { Completed = Completedbyplayer[Player] == true, Step = Stepbyplayer[Player] or 1 }
+	return {
+		Completed = Completedbyplayer[Player] == true,
+		Step = Stepbyplayer[Player] or 1,
+		Version = Stepversionbyplayer[Player] or Stepversion,
+	}
 end
 
 function Tutorialservice:Read(Userid: number): (boolean, any)
@@ -152,6 +169,7 @@ local function Saveplayer(Player: Player): boolean
 	local Value = {
 		Completed = Completedbyplayer[Player] == true,
 		Step = Stepbyplayer[Player] or 1,
+		Version = Stepversionbyplayer[Player] or Stepversion,
 	}
 	local Existed = Existedbyplayer[Player] == true
 	local Erased = false
@@ -163,9 +181,16 @@ local function Saveplayer(Player: Player): boolean
 			end
 			Erased = false
 			local Stored = if type(Current) == "table" then Current else { Completed = Current == true }
+			local Storedversion = Sanitizeversion(Stored.Version)
+			local Storedstep = Sanitizestep(tonumber(Stored.Step)) or 1
+			local Step = if Storedversion == Value.Version
+				then math.max(Value.Step, Storedstep)
+				elseif Value.Version > Storedversion then Value.Step
+				else Storedstep
 			return {
 				Completed = Value.Completed or Stored.Completed == true,
-				Step = math.max(Value.Step, Sanitizestep(tonumber(Stored.Step)) or 1),
+				Step = Step,
+				Version = math.max(Value.Version, Storedversion),
 			}, { Userid }
 		end)
 	end)
@@ -227,7 +252,11 @@ function Tutorialservice:Init()
 	end
 
 	Remotemanager:OnServerInvoke(self.Name, "GetState", function(Player)
-		return { Completed = not self:IsActive(Player), Step = Stepbyplayer[Player] or 1 }
+		return {
+			Completed = not self:IsActive(Player),
+			Step = Stepbyplayer[Player] or 1,
+			Version = Stepversionbyplayer[Player] or Stepversion,
+		}
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "SetStep", function(Player, Step)
@@ -236,6 +265,7 @@ function Tutorialservice:Init()
 			return
 		end
 		Stepbyplayer[Player] = Sanitized
+		Stepversionbyplayer[Player] = Stepversion
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "Complete", function(Player)

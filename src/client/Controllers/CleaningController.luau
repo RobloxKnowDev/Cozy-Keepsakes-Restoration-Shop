@@ -740,9 +740,45 @@ local function Showsstain(Stain: Stain, Part: BasePart, Worldnormal: Vector3): b
 	return Facemapping.ShowsDecal(Stain.Decal, Worldnormal)
 end
 
-local function Newstain(Decal: Decal): Stain
+local function Stainsource(Decal: Decal, Object: Instance): ImageLabel?
+	if not Decal.Parent then
+		return nil
+	end
+	local Source = Decal:WaitForChild("Source") :: ObjectValue
+	if Source.Value then
+		return Source.Value :: ImageLabel
+	end
+	local Ready = Instance.new("BindableEvent")
+	local Connections = {
+		Source.Changed:Connect(function()
+			Ready:Fire()
+		end),
+		Decal.AncestryChanged:Connect(function()
+			Ready:Fire()
+		end),
+		Decal.Destroying:Connect(function()
+			Ready:Fire()
+		end),
+	}
+	while not Source.Value and Object.Parent and Decal:IsDescendantOf(Object) do
+		Ready.Event:Wait()
+	end
+	for _, Connection in ipairs(Connections) do
+		Connection:Disconnect()
+	end
+	Ready:Destroy()
+	if not Object.Parent or not Decal:IsDescendantOf(Object) then
+		return nil
+	end
+	return Source.Value :: ImageLabel
+end
+
+local function Newstain(Decal: Decal, Object: Instance): Stain?
+	local Texture = Stainsource(Decal, Object)
+	if not Texture then
+		return nil
+	end
 	local Definition = Stainkinds[Decal.Name]
-	local Texture = (Decal:WaitForChild("Source") :: ObjectValue).Value :: ImageLabel
 	local Layout = Stainlayout.GetLayout(Texture)
 	assert(
 		Decal.Parent == Layout.Part and Decal.Face == Layout.Face,
@@ -846,8 +882,18 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 			Caster:Load()
 		end)
 	end
+	local Stains = {}
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("Decal") and Stainkinds[Descendant.Name] then
+			local Stain = Newstain(Descendant, Object)
+			if Stain then
+				local Surface = Stain.Layout.Surface
+				Surfacewaiting[Surface] = (Surfacewaiting[Surface] or 0) + 1
+				table.insert(Stains, Stain)
+			end
+		end
+	end
 	local Decals = {}
-	local Staindecals = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
 			table.insert(Decals, Descendant)
@@ -856,16 +902,7 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 					Tweenservice:Create(Descendant, Cleanedfadeinfo, { Transparency = 1 }):Play()
 				end
 			end)
-		elseif Descendant:IsA("Decal") and Stainkinds[Descendant.Name] then
-			table.insert(Staindecals, Descendant)
 		end
-	end
-	local Stains = {}
-	for _, Decal in ipairs(Staindecals) do
-		local Stain = Newstain(Decal)
-		local Surface = Stain.Layout.Surface
-		Surfacewaiting[Surface] = (Surfacewaiting[Surface] or 0) + 1
-		table.insert(Stains, Stain)
 	end
 	local Active = {}
 	for _, Stain in ipairs(Stains) do

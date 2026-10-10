@@ -49,10 +49,14 @@ local Maxcleanpoints = 32
 local Maxdirtstrokes = 8
 local Finishassist = Cleaningconfig.FinishAssist
 local Pingstart = math.min(Finishassist.Start, Finishassist.StallStart)
-local Dirtversion = 5
+local Dirtversion = 6
 local Scratchversion = 5
 local Meshcastversion = 3
 local Mindirtshareversion = 4
+local Tutorialfacesversion = 6
+local Tutorialminimumcells = 64
+local Tutorialfacenames = { Config.Offer.TutorialDirtFace, Config.Offer.TutorialBackFace }
+local Stickerfacingdot = 0.5
 local Premarkframebudget = 0.005
 local Dirtsurfacenames = {
 	UiTop = true,
@@ -84,6 +88,7 @@ local Scratchshape = { Ratio = 0, Inset = 0 }
 local Scratchseedoffset = 2654435769
 local Scratchpixelsperstud = 100
 local Scratchfallbackcells = math.max(1, math.ceil(Randomscratch.MinCells / 2))
+local Scratchvisibleshare = 0.75
 local Downwardlimit = -0.5
 local Turnedfaces = { Top = true, Bottom = true }
 type CoverageEntry = {
@@ -112,6 +117,7 @@ local Coldtemplates: { [string]: boolean } = {}
 local Warming = false
 local Objecttemplates: Folder
 local Warmworld: WorldModel
+local Prepareworld: WorldModel
 local Frontfacerank = { Front = 1, Back = 2, Top = 3, Left = 4, Right = 5, Bottom = 6 }
 local Workbenchturndegrees = -90
 
@@ -279,13 +285,18 @@ local function Buildstainentry(Layout: Stainlayout.Layout, Kind: string, Alpha: 
 	return { Cells = Cells, Hits = Free, Free = Free, Premarked = Free, Passes = 1, Units = 1, Alpha = Facealpha, Kind = Kind, Source = Layout.Texture }
 end
 
-local function Brushfootprint(Entry: CoverageEntry, Radius: Vector2): number
+local function Requiredcells(Entry: CoverageEntry): number
 	local Required = 0
 	for Index = 1, Coveragecellcount do
 		if Entry.Cells[Index] < Entry.Passes then
 			Required += 1
 		end
 	end
+	return Required
+end
+
+local function Brushfootprint(Entry: CoverageEntry, Radius: Vector2): number
+	local Required = Requiredcells(Entry)
 	local Half = Coveragegridwidth / 2
 	local Ellipse = math.pi * math.min(Radius.X * Coveragegridwidth, Half) * math.min(Radius.Y * Coveragegridwidth, Half)
 	return math.min(Ellipse, math.max(Required, 1))
@@ -586,16 +597,17 @@ local function Forbidaround(Slot: ScratchSlot, Index: number)
 	end
 end
 
-local function Forbidsticker(Slot: ScratchSlot, Sticker: BasePart, Inflate: number)
-	local Part = Slot.Part
+local function Stickerfootprint(Part: BasePart, Face: Enum.NormalId, Sticker: BasePart, Inflate: number, Through: boolean, Mark: (number) -> ())
+	local Facename = Face.Name
 	local Half = Sticker.Size / 2 + Vector3.new(Inflate, Inflate, Inflate)
-	local Normal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Slot.Face))
-	local Depth = math.abs(Vector3.FromNormalId(Slot.Face):Dot(Part.Size)) / 2
+	local Normal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Face))
+	local Depth = math.abs(Vector3.FromNormalId(Face):Dot(Part.Size)) / 2
+	local Back = if Through then Normal * (Depth * 2) else Vector3.zero
 	local Lowu, Lowv, Highu, Highv = math.huge, math.huge, -math.huge, -math.huge
-	local Outward = false
+	local Outward = Through
 	for Corner = 0, 7 do
 		local Point = Sticker.CFrame:PointToWorldSpace(Half * Vector3.new(Corner % 2 * 2 - 1, Corner // 2 % 2 * 2 - 1, Corner // 4 * 2 - 1))
-		local Facepoint = Facemapping.GetDecalPoint(Part, Point, Slot.Facename)
+		local Facepoint = Facemapping.GetDecalPoint(Part, Point, Facename)
 		Lowu, Highu = math.min(Lowu, Facepoint.X), math.max(Highu, Facepoint.X)
 		Lowv, Highv = math.min(Lowv, Facepoint.Y), math.max(Highv, Facepoint.Y)
 		Outward = Outward or Normal:Dot(Point - Part.Position) >= Depth
@@ -607,13 +619,19 @@ local function Forbidsticker(Slot: ScratchSlot, Sticker: BasePart, Inflate: numb
 	for Row = math.max(math.floor(Lowv * Coveragegridwidth), 0), math.min(math.floor(Highv * Coveragegridwidth), Coveragegridwidth - 1) do
 		for Column = math.max(math.floor(Lowu * Coveragegridwidth), 0), math.min(math.floor(Highu * Coveragegridwidth), Coveragegridwidth - 1) do
 			local Point = Part.CFrame:PointToWorldSpace(
-				Facemapping.GetDecalLocalPoint(Part.Size, Slot.Facename, (Column + 0.5) / Coveragegridwidth, (Row + 0.5) / Coveragegridwidth)
-			)
+				Facemapping.GetDecalLocalPoint(Part.Size, Facename, (Column + 0.5) / Coveragegridwidth, (Row + 0.5) / Coveragegridwidth)
+			) - Back
 			if Raymeetsbox(Sticker.CFrame:PointToObjectSpace(Point), Direction, Half) then
-				Slot.Forbidden[Row * Coveragegridwidth + Column + 1] = true
+				Mark(Row * Coveragegridwidth + Column + 1)
 			end
 		end
 	end
+end
+
+local function Forbidsticker(Slot: ScratchSlot, Sticker: BasePart, Inflate: number)
+	Stickerfootprint(Slot.Part, Slot.Face, Sticker, Inflate, false, function(Index)
+		Slot.Forbidden[Index] = true
+	end)
 end
 
 local function Refreshslot(Slot: ScratchSlot)
@@ -673,10 +691,9 @@ local function Scratchslots(
 		end
 		for _, Layout in ipairs(Stains) do
 			if Stainframes[Layout.Frame.Name] == "Ink" and Layout.Part == Part and Layout.Face == Decal.Face then
-				local Success, Mask = pcall(Buildmask, Layout.Texture.Image, Roundedtexture.GetShape(Layout.Texture))
-				local Entry = Buildstainentry(Layout, "Ink", if Success then Mask.Alpha else Solidalpha)
+				local Entry = Buildstainentry(Layout, "Ink", Solidalpha)
 				for Index = 1, Coveragecellcount do
-					if Entry.Cells[Index] < Entry.Passes and buffer.readu8(Slot.Reach, Index - 1) == 1 then
+					if Entry.Cells[Index] < Entry.Passes then
 						Forbidaround(Slot, Index)
 					end
 				end
@@ -751,10 +768,17 @@ local function Betterfallback(Candidate: ScratchCandidate, Best: ScratchCandidat
 	if Candidate.Inside ~= Best.Inside then
 		return Candidate.Inside
 	end
-	if Candidate.Reachable ~= Best.Reachable then
+	local Visible = Candidate.Share >= Scratchvisibleshare
+	if Visible ~= (Best.Share >= Scratchvisibleshare) then
+		return Visible
+	end
+	if Visible and Candidate.Reachable ~= Best.Reachable then
 		return Candidate.Reachable > Best.Reachable
 	end
-	return Candidate.Share > Best.Share
+	if Candidate.Share ~= Best.Share then
+		return Candidate.Share > Best.Share
+	end
+	return Candidate.Reachable > Best.Reachable
 end
 
 local function Removeauthoredscratches(Object: RestorationObject)
@@ -870,6 +894,7 @@ local function Warmtemplate(Objectkey: string)
 	local Getcaster, Releasecaster = Lazycaster(Object, Dirtversion)
 	local Success, Failure = pcall(function()
 		local Sticker = Findsticker(Object)
+		local Layouts = Collectstains(Object, Sticker)
 		Object.Parent = Warmworld
 		for _, Decal in ipairs(Object:GetDescendants()) do
 			if Decal:IsA("Decal") and Dirtdecalnames[Decal.Name] then
@@ -880,7 +905,7 @@ local function Warmtemplate(Objectkey: string)
 				end
 			end
 		end
-		for _, Layout in ipairs(Collectstains(Object, Sticker)) do
+		for _, Layout in ipairs(Layouts) do
 			local Kind = Stainframes[Layout.Frame.Name]
 			local Known = Stainknowncells(Objectkey, Dirtversion, Layout.Surface)
 			if Resolvereach(Object, Getcaster, Createstaindecal(Layout, Kind), Known, Buildstainentry(Layout, Kind, Solidalpha)) ~= Known then
@@ -1322,7 +1347,7 @@ local function Spawnconfiguredobject(Objectname: string, Shop: Model, Maximums: 
 	if Object:IsA("Model") then
 		Object.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 	end
-	Object.Parent = Shop:WaitForChild("GeneratedItems")
+	Object.Parent = Prepareworld
 	local Spawnposition = Spawnattachment.WorldPosition
 	local Cameralook = Camerapart.CFrame.LookVector
 	local Facing = CFrame.lookAt(Spawnposition, Spawnposition - Vector3.new(Cameralook.X, 0, Cameralook.Z))
@@ -1365,16 +1390,73 @@ local function Pickdirttexture(Generator: Random, Excludedpattern: string?)
 	return Choices[Generator:NextInteger(1, #Choices)]
 end
 
+local function Stickerfaces(Sticker: BasePart, Normal: Vector3): boolean
+	local Image = Sticker:FindFirstChildWhichIsA("Decal") or Sticker:FindFirstChildWhichIsA("SurfaceGui")
+	if Image then
+		return Sticker.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Image.Face)):Dot(Normal) >= Stickerfacingdot
+	end
+	local Size = Sticker.Size
+	local Thin = if Size.X <= Size.Y and Size.X <= Size.Z
+		then Sticker.CFrame.RightVector
+		elseif Size.Y <= Size.Z then Sticker.CFrame.UpVector
+		else Sticker.CFrame.LookVector
+	return math.abs(Thin:Dot(Normal)) >= Stickerfacingdot
+end
+
+local function Creditsticker(Entry: CoverageEntry, Decal: Decal, Sticker: BasePart)
+	local Part = Decal.Parent :: BasePart
+	if not Stickerfaces(Sticker, Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Decal.Face))) then
+		return
+	end
+	Stickerfootprint(Part, Decal.Face, Sticker, 0, true, function(Index)
+		local Missing = Entry.Passes - Entry.Cells[Index]
+		if Missing > 0 then
+			Entry.Cells[Index] = Entry.Passes
+			Entry.Free += Missing
+			Entry.Hits += Missing
+			Entry.Premarked += 1
+		end
+	end)
+end
+
+local function Picktutorialdecal(
+	Object: RestorationObject,
+	Decals: { Decal },
+	Facename: string,
+	Sticker: BasePart?,
+	Getcaster: () -> (any, boolean),
+	Version: number
+): (Decal?, CoverageEntry?)
+	local Best, Bestentry, Bestcount = nil, nil, Tutorialminimumcells - 1
+	for _, Decal in ipairs(Decals) do
+		if Decal.Face.Name == Facename then
+			local Entry = Buildcoverageentry(Decal, Decal.Texture, Cleaningconfig.DirtPasses, 16)
+			if Premarkunreachable(Entry, Object, Getcaster, Decal, Knowncells(Object.Name, Version, Decal)) then
+				if Sticker then
+					Creditsticker(Entry, Decal, Sticker)
+				end
+				local Count = Requiredcells(Entry)
+				if Count > Bestcount then
+					Best, Bestentry, Bestcount = Decal, Entry, Count
+				end
+			end
+		end
+	end
+	return Best, Bestentry
+end
+
 local function Initializedirt(
 	Object: RestorationObject,
 	Singleface: boolean,
 	Seed: number,
 	Version: number,
 	Getcaster: () -> (any, boolean),
-	Spotseconds: number?
+	Spotseconds: number?,
+	Sticker: BasePart?
 ): number
 	local Generator = Random.new(Seed)
 	local Styled = Version >= 2 and not Singleface
+	local Tutorialfaces = Singleface and Version >= Tutorialfacesversion
 	local Decals = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
@@ -1403,6 +1485,17 @@ local function Initializedirt(
 			Decals[Index], Decals[Swap] = Decals[Swap], Decals[Index]
 		end
 	end
+	local Tutorialentries: { [Decal]: CoverageEntry } = {}
+	local Tutorialfaceof: { [Decal]: number } = {}
+	if Tutorialfaces then
+		for Face, Facename in ipairs(Tutorialfacenames) do
+			local Decal, Entry = Picktutorialdecal(Object, Decals, Facename, Sticker, Getcaster, Version)
+			if Decal and Entry then
+				Tutorialentries[Decal] = Entry
+				Tutorialfaceof[Decal] = Face
+			end
+		end
+	end
 	local Keptcount = if #Decals == 0 then 0 elseif Singleface then 1 else Generator:NextInteger(1, #Decals)
 	local Kept = 0
 	local Layers = 0
@@ -1424,8 +1517,11 @@ local function Initializedirt(
 			Decal.Texture = Texture.Image
 			Decal.ZIndex = Texture.ZIndex
 		end
-		local Entry = if Wanted then Buildcoverageentry(Decal, Decal.Texture, Cleaningconfig.DirtPasses, 16) else nil
-		if Entry and Premarkunreachable(Entry, Object, Getcaster, Decal, Knowncells(Object.Name, Version, Decal)) then
+		local Entry = if Tutorialfaces
+			then Tutorialentries[Decal]
+			elseif Wanted then Buildcoverageentry(Decal, Decal.Texture, Cleaningconfig.DirtPasses, 16)
+			else nil
+		if Entry and (Tutorialfaces or Premarkunreachable(Entry, Object, Getcaster, Decal, Knowncells(Object.Name, Version, Decal))) then
 			local Radius = Facemapping.GetBrushRadius((Decal.Parent :: BasePart).Size, Decal.Face.Name, Brushradii.ToothBrush, Brushradius)
 			Kept += 1
 			Keptarea += Facearea(Decal)
@@ -1458,7 +1554,10 @@ local function Initializedirt(
 	local Speed = Cleaningconfig.CleaningSpeed
 	local Target = Speed.TargetCleaningDuration * Speed.RarityDuration[Object:GetAttribute("Rarity")] * Keptarea / Totalarea
 	local Dirttarget = math.max(Target - (Spotseconds or 0), Target * Dirttargetfloor)
-	local Step = if Singleface then Dirtfadestep else Dirtstep(Keptentries, Footprints, Dirttarget)
+	local Step = if Tutorialfaces
+		then Dirtstep(Keptentries, Footprints, Speed.TutorialCleaningDuration)
+		elseif Singleface then Dirtfadestep
+		else Dirtstep(Keptentries, Footprints, Dirttarget)
 	local Opaquepasses = 0
 	for _, Entry in ipairs(Keptentries) do
 		Restepentry(Entry, Step)
@@ -1466,6 +1565,10 @@ local function Initializedirt(
 	end
 	for _, Entry in ipairs(Keptentries) do
 		Entry.Units = Totaldirt * (Coveragecellcount * Entry.Passes - Entry.Free) / Opaquepasses
+	end
+	for Decal, Face in pairs(Tutorialfaceof) do
+		Decal:SetAttribute("TutorialFace", Face)
+		Decal:SetAttribute("TutorialShare", Tutorialentries[Decal].Units / Totaldirt)
 	end
 	Object:SetAttribute("DirtSeed", Seed)
 	Object:SetAttribute("DirtVersion", Version)
@@ -1944,7 +2047,7 @@ local function Createspots(Object: RestorationObject, Singleface: boolean, Seed:
 		for _, Layout in ipairs(Stains) do
 			Spotseconds += Speed.SpotSeconds[Stainframes[Layout.Frame.Name]]
 		end
-		Totaldirt = Initializedirt(Object, Singleface, Seed, Version, Getcaster, Spotseconds)
+		Totaldirt = Initializedirt(Object, Singleface, Seed, Version, Getcaster, Spotseconds, Sticker)
 		Totalink, Totalscratches = Initializestains(Object, Stains, Version, Getcaster)
 	end)
 	if Releasecaster() then
@@ -1985,7 +2088,8 @@ function Restorationservice:PrepareObject(
 	Progress: { [string]: any }?
 ): RestorationObject
 	Releaseactiveobject(Owner)
-	local Object = Spawnconfiguredobject(Objectname, Core:GetService("ShopService"):GetShop(Owner), Maximums)
+	local Shop = Core:GetService("ShopService"):GetShop(Owner)
+	local Object = Spawnconfiguredobject(Objectname, Shop, Maximums)
 	if Object:IsA("BasePart") then
 		Object.Anchored = true
 	else
@@ -2008,6 +2112,7 @@ function Restorationservice:PrepareObject(
 		Destroyobject(Object)
 		error(Failure, 0)
 	end
+	Object.Parent = Shop:WaitForChild("GeneratedItems")
 	Activeobjects[Owner] = Object
 	return Object
 end
@@ -2063,6 +2168,9 @@ function Restorationservice:Init()
 	Warmworld = Instance.new("WorldModel")
 	Warmworld.Name = "RestorationWarmup"
 	Warmworld.Parent = Serverstorage
+	Prepareworld = Instance.new("WorldModel")
+	Prepareworld.Name = "RestorationPrepare"
+	Prepareworld.Parent = Serverstorage
 	Core:GetService("DataService"):Register("Restoration", {
 		Load = function(Player, Saved)
 			local Count = tonumber(Saved.PendingCleanAll) or 0

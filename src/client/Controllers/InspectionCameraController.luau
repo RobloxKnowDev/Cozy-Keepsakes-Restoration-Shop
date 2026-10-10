@@ -22,6 +22,8 @@ local Target: InspectionTarget? = nil
 local Yaw = 0
 local Pitch = math.rad(-38)
 local Orbittravel = 0
+local Rotatetravel = 0
+local Flipcount = 0
 local Distance = 8
 local Dragging = false
 local Enabled = false
@@ -198,6 +200,7 @@ function Controller:FlipObject()
 		return
 	end
 	Showingback = not Showingback
+	Flipcount += 1
 	Objectrotationgoal = Originalobjectrotation * (Showingback and CFrame.Angles(math.pi, 0, 0) or CFrame.identity)
 end
 
@@ -219,6 +222,22 @@ end
 
 function Controller:GetOrbitTravel(): number
 	return Orbittravel
+end
+
+function Controller:GetRotateTravel(): number
+	return Rotatetravel
+end
+
+function Controller:GetFlipCount(): number
+	return Flipcount
+end
+
+function Controller:GetTransformMode(): string
+	return Transformmode
+end
+
+function Controller:IsShowingBack(): boolean
+	return Showingback
 end
 
 function Controller:GetFieldOfView(): number
@@ -377,6 +396,8 @@ function Controller:Begin(Object: InspectionTarget)
 	Yaw = math.atan2(-Look.X, -Look.Z)
 	Pitch = math.rad(-38)
 	Orbittravel = 0
+	Rotatetravel = 0
+	Flipcount = 0
 
 	local Boundscframe, Boundssize = Objectbounds(Object)
 	Boundsoffset = Objectpivot(Object):PointToObjectSpace(Boundscframe.Position)
@@ -434,6 +455,7 @@ local function Applystick(Deltatime: number)
 		Objectrotationgoal = nil
 		local Angle = Stickrotatespeed * Deltatime
 		Rotatearoundcenter(Target, CFrame.Angles(Direction.Y * Angle, -Direction.X * Angle, 0))
+		Rotatetravel += Angle * Direction.Magnitude
 		return
 	end
 	Cameratransitionactive = false
@@ -515,8 +537,10 @@ function Controller:Start()
 				end
 				if Lockedrotationaxis == "X" then
 					Rotatearoundcenter(Target, CFrame.Angles(-Delta.Y * 0.003, 0, 0))
+					Rotatetravel += math.abs(Delta.Y * 0.003)
 				elseif Lockedrotationaxis == "Y" then
 					Rotatearoundcenter(Target, CFrame.Angles(0, -Delta.X * 0.003, 0))
+					Rotatetravel += math.abs(Delta.X * 0.003)
 				end
 			elseif Dragmode == "OrbitCamera" then
 				Yaw -= Delta.X * 0.008
