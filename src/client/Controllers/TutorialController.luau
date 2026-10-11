@@ -40,6 +40,8 @@ local Behindtext = {
 	Gamepad = "It's on the other side! Use the right stick!",
 }
 local Behindhandtext = "Tap the hand to turn it!"
+local Fliptext = { Touch = "Tap to flip it!", Mouse = "Tap to flip it!", Gamepad = "Press Y to flip it!" }
+local Downfacing = -0.8
 local Handimage = "rbxassetid://116068912861302"
 local Mouseimage = "rbxassetid://123373213717142"
 local Gamepadimage = ""
@@ -113,8 +115,21 @@ local Gestures = {
 }
 local Steptweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Pulsetweeninfo = TweenInfo.new(0.65, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-local Staincorners = { Vector2.new(0, 0), Vector2.new(1, 0), Vector2.new(0, 1), Vector2.new(1, 1) }
+local Surfaceoffset = 0.01
+local Surfacerefresh = 0.5
+local function Grid(Low: number, High: number, Count: number): { Vector2 }
+	local Points = {}
+	for Row = 0, Count - 1 do
+		for Column = 0, Count - 1 do
+			table.insert(Points, Vector2.new(Low + (High - Low) * Column / (Count - 1), Low + (High - Low) * Row / (Count - 1)))
+		end
+	end
+	return Points
+end
+local Staingrid = Grid(0, 1, 7)
+local Decalgrid = Grid(0.02, 0.98, 7)
 local Stainlayouts = setmetatable({} :: { [ImageLabel]: Stainlayout.Layout }, { __mode = "k" })
+local Surfacepoints = setmetatable({} :: { [Instance]: { Time: number, Points: { Vector3 } } }, { __mode = "k" })
 
 local function Makeshade(Parent: ScreenGui, Name: string): Frame
 	local Shade = Instance.new("Frame")
@@ -269,24 +284,55 @@ function Tutorialcontroller:Projectrect(Points: { Vector3 }): (Vector2?, Vector2
 	return Minimum, Maximum - Minimum
 end
 
+local function Castsurfacepoints(Part: BasePart, Face: Enum.NormalId, Facepoints: { Vector2 }): { Vector3 }
+	local Localnormal = Vector3.FromNormalId(Face)
+	local Worldnormal = Part.CFrame:VectorToWorldSpace(Localnormal)
+	local Depth = math.abs(Localnormal:Dot(Part.Size))
+	local Cleaning = Core:GetController("CleaningController")
+	local Boxpoints = {}
+	local Hitpoints = {}
+	for _, Facepoint in ipairs(Facepoints) do
+		local Boxpoint = Facemapping.GetDecalLocalPoint(Part.Size, Face.Name, Facepoint.X, Facepoint.Y)
+		table.insert(Boxpoints, Boxpoint)
+		local Origin = Part.CFrame:PointToWorldSpace(Boxpoint) + Worldnormal * Surfaceoffset
+		local Hit = Cleaning:CastPart(Part, Origin, -Worldnormal * (Depth + Surfaceoffset * 2))
+		if Hit then
+			table.insert(Hitpoints, Part.CFrame:PointToObjectSpace(Hit.Position))
+		end
+	end
+	return if #Hitpoints > 0 then Hitpoints else Boxpoints
+end
+
+function Tutorialcontroller:Getsurfacepointrect(Target: Instance, Part: BasePart, Face: Enum.NormalId, Facepoints: { Vector2 }): (Vector2?, Vector2?, boolean?)
+	local Cached = Surfacepoints[Target]
+	if not Cached or os.clock() - Cached.Time >= Surfacerefresh then
+		Cached = { Time = os.clock(), Points = Castsurfacepoints(Part, Face, Facepoints) }
+		Surfacepoints[Target] = Cached
+	end
+	local Points = {}
+	local Center = Vector3.zero
+	for _, Localpoint in ipairs(Cached.Points) do
+		local Point = Part.CFrame:PointToWorldSpace(Localpoint)
+		table.insert(Points, Point)
+		Center += Point / #Cached.Points
+	end
+	local Worldnormal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Face))
+	local Toviewer = Workspace.CurrentCamera.CFrame.Position - Center
+	local Position, Size = self:Projectrect(Points)
+	return Position, Size, Toviewer.Unit:Dot(Worldnormal) <= 0
+end
+
 function Tutorialcontroller:Getstainrect(Texture: ImageLabel): (Vector2?, Vector2?, boolean?)
 	local Layout = Stainlayouts[Texture]
 	if not Layout then
 		Layout = Stainlayout.GetLayout(Texture)
 		Stainlayouts[Texture] = Layout
 	end
-	local Part = Layout.Part
-	local Points = {}
-	for _, Corner in ipairs(Staincorners) do
-		local Facepoint = Stainlayout.GetFacePoint(Layout, Corner)
-		local Localpoint = Facemapping.GetDecalLocalPoint(Part.Size, Layout.Facename, Facepoint.X, Facepoint.Y)
-		table.insert(Points, Part.CFrame:PointToWorldSpace(Localpoint))
+	local Facepoints = {}
+	for _, Point in ipairs(Staingrid) do
+		table.insert(Facepoints, Stainlayout.GetFacePoint(Layout, Point))
 	end
-	local Center = (Points[1] + Points[4]) * 0.5
-	local Worldnormal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Layout.Face))
-	local Toviewer = Workspace.CurrentCamera.CFrame.Position - Center
-	local Position, Size = self:Projectrect(Points)
-	return Position, Size, Toviewer.Unit:Dot(Worldnormal) <= 0
+	return self:Getsurfacepointrect(Texture, Layout.Part, Layout.Face, Facepoints)
 end
 
 function Tutorialcontroller:Getsurfacerect(Target: GuiObject): (Vector2?, Vector2?)
@@ -310,8 +356,8 @@ local function Isstaintexture(Target: GuiObject): boolean
 		and (Frame.Name == Framenamebykind.Ink or Frame.Name == Framenamebykind.Scratch)
 end
 
-function Tutorialcontroller:Getdecalrect(Target: Decal): (Vector2?, Vector2?)
-	return self:Getfacerect(Target.Parent :: BasePart, Target.Face.Name, Vector2.zero, Vector2.one)
+function Tutorialcontroller:Getdecalrect(Target: Decal): (Vector2?, Vector2?, boolean?)
+	return self:Getsurfacepointrect(Target, Target.Parent :: BasePart, Target.Face, Decalgrid)
 end
 
 function Tutorialcontroller:Getfacerect(Part: BasePart, Facename: string, Origin: Vector2, Extent: Vector2): (Vector2?, Vector2?)
@@ -344,6 +390,22 @@ local function Isbehindobject(Target: BasePart): boolean
 	local Image = Target:FindFirstChildWhichIsA("Decal") or Target:FindFirstChildWhichIsA("SurfaceGui")
 	local Visibleside = if Image then Target.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Image.Face)) else Thinaxis(Target)
 	return Visibleside:Dot(Workspace.CurrentCamera.CFrame.Position - Target.Position) <= 0
+end
+
+local function Facesdown(Target: Instance): boolean
+	local Normal
+	if Target:IsA("Decal") then
+		Normal = (Target.Parent :: BasePart).CFrame:VectorToWorldSpace(Vector3.FromNormalId(Target.Face))
+	elseif Target:IsA("BasePart") then
+		local Image = Target:FindFirstChildWhichIsA("Decal") or Target:FindFirstChildWhichIsA("SurfaceGui")
+		Normal = if Image then Target.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Image.Face)) else Thinaxis(Target)
+	elseif Target:IsA("ImageLabel") and Isstaintexture(Target) then
+		local Layout = Stainlayouts[Target] or Stainlayout.GetLayout(Target)
+		Normal = Layout.Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Layout.Face))
+	else
+		return false
+	end
+	return Normal.Y < Downfacing
 end
 
 function Tutorialcontroller:Getworldrect(Target: Model | BasePart): (Vector2?, Vector2?)
@@ -529,7 +591,20 @@ function Tutorialcontroller:Resumeindex(Saved: number, Version: number): number
 	return Index
 end
 
+local function Inventoryrestored(): boolean
+	local Items = Core:GetController("ComputerController").inventoryItems
+	for _, Item in ipairs(Items) do
+		if (tonumber(Item.RestorationPercent) or 0) < 100 then
+			return false
+		end
+	end
+	return #Items > 0
+end
+
 function Tutorialcontroller:Showstep(Index: number)
+	if (Index == self.stepindex.Computer or Index == self.stepindex.Inventory) and Inventoryrestored() then
+		Index = self.stepindex.Computerintro
+	end
 	while self.steps[Index] and self.steps[Index].Skip and self.steps[Index].Skip() do
 		Index += 1
 	end
@@ -754,6 +829,9 @@ local function Frontdone(): boolean
 	for _, Decal in ipairs(Facedecals(1)) do
 		Share += tonumber(Decal:GetAttribute("TutorialShare")) or 1
 	end
+	if Share < 1 and #Facedecals(2) == 0 then
+		return false
+	end
 	local Total = tonumber(Object:GetAttribute("Total_Dirt")) or 0
 	local Cleaned = tonumber(Object:GetAttribute("Cleaned_Dirt")) or 0
 	return Cleaned >= Total * Share * Categorytolerance
@@ -767,6 +845,12 @@ local function Dirtfinished(): boolean
 	local Object = Restoration():GetActiveObject()
 	return Object ~= nil
 		and (tonumber(Object:GetAttribute("Cleaned_Dirt")) or 0) >= (tonumber(Object:GetAttribute("Total_Dirt")) or 0)
+end
+
+local function Allclean(): boolean
+	local Object = Restoration():GetActiveObject()
+	return Object ~= nil
+		and (tonumber(Object:GetAttribute("CleanedSpots")) or 0) >= (tonumber(Object:GetAttribute("TotalSpots")) or 0)
 end
 
 local function Backreference(): Instance?
@@ -799,6 +883,9 @@ function Tutorialcontroller:Update()
 	if not self.running then
 		return
 	end
+	if self.index >= self.stepindex.Computer and self.index <= self.stepindex.Card and Inventoryrestored() then
+		self:Showstep(self.stepindex.Computerintro)
+	end
 	local Step = self.steps[self.index]
 	if not Step then
 		return
@@ -810,7 +897,11 @@ function Tutorialcontroller:Update()
 	local Kind = Inputkind()
 	local Text, Gesture
 	local Fullshade = false
-	if Behind and Kind == "Touch" and not Toolselected("Transform") then
+	if Behind and Facesdown(Target :: Instance) then
+		Hastarget = true
+		Position, Size = self:Resolve(Restoration():GetInterface().ReturnButton)
+		Text = Textfor(Fliptext)
+	elseif Behind and Kind == "Touch" and not Toolselected("Transform") then
 		Hastarget = true
 		Position, Size = self:Resolve(Toolbutton("Transform"))
 		Text = Behindhandtext
@@ -1099,6 +1190,7 @@ function Tutorialcontroller:Buildsteps()
 			Text = "Dry it all!",
 			Gesture = "HeatGun",
 			HoldSeconds = 1.5,
+			MaxSeconds = 45,
 			Skip = Liquidsdry,
 			Target = Liquidspot,
 			Done = Liquidsdry,
@@ -1117,7 +1209,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Flip",
-			Text = { Touch = "Tap to flip it!", Mouse = "Tap to flip it!", Gamepad = "Press Y to flip it!" },
+			Text = Fliptext,
 			Skip = function()
 				return Inspection():GetFlipCount() >= 2 or Inspection():IsShowingBack()
 			end,
@@ -1197,7 +1289,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Finish",
-			Text = "All clean! Tap to finish.",
+			Text = function()
+				return if Allclean() then "All clean! Tap to finish." else "Tap to finish."
+			end,
 			AllowFinish = true,
 			Target = function()
 				return Restoration():GetInterface().ContinueButton

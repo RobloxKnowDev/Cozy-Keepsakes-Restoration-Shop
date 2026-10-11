@@ -57,6 +57,21 @@ local function Newcanvas(): SurfaceGui
 	return Canvas
 end
 
+local function Refuseothers(Photo: Instance, Frame: Instance, Plate: Instance?)
+	for _, Descendant in ipairs(Photo:GetDescendants()) do
+		assert(
+			not (Descendant:IsA("GuiObject") and Descendant.Name == "ScratchesFrame" and Descendant ~= Frame and not (Plate and Descendant:IsDescendantOf(Plate))),
+			"Prepare scratches: "
+				.. Descendant:GetFullName()
+				.. " is a second ScratchesFrame on "
+				.. Tutorialkey
+				.. ", only "
+				.. Frame:GetFullName()
+				.. " is the tutorial scratch: delete it and run this again"
+		)
+	end
+end
+
 local function Planleftovers()
 	local Keys = {}
 	for Key in pairs(Objectconfig.Object) do
@@ -89,15 +104,19 @@ local function Planphoto()
 	local Plate = Photo:FindFirstChild("Cube.002")
 	if not Plate then
 		local Frames = {}
+		local Kept = {}
 		for _, Descendant in ipairs(Photo:GetDescendants()) do
 			if Descendant:IsA("GuiObject") and Descendant.Name == "ScratchesFrame" then
 				table.insert(Frames, Descendant)
+				local Canvas = Descendant.Parent :: Instance
+				local Board = Canvas.Parent :: Instance
+				if Canvas:IsA("SurfaceGui") and Canvas.Name == "Ui" .. Backface and Board:IsA("BasePart") and Board.Name == "Base" and Board.Parent == Photo then
+					table.insert(Kept, Descendant)
+				end
 			end
 		end
-		local Canvas = if #Frames == 1 then Frames[1].Parent else nil
-		local Board = if Canvas then Canvas.Parent else nil
 		assert(
-			Canvas and Canvas:IsA("SurfaceGui") and Canvas.Name == "Ui" .. Backface and Board and Board:IsA("BasePart") and Board.Name == "Base" and Board.Parent == Photo,
+			#Kept == 1,
 			"Prepare scratches: "
 				.. Photo:GetFullName()
 				.. " has no Cube.002 and its only ScratchesFrame is not on Base.Ui"
@@ -106,7 +125,8 @@ local function Planphoto()
 				.. #Frames
 				.. " ScratchesFrame found): bring back the PhotoFrame as it was (Ctrl+Z or a saved copy) and run this again"
 		)
-		return { Photo = Photo, Prepared = true, Path = Pathin(Photo, Canvas) }
+		Refuseothers(Photo, Kept[1], nil)
+		return { Photo = Photo, Prepared = true, Path = Pathin(Photo, Kept[1].Parent :: Instance) }
 	end
 	assert(Plate:IsA("BasePart"), "Prepare scratches: " .. Plate:GetFullName() .. " must be the invisible plate Part")
 	local Old = Plate:FindFirstChild("UiBack")
@@ -169,6 +189,7 @@ local function Planphoto()
 				.. ", SizingMode PixelsPerStud, no Adornee and no ScratchesFrame yet, fix or delete it and run this again"
 		)
 	end
+	Refuseothers(Photo, Frame, Plate)
 	local Corners = Worldcorners(Stainlayout.GetLayout(Texture))
 	local Density = if Target then Target.PixelsPerStud else Pixelsperstud
 	local Extent = Canvasextent(Board.Size, Backface) * Density
@@ -213,10 +234,11 @@ local function Planphoto()
 	local Moved = Worldcorners(Stainlayout.GetLayout(Copy:FindFirstChild("Texture") :: ImageLabel))
 	Holder:Destroy()
 	local Normal = Board.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Backnormal))
-	local Worst = 0
+	local Worst, Lift = 0, 0
 	for Index, Corner in ipairs(Corners) do
 		local Offset = Moved[Index] - Corner
 		Worst = math.max(Worst, (Offset - Normal * Offset:Dot(Normal)).Magnitude)
+		Lift = math.max(Lift, Offset:Dot(Normal))
 	end
 	assert(
 		Worst <= Cornertolerance,
@@ -240,6 +262,7 @@ local function Planphoto()
 		Size = Size,
 		Rotation = Rotation,
 		Worst = Worst,
+		Lift = Lift,
 	}
 end
 
@@ -283,7 +306,16 @@ local Success, Failure = pcall(function()
 	Plan.Frame.Position = Plan.Position
 	Plan.Frame.Size = Plan.Size
 	Plan.Frame.Rotation = Plan.Rotation
-	print(string.format("%s: tutorial ScratchesFrame moved from %s to %s, same place within %.6f stud", Tutorialkey, From, Pathin(Plan.Photo, Canvas), Plan.Worst))
+	print(
+		string.format(
+			"%s: tutorial ScratchesFrame moved from %s to %s, same place seen straight from behind (within %.6f stud); Studio now draws it on the back board's box face, %.2f stud further out than before, but in Play it is on the back panel",
+			Tutorialkey,
+			From,
+			Pathin(Plan.Photo, Canvas),
+			Plan.Worst,
+			Plan.Lift
+		)
+	)
 	local Left = {}
 	for _, Descendant in ipairs(Plan.Plate:GetDescendants()) do
 		if Descendant:IsA("GuiObject") and Descendant.Parent:IsA("SurfaceGui") then
@@ -307,6 +339,9 @@ print(
 		Removedsurfaces,
 		if Plan.Prepared
 			then Tutorialkey .. " already prepared"
-			else Tutorialkey .. " prepared: now run tools/RandomInks.luau, then lay the " .. Tutorialkey .. " Sticker over its new Ink"
+			else Tutorialkey
+				.. " prepared: now run tools/RandomInks.luau, then lay the "
+				.. Tutorialkey
+				.. " Sticker flat on the back panel, over the spot where its new Ink sits seen straight from behind (Studio draws that Ink on the box face too, not on the panel)"
 	)
 )

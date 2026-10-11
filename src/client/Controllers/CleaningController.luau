@@ -917,6 +917,10 @@ function Cleaningcontroller:CastSurface(Origin: Vector3, Vector: Vector3): Surfa
 	return Activecaster:Cast(Origin, Vector)
 end
 
+function Cleaningcontroller:CastPart(Part: BasePart, Origin: Vector3, Vector: Vector3): Surfacecast.Hit?
+	return Activecaster:CastPart(Part, Origin, Vector)
+end
+
 function Cleaningcontroller:EraseDirtOverlay(
 	Part: BasePart,
 	Worldposition: Vector3,

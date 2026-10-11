@@ -57,6 +57,7 @@ local Tutorialfacesversion = 6
 local Tutorialminimumcells = 64
 local Tutorialfacenames = { Config.Offer.TutorialDirtFace, Config.Offer.TutorialBackFace }
 local Stickerfacingdot = 0.5
+local Stickerinsideversion = 6
 local Premarkframebudget = 0.005
 local Dirtsurfacenames = {
 	UiTop = true,
@@ -597,6 +598,32 @@ local function Forbidaround(Slot: ScratchSlot, Index: number)
 	end
 end
 
+local function Stickerfaces(Sticker: BasePart, Normal: Vector3): boolean
+	local Image = Sticker:FindFirstChildWhichIsA("Decal") or Sticker:FindFirstChildWhichIsA("SurfaceGui")
+	if Image then
+		return Sticker.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Image.Face)):Dot(Normal) >= Stickerfacingdot
+	end
+	local Size = Sticker.Size
+	local Thin = if Size.X <= Size.Y and Size.X <= Size.Z
+		then Sticker.CFrame.RightVector
+		elseif Size.Y <= Size.Z then Sticker.CFrame.UpVector
+		else Sticker.CFrame.LookVector
+	return math.abs(Thin:Dot(Normal)) >= Stickerfacingdot
+end
+
+local function Stickeroutside(Part: BasePart, Face: Enum.NormalId, Sticker: BasePart, Inflate: number): boolean
+	local Half = Sticker.Size / 2 + Vector3.new(Inflate, Inflate, Inflate)
+	local Normal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Face))
+	local Depth = math.abs(Vector3.FromNormalId(Face):Dot(Part.Size)) / 2
+	for Corner = 0, 7 do
+		local Point = Sticker.CFrame:PointToWorldSpace(Half * Vector3.new(Corner % 2 * 2 - 1, Corner // 2 % 2 * 2 - 1, Corner // 4 * 2 - 1))
+		if Normal:Dot(Point - Part.Position) >= Depth then
+			return true
+		end
+	end
+	return false
+end
+
 local function Stickerfootprint(Part: BasePart, Face: Enum.NormalId, Sticker: BasePart, Inflate: number, Through: boolean, Mark: (number) -> ())
 	local Facename = Face.Name
 	local Half = Sticker.Size / 2 + Vector3.new(Inflate, Inflate, Inflate)
@@ -604,16 +631,11 @@ local function Stickerfootprint(Part: BasePart, Face: Enum.NormalId, Sticker: Ba
 	local Depth = math.abs(Vector3.FromNormalId(Face):Dot(Part.Size)) / 2
 	local Back = if Through then Normal * (Depth * 2) else Vector3.zero
 	local Lowu, Lowv, Highu, Highv = math.huge, math.huge, -math.huge, -math.huge
-	local Outward = Through
 	for Corner = 0, 7 do
 		local Point = Sticker.CFrame:PointToWorldSpace(Half * Vector3.new(Corner % 2 * 2 - 1, Corner // 2 % 2 * 2 - 1, Corner // 4 * 2 - 1))
 		local Facepoint = Facemapping.GetDecalPoint(Part, Point, Facename)
 		Lowu, Highu = math.min(Lowu, Facepoint.X), math.max(Highu, Facepoint.X)
 		Lowv, Highv = math.min(Lowv, Facepoint.Y), math.max(Highv, Facepoint.Y)
-		Outward = Outward or Normal:Dot(Point - Part.Position) >= Depth
-	end
-	if not Outward then
-		return
 	end
 	local Direction = Sticker.CFrame:VectorToObjectSpace(Normal)
 	for Row = math.max(math.floor(Lowv * Coveragegridwidth), 0), math.min(math.floor(Highv * Coveragegridwidth), Coveragegridwidth - 1) do
@@ -628,10 +650,16 @@ local function Stickerfootprint(Part: BasePart, Face: Enum.NormalId, Sticker: Ba
 	end
 end
 
-local function Forbidsticker(Slot: ScratchSlot, Sticker: BasePart, Inflate: number)
-	Stickerfootprint(Slot.Part, Slot.Face, Sticker, Inflate, false, function(Index)
-		Slot.Forbidden[Index] = true
-	end)
+local function Forbidsticker(Slot: ScratchSlot, Sticker: BasePart, Inflate: number, Version: number)
+	local Outside = Stickeroutside(Slot.Part, Slot.Face, Sticker, Inflate)
+	local Through = not Outside
+		and Version >= Stickerinsideversion
+		and Stickerfaces(Sticker, Slot.Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Slot.Face)))
+	if Outside or Through then
+		Stickerfootprint(Slot.Part, Slot.Face, Sticker, Inflate, Through, function(Index)
+			Slot.Forbidden[Index] = true
+		end)
+	end
 end
 
 local function Refreshslot(Slot: ScratchSlot)
@@ -687,7 +715,7 @@ local function Scratchslots(
 			Canvas = if Turnedfaces[Facename] then Vector2.new(Extent.Y, Extent.X) else Extent,
 		}
 		if Sticker then
-			Forbidsticker(Slot, Sticker, Inflate)
+			Forbidsticker(Slot, Sticker, Inflate, Version)
 		end
 		for _, Layout in ipairs(Stains) do
 			if Stainframes[Layout.Frame.Name] == "Ink" and Layout.Part == Part and Layout.Face == Decal.Face then
@@ -1390,19 +1418,6 @@ local function Pickdirttexture(Generator: Random, Excludedpattern: string?)
 	return Choices[Generator:NextInteger(1, #Choices)]
 end
 
-local function Stickerfaces(Sticker: BasePart, Normal: Vector3): boolean
-	local Image = Sticker:FindFirstChildWhichIsA("Decal") or Sticker:FindFirstChildWhichIsA("SurfaceGui")
-	if Image then
-		return Sticker.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Image.Face)):Dot(Normal) >= Stickerfacingdot
-	end
-	local Size = Sticker.Size
-	local Thin = if Size.X <= Size.Y and Size.X <= Size.Z
-		then Sticker.CFrame.RightVector
-		elseif Size.Y <= Size.Z then Sticker.CFrame.UpVector
-		else Sticker.CFrame.LookVector
-	return math.abs(Thin:Dot(Normal)) >= Stickerfacingdot
-end
-
 local function Creditsticker(Entry: CoverageEntry, Decal: Decal, Sticker: BasePart)
 	local Part = Decal.Parent :: BasePart
 	if not Stickerfaces(Sticker, Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Decal.Face))) then
@@ -1495,6 +1510,7 @@ local function Initializedirt(
 				Tutorialfaceof[Decal] = Face
 			end
 		end
+		Tutorialfaces = next(Tutorialentries) ~= nil
 	end
 	local Keptcount = if #Decals == 0 then 0 elseif Singleface then 1 else Generator:NextInteger(1, #Decals)
 	local Kept = 0
@@ -1921,7 +1937,20 @@ end
 local function Assistdirt(Player: Player, Object: RestorationObject, Touched, Shortfall: number, Dirtweight: number, Toolname: string): number
 	local Removed, Remaining = Payassist(Player, Touched, Shortfall, Dirtweight, Toolname)
 	if Remaining > 0 then
-		Removed += Payassist(Player, Remainingdecals(Object), Remaining, Dirtweight, Toolname)
+		local Others = Remainingdecals(Object)
+		if Getdirtratio(Object) < Finishassist.Start then
+			local Faces = {}
+			for _, Item in ipairs(Touched) do
+				Faces[Item.Target:GetAttribute("TutorialFace") or 0] = true
+			end
+			for Index = #Others, 1, -1 do
+				local Face = Others[Index].Target:GetAttribute("TutorialFace")
+				if Face ~= nil and not Faces[Face] then
+					table.remove(Others, Index)
+				end
+			end
+		end
+		Removed += Payassist(Player, Others, Remaining, Dirtweight, Toolname)
 	end
 	return Removed
 end

@@ -8,13 +8,16 @@ local Facecap = 0.7
 local Rotationrange = 20
 local Minimumreachable = 0.95
 local Minimumcells = 4
+local Flatness = 0.01
 local Attempts = 60
+local Tutorialattempts = 360
 local Shrinkrun = 10
 local Shrink = 0.85
 local Pixelsperstud = 50
 local Grid = 32
 local Castsperframe = 4000
 local Edge = 1e-6
+local Margin = 0.5 / Grid
 local Stainnames = { Ink = true, ScratchesFrame = true }
 local Meshnote = " (some meshes did not load, so their collision shapes were used: check this one)"
 
@@ -164,18 +167,25 @@ local function Forbiddencells(Root: Instance, Part: BasePart, Facename: string, 
 	return Forbidden
 end
 
-local function Coverage(Texture: ImageLabel, Reach: { boolean }, Forbidden: { [number]: boolean }): (number, number, boolean)
+local function Coverage(Texture: ImageLabel, Slot): (number, number, boolean, number)
 	local Layout = Stainlayout.GetLayout(Texture)
 	for _, Corner in ipairs({ Vector2.zero, Vector2.xAxis, Vector2.yAxis, Vector2.one }) do
 		local Point = Stainlayout.GetFacePoint(Layout, Corner)
-		if Point.X < 0 or Point.X > 1 or Point.Y < 0 or Point.Y > 1 then
-			return 0, 0, false
+		if Point.X < Margin or Point.X > 1 - Margin or Point.Y < Margin or Point.Y > 1 - Margin then
+			return 0, 0, false, math.huge
 		end
 	end
-	if next(Forbidden) then
-		for _, Cell in ipairs(Coveredcells(Layout)) do
-			if Forbidden[Cell] then
-				return 0, 0, false
+	local Nearest, Farthest = math.huge, -math.huge
+	for _, Cell in ipairs(Coveredcells(Layout)) do
+		if Slot.Forbidden[Cell] then
+			return 0, 0, false, math.huge
+		end
+		local Column, Row = (Cell - 1) % Grid, (Cell - 1) // Grid
+		for Nearrow = math.max(Row - 1, 0), math.min(Row + 1, Grid - 1) do
+			for Nearcolumn = math.max(Column - 1, 0), math.min(Column + 1, Grid - 1) do
+				local Depth = Slot.Depth[Nearrow * Grid + Nearcolumn + 1]
+				Nearest = math.min(Nearest, Depth)
+				Farthest = math.max(Farthest, Depth)
 			end
 		end
 	end
@@ -184,13 +194,13 @@ local function Coverage(Texture: ImageLabel, Reach: { boolean }, Forbidden: { [n
 		for Column = 0, Grid - 1 do
 			if Stainlayout.Contains(Layout, Vector2.new((Column + 0.5) / Grid, (Row + 0.5) / Grid)) then
 				Required += 1
-				if Reach[Row * Grid + Column + 1] then
+				if Slot.Reach[Row * Grid + Column + 1] then
 					Reachable += 1
 				end
 			end
 		end
 	end
-	return Required, Reachable, math.max(Layout.Axisu.Magnitude, Layout.Axisv.Magnitude) <= 2
+	return Required, Reachable, math.max(Layout.Axisu.Magnitude, Layout.Axisv.Magnitude) <= 2, math.max(Farthest - Nearest, 0)
 end
 
 local function Resolveslot(Caster, Decal: Decal, Distance: number, Forbidden: { [number]: boolean })
@@ -199,11 +209,15 @@ local function Resolveslot(Caster, Decal: Decal, Distance: number, Forbidden: { 
 	local Normal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Decal.Face))
 	local Length = Distance + Part.Size.Magnitude
 	local Reach = table.create(Grid * Grid, false)
+	local Depth = table.create(Grid * Grid, Distance - Length)
 	local Cells = {}
 	for Row = 0, Grid - 1 do
 		for Column = 0, Grid - 1 do
 			local Point = Part.CFrame:PointToWorldSpace(Facemapping.GetDecalLocalPoint(Part.Size, Facename, (Column + 0.5) / Grid, (Row + 0.5) / Grid))
 			local Hit = Caster:Cast(Point + Normal * Distance, -Normal * Length)
+			if Hit then
+				Depth[Row * Grid + Column + 1] = (Hit.Position - Point):Dot(Normal)
+			end
 			if Hit and Hit.Instance == Part and Facemapping.ShowsDecal(Decal, Hit.DecalNormal) then
 				Reach[Row * Grid + Column + 1] = true
 				if not Forbidden[Row * Grid + Column + 1] then
@@ -217,7 +231,7 @@ local function Resolveslot(Caster, Decal: Decal, Distance: number, Forbidden: { 
 		end
 	end
 	local Extent = Facemapping.GetDecalSize(Part.Size, Facename)
-	return { Part = Part, Facename = Facename, Reach = Reach, Cells = Cells, Forbidden = Forbidden, Weight = #Cells / (Grid * Grid) * Extent.X * Extent.Y }
+	return { Part = Part, Facename = Facename, Reach = Reach, Depth = Depth, Cells = Cells, Forbidden = Forbidden, Weight = #Cells / (Grid * Grid) * Extent.X * Extent.Y }
 end
 
 local function Pickslot(Slots)
@@ -268,9 +282,11 @@ local function Choosespot(Template: Instance, Clone: Instance, Copies: { Instanc
 	end
 	local Holder = Instance.new("Part")
 	local Width = Generator:NextNumber(Minimumwidth, Maximumwidth) * Extents.Magnitude / 2
-	for Attempt = 1, Attempts do
+	local Best = nil
+	local Tries = if Template.Name == Objectconfig.Offer.TutorialObject then Tutorialattempts else Attempts
+	for Attempt = 1, Tries do
 		if Attempt > 1 and (Attempt - 1) % Shrinkrun == 0 then
-			Width *= Shrink
+			Width = if Attempt > Attempts then math.max(Width * Shrink, Smallestwidth) else Width * Shrink
 		end
 		local Slot = Pickslot(Slots)
 		local Cell = Slot.Cells[Generator:NextInteger(1, #Slot.Cells)] - 1
@@ -289,16 +305,18 @@ local function Choosespot(Template: Instance, Clone: Instance, Copies: { Instanc
 			Holder.Name = Slot.Part.Name
 			Holder.Size = Slot.Part.Size
 			local Surface, _, Texture = Buildink(Holder, Slot.Facename, Copy, Centre, Inkwidth, Inkwidth / Inkaspect, Rotation)
-			local Required, Reachable, Fits = Coverage(Texture, Slot.Reach, Slot.Forbidden)
+			local Required, Reachable, Fits, Spread = Coverage(Texture, Slot)
 			Surface:Destroy()
-			if Fits and Required >= Minimumcells and Reachable >= Required * Minimumreachable then
-				Holder:Destroy()
-				return { Part = Slot.Part, Facename = Slot.Facename, Centre = Centre, Width = Inkwidth, Rotation = Rotation, Share = Reachable / Required }, Loaded
+			if Fits and Required >= Minimumcells and Reachable >= Required * Minimumreachable and (not Best or Spread < Best.Spread) then
+				Best = { Part = Slot.Part, Facename = Slot.Facename, Centre = Centre, Width = Inkwidth, Rotation = Rotation, Share = Reachable / Required, Spread = Spread }
+				if Spread <= Flatness then
+					break
+				end
 			end
 		end
 	end
 	Holder:Destroy()
-	return nil, Loaded
+	return Best, Loaded
 end
 
 local function Placeink(Key: string): (string, Frame?)
@@ -356,7 +374,7 @@ local function Placeink(Key: string): (string, Frame?)
 	local _, Frame, Texture = Buildink(Part, Chosen.Facename, Existing, Chosen.Centre, Chosen.Width, Chosen.Width / Inkaspect, Chosen.Rotation)
 	Stainlayout.GetLayout(Texture)
 	return string.format(
-		"%sInk on %s, face %s, %.2f x %.2f studs, rotation %.0f, %d %% reachable%s",
+		"%sInk on %s, face %s, %.2f x %.2f studs, rotation %.0f, %d %% reachable%s%s",
 		if Replace then "old Ink replaced, new " else "",
 		Part:GetFullName(),
 		Chosen.Facename,
@@ -364,6 +382,7 @@ local function Placeink(Key: string): (string, Frame?)
 		Chosen.Width / Inkaspect,
 		Frame.Rotation,
 		math.floor(Chosen.Share * 100 + 0.5),
+		if Chosen.Spread <= Flatness then "" else string.format(", no flat spot found (the surface under it varies by %.3f stud)", Chosen.Spread),
 		Note
 	),
 		Frame
