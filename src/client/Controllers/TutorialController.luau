@@ -44,7 +44,7 @@ local Fliptext = { Touch = "Tap to flip it!", Mouse = "Tap to flip it!", Gamepad
 local Downfacing = -0.8
 local Handimage = "rbxassetid://116068912861302"
 local Mouseimage = "rbxassetid://123373213717142"
-local Gamepadimage = ""
+local Gamepadimage = "rbxassetid://133575975410772"
 local Turnimages = { Touch = Handimage, Mouse = Mouseimage, Gamepad = Gamepadimage }
 local Toolnames = {
 	ToothBrush = "brush",
@@ -1126,7 +1126,7 @@ function Tutorialcontroller:Buildsteps()
 			HoldSeconds = 2.5,
 			MaxSeconds = 90,
 			Skip = function()
-				return Categoryclear("Ink") or Hasliquid("Ink", "HasSolvent")
+				return Categoryclear("Ink") or Hasliquid("Ink", "HasSolvent") or not Categoryclear("Sticker")
 			end,
 			Target = function()
 				return Categoryspot("Ink")
@@ -1142,7 +1142,7 @@ function Tutorialcontroller:Buildsteps()
 			Gesture = "CottonTip",
 			MaxSeconds = 90,
 			Skip = function()
-				return Categoryclear("Ink")
+				return Categoryclear("Ink") or not Hasliquid("Ink", "HasSolvent")
 			end,
 			Target = function()
 				return Categoryspot("Ink")
@@ -1175,7 +1175,7 @@ function Tutorialcontroller:Buildsteps()
 			Gesture = "CottonTip",
 			MaxSeconds = 90,
 			Skip = function()
-				return Categoryclear("Scratch")
+				return Categoryclear("Scratch") or not Hasliquid("Scratch", "HasPolish")
 			end,
 			Target = function()
 				return Categoryspot("Scratch")

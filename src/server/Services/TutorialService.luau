@@ -118,11 +118,6 @@ function Tutorialservice:Wipe(Userid: number): (boolean, string)
 	local Player = Players:GetPlayerByUserId(Userid)
 	if Player then
 		Blockedbyplayer[Player] = true
-		Completedbyplayer[Player] = false
-		Objectdonebyplayer[Player] = nil
-		Stepbyplayer[Player] = 1
-		Stepversionbyplayer[Player] = Stepversion
-		Boughtbyplayer[Player] = false
 	end
 	while Savingbyuserid[Userid] do
 		task.wait()
