@@ -13,11 +13,11 @@ return {
 		DirtBack = true,
 	},
 	DirtTextures = {
-		{ Image = "rbxassetid://116108341313813", Pattern = "Speckles", ZIndex = 2 },
-		{ Image = "rbxassetid://136173134841464", Pattern = "Speckles", ZIndex = 3 },
-		{ Image = "rbxassetid://136254375804004", Pattern = "Splashes", ZIndex = 4 },
-		{ Image = "rbxassetid://87402903792010", Pattern = "Clumps", ZIndex = 5 },
-		{ Image = "rbxassetid://79361514123085", Pattern = "Dust", ZIndex = 1 },
+		{ Image = "rbxassetid://116108341313813", Pattern = "Speckles", ZIndex = 12 },
+		{ Image = "rbxassetid://136173134841464", Pattern = "Speckles", ZIndex = 13 },
+		{ Image = "rbxassetid://136254375804004", Pattern = "Splashes", ZIndex = 14 },
+		{ Image = "rbxassetid://87402903792010", Pattern = "Clumps", ZIndex = 15 },
+		{ Image = "rbxassetid://79361514123085", Pattern = "Dust", ZIndex = 11 },
 	},
 	ScratchTextures = {
 		{ Name = "Sc1", Image = "rbxassetid://136943980377010" },
@@ -40,6 +40,7 @@ return {
 		FaceCap = 0.8,
 	},
 	BrushMinimumRadius = 0.075,
+	StainBrushScale = 0.6,
 	CleaningSpeed = {
 		BaseCleaningSpeed = 1,
 		TargetCleaningDuration = 85,

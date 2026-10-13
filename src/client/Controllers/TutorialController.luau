@@ -64,6 +64,8 @@ local Turntravel = 2
 local Spintravel = 0.8
 local Handsize = 96
 local Toolsize = 84
+local Keysize = 40
+local Keygap = 8
 local Handswipe = 72
 local Handheightscale = 0.45
 local Scrubreach = 46
@@ -211,15 +213,31 @@ function Tutorialcontroller:Buildgui()
 	self.text.TextYAlignment = Enum.TextYAlignment.Center
 	self.text.Text = ""
 	self.text.Parent = self.bubble
-	local Textpadding = Instance.new("UIPadding")
-	Textpadding.PaddingLeft = UDim.new(0, 14)
-	Textpadding.PaddingRight = UDim.new(0, 14)
-	Textpadding.PaddingTop = UDim.new(0, 10)
-	Textpadding.PaddingBottom = UDim.new(0, 10)
-	Textpadding.Parent = self.text
+	self.textPadding = Instance.new("UIPadding")
+	self.textPadding.PaddingLeft = UDim.new(0, 14)
+	self.textPadding.PaddingRight = UDim.new(0, 14)
+	self.textPadding.PaddingTop = UDim.new(0, 10)
+	self.textPadding.PaddingBottom = UDim.new(0, 10)
+	self.textPadding.Parent = self.text
 	self.textSizeConstraint = Instance.new("UITextSizeConstraint")
 	self.textSizeConstraint.MaxTextSize = Textsizemax
 	self.textSizeConstraint.Parent = self.text
+
+	self.key = Instance.new("ImageLabel")
+	self.key.Name = "Key"
+	self.key.AnchorPoint = Vector2.new(0, 0.5)
+	self.key.BackgroundTransparency = 1
+	self.key.ScaleType = Enum.ScaleType.Fit
+	self.key.Position = UDim2.new(0, 12, 0.5, 0)
+	self.key.Size = UDim2.fromOffset(Keysize, Keysize)
+	self.key.Visible = false
+	self.key.Parent = self.bubble
+end
+
+function Tutorialcontroller:Setkey(Image: string?)
+	self.key.Visible = Image ~= nil
+	self.key.Image = Image or ""
+	self.textPadding.PaddingLeft = UDim.new(0, if Image then 12 + Keysize + Keygap else 14)
 end
 
 function Tutorialcontroller:Getguirect(Target: GuiObject): (Vector2, Vector2)
@@ -505,7 +523,8 @@ end
 function Tutorialcontroller:Placebubble(Position: Vector2?, Size: Vector2?)
 	local Viewport = self.gui.AbsoluteSize
 	local Scale = if self.bubbleLarge then Largetextscale else 1
-	local Width = math.min(Textwidth * Scale, Viewport.X - 24)
+	local Keywidth = if self.key.Visible then Keysize + Keygap else 0
+	local Width = math.min((Textwidth + Keywidth) * Scale, Viewport.X - 24)
 	local Height = math.min(Textheight * Scale, Viewport.Y - 24)
 	self.bubble.Size = UDim2.fromOffset(Width, Height)
 
@@ -618,6 +637,7 @@ function Tutorialcontroller:Showstep(Index: number)
 	self.bubbleLarge = Step.Large == true
 	self.textSizeConstraint.MaxTextSize = if Step.Large then Largetextsizemax else Textsizemax
 	self.text.Text = ""
+	self:Setkey(nil)
 	if Step.OnEnter then
 		task.spawn(Step.OnEnter)
 	end
@@ -895,7 +915,7 @@ function Tutorialcontroller:Update()
 	local Hastarget = Step.Target ~= nil
 	local Position, Size, Behind = self:Resolve(Target)
 	local Kind = Inputkind()
-	local Text, Gesture
+	local Text, Gesture, Keyimage
 	local Fullshade = false
 	if Behind and Facesdown(Target :: Instance) then
 		Hastarget = true
@@ -915,12 +935,17 @@ function Tutorialcontroller:Update()
 	else
 		Text = Textfor(Step.Text)
 		Gesture = if type(Step.Gesture) == "function" then Step.Gesture() else Step.Gesture
+		local Hint = Restoration():GetInterface().CurrentHint
+		if Step.Tool and Hint and Kind ~= "Touch" then
+			Keyimage = Restoration():GetInterface():GetHintImage(Hint)
+		end
 	end
 	if Text ~= self.text.Text then
 		self.text.Text = Text
 		self.bubbleScale.Scale = 0.86
 		Tweenservice:Create(self.bubbleScale, Steptweeninfo, { Scale = 1 }):Play()
 	end
+	self:Setkey(Keyimage)
 	self:Sethand(Gesture)
 	if Fullshade then
 		self:Applyspotlight(nil, nil)
@@ -1063,7 +1088,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Light",
 			Tool = "UvTorch",
-			Text = "Tap to find hidden dirt!",
+			Text = { Touch = "Tap to find hidden dirt!", Mouse = "Click to find hidden dirt!", Gamepad = "Press R2 to find hidden dirt!" },
 			HoldSeconds = 1.5,
 			Skip = Uvtorch.IsLit,
 			Target = function()
@@ -1105,7 +1130,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Sticker",
 			Tool = "Tweezers",
-			Text = "Pull the sticker off!",
+			Text = { Touch = "Pull the sticker off!", Mouse = "Hold click and pull the sticker off!", Gamepad = "Hold R2 and pull the sticker off!" },
 			Gesture = "Tweezers",
 			MaxSeconds = 90,
 			Skip = function()
@@ -1121,7 +1146,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Pour",
 			Tool = "Solvent",
-			Text = "Pour it on the ink!",
+			Text = { Touch = "Pour it on the ink!", Mouse = "Hold click to pour it on the ink!", Gamepad = "Hold R2 to pour it on the ink!" },
 			Gesture = "Solvent",
 			HoldSeconds = 2.5,
 			MaxSeconds = 90,
@@ -1154,7 +1179,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Polish",
 			Tool = "Polish",
-			Text = "Rub it on the scratch!",
+			Text = { Touch = "Rub it on the scratch!", Mouse = "Hold click to rub it on the scratch!", Gamepad = "Hold R2 to rub it on the scratch!" },
 			Gesture = "Polish",
 			HoldSeconds = 2.5,
 			MaxSeconds = 90,
@@ -1187,7 +1212,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Dry",
 			Tool = "HeatGun",
-			Text = "Dry it all!",
+			Text = { Touch = "Dry it all!", Mouse = "Hold click to dry it all!", Gamepad = "Hold R2 to dry it all!" },
 			Gesture = "HeatGun",
 			HoldSeconds = 1.5,
 			MaxSeconds = 45,

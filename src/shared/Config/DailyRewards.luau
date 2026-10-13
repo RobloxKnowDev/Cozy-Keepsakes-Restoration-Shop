@@ -1,6 +1,6 @@
 return {
 	ClaimIntervalSeconds = 24 * 60 * 60,
-	SkipProductId = 3708776063,
+	SkipProductId = 3718400121,
 	Rewards = {
 		{
 			Type = "Cash",

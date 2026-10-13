@@ -679,11 +679,15 @@ function Adminservice:Init()
 			Player:Kick(tostring(Entry.Reason or "You are banned from this game."))
 		end
 	end
-	Players.PlayerAdded:Connect(function(Player)
+	local function Welcome(Player: Player)
+		if Isadmin(Player) then
+			Player:SetAttribute("Admin", true)
+		end
 		task.spawn(Enforceban, Player)
-	end)
+	end
+	Players.PlayerAdded:Connect(Welcome)
 	for _, Player in ipairs(Players:GetPlayers()) do
-		task.spawn(Enforceban, Player)
+		Welcome(Player)
 	end
 	Players.PlayerRemoving:Connect(function(Player)
 		Listings[Player] = nil

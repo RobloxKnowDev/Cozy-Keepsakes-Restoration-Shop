@@ -261,6 +261,7 @@ function Tutorialservice:Init()
 		end
 		Stepbyplayer[Player] = Sanitized
 		Stepversionbyplayer[Player] = Stepversion
+		Core:GetService("FunnelService"):LogTutorial(Player, Sanitized)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "Complete", function(Player)
@@ -268,6 +269,7 @@ function Tutorialservice:Init()
 			return
 		end
 		Completedbyplayer[Player] = true
+		Core:GetService("FunnelService"):LogTutorialComplete(Player)
 		Core:GetService("CustomerService"):PresentOffer(Player)
 		Saveplayer(Player)
 	end)

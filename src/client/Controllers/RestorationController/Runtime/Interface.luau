@@ -114,6 +114,11 @@ function Interface:RefreshHints()
 	end
 end
 
+function Interface:GetHintImage(Hintname: string): string
+	local Hint = self.Hintframes[Hintname]
+	return if Core:GetController("GamepadController"):IsActive() then Gamepadhintimage else Hint.MouseImage
+end
+
 function Interface:Trigger(Button: GuiButton)
 	self.Activate(Button)
 end

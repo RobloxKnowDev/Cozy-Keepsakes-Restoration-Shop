@@ -325,6 +325,7 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	local Item = table.remove(Items, Index)
 	local SaleValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 	Core:GetService("CashService"):AddCash(Player, SaleValue)
+	Core:GetService("FunnelService"):LogAfterTutorial(Player, "FirstSale")
 	if Item.RestorationPercent >= Minimumsoldpercent then
 		Core:GetService("StatsService"):AddItemsSold(Player, 1)
 	end

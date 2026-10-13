@@ -786,6 +786,7 @@ local function Newstain(Decal: Decal, Object: Instance): Stain?
 	)
 	local Extent = Facemapping.GetDecalSize(Layout.Part.Size, Layout.Facename)
 	local Longest = math.max(Extent.X, Extent.Y)
+	local Scale = Object:GetAttribute("StainBrushScale")
 	local List = Stainsbypart[Layout.Part]
 	if not List then
 		List = {}
@@ -802,7 +803,7 @@ local function Newstain(Decal: Decal, Object: Instance): Stain?
 			math.max(math.round(Staincanvassize * Extent.X / Longest), 1),
 			math.max(math.round(Staincanvassize * Extent.Y / Longest), 1)
 		),
-		Radius = Facemapping.GetBrushRadius(Layout.Part.Size, Layout.Facename, Toothbrushradius, Activebrushradius),
+		Radius = Facemapping.GetBrushRadius(Layout.Part.Size, Layout.Facename, Toothbrushradius * Scale, Activebrushradius * Scale),
 		Pixelminimum = Vector2.zero,
 		Pixelmaximum = -Vector2.one,
 		List = List,

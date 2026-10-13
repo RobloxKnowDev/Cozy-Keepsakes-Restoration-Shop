@@ -1,6 +1,9 @@
 local Inkimage = "rbxassetid://95412805630635"
 local Replacekeys = { AlarmClock = true, PhotoFrame = true }
 local Inkaspect = 1.6
+local Cover = 1.1
+local Imageaspect = 1.5
+local Overhang = Vector2.new(Cover - 1, Cover * Inkaspect / Imageaspect - 1) / 2
 local Minimumwidth = 0.25
 local Maximumwidth = 0.4
 local Smallestwidth = 0.2
@@ -128,9 +131,10 @@ local function Buildink(Part: BasePart, Facename: string, Existing: SurfaceGui?,
 	return Surface, Frame, Texture
 end
 
-local function Coveredcells(Layout: Stainlayout.Layout): { number }
+local function Coveredcells(Layout: Stainlayout.Layout, Grow: Vector2): { number }
 	local Cells = {}
-	local Minimum, Maximum = Layout.Minimum, Layout.Maximum
+	local Reach = Vector2.one * (Grow.X * Layout.Axisu.Magnitude + Grow.Y * Layout.Axisv.Magnitude)
+	local Minimum, Maximum = Layout.Minimum - Reach, Layout.Maximum + Reach
 	for Row = math.max(math.floor(Minimum.Y * Grid), 0), math.min(math.ceil(Maximum.Y * Grid), Grid) - 1 do
 		for Column = math.max(math.floor(Minimum.X * Grid), 0), math.min(math.ceil(Maximum.X * Grid), Grid) - 1 do
 			local Lowu, Lowv, Highu, Highv = math.huge, math.huge, -math.huge, -math.huge
@@ -139,7 +143,7 @@ local function Coveredcells(Layout: Stainlayout.Layout): { number }
 				Lowu, Highu = math.min(Lowu, Point.X), math.max(Highu, Point.X)
 				Lowv, Highv = math.min(Lowv, Point.Y), math.max(Highv, Point.Y)
 			end
-			if Lowu < 1 - Edge and Highu > Edge and Lowv < 1 - Edge and Highv > Edge then
+			if Lowu < 1 + Grow.X - Edge and Highu > Edge - Grow.X and Lowv < 1 + Grow.Y - Edge and Highv > Edge - Grow.Y then
 				table.insert(Cells, Row * Grid + Column + 1)
 			end
 		end
@@ -154,7 +158,7 @@ local function Forbiddencells(Root: Instance, Part: BasePart, Facename: string, 
 		if Frame:IsA("GuiObject") and Stainnames[Frame.Name] and Surface:IsA("SurfaceGui") and Surface.Parent == Part and Surface.Face.Name == Facename then
 			local Texture = Frame:FindFirstChild("Texture")
 			assert(Texture, Twin[Frame]:GetFullName() .. " has no Texture, the game needs one")
-			for _, Cell in ipairs(Coveredcells(Stainlayout.GetLayout(Twin[Texture] :: ImageLabel))) do
+			for _, Cell in ipairs(Coveredcells(Stainlayout.GetLayout(Twin[Texture] :: ImageLabel), Vector2.zero)) do
 				local Column, Row = (Cell - 1) % Grid, (Cell - 1) // Grid
 				for Nearrow = math.max(Row - 1, 0), math.min(Row + 1, Grid - 1) do
 					for Nearcolumn = math.max(Column - 1, 0), math.min(Column + 1, Grid - 1) do
@@ -175,11 +179,13 @@ local function Coverage(Texture: ImageLabel, Slot): (number, number, boolean, nu
 			return 0, 0, false, math.huge
 		end
 	end
-	local Nearest, Farthest = math.huge, -math.huge
-	for _, Cell in ipairs(Coveredcells(Layout)) do
+	for _, Cell in ipairs(Coveredcells(Layout, Overhang)) do
 		if Slot.Forbidden[Cell] then
 			return 0, 0, false, math.huge
 		end
+	end
+	local Nearest, Farthest = math.huge, -math.huge
+	for _, Cell in ipairs(Coveredcells(Layout, Vector2.zero)) do
 		local Column, Row = (Cell - 1) % Grid, (Cell - 1) // Grid
 		for Nearrow = math.max(Row - 1, 0), math.min(Row + 1, Grid - 1) do
 			for Nearcolumn = math.max(Column - 1, 0), math.min(Column + 1, Grid - 1) do

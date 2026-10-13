@@ -1,23 +1,23 @@
 return {
 	GamePasses = {
-		VIP = 1948647642,
-		DoubleMoney = 1948869685,
-		DoubleReputation = 2006690460,
+		VIP = 2032874454,
+		DoubleMoney = 2033642412,
+		DoubleReputation = 2034290420,
 	},
 
 	CashProducts = {
-		Cash1 = { Id = 3708631458, Amount = 2_500 },
-		Cash2 = { Id = 3708631478, Amount = 12_000 },
-		Cash3 = { Id = 3708631495, Amount = 60_000 },
-		Cash4 = { Id = 3708631522, Amount = 250_000 },
+		Cash1 = { Id = 3718400358, Amount = 2_500 },
+		Cash2 = { Id = 3718400326, Amount = 12_000 },
+		Cash3 = { Id = 3718400292, Amount = 60_000 },
+		Cash4 = { Id = 3718400252, Amount = 250_000 },
 	},
 
-	SkipDayProductId = 3709374250,
-	SkipCooldownProductId = 3716684136,
-	CleanAllProductId = 3717045893,
+	SkipDayProductId = 3718400092,
+	SkipCooldownProductId = 3718399727,
+	CleanAllProductId = 3718399685,
 
 	StarterPack = {
-		Id = 1949649693,
+		Id = 2032868421,
 		PurchaseType = "GamePass",
 		Cash = 3_000,
 		ObjectKey = "ElectricTrain",
@@ -28,18 +28,18 @@ return {
 	ServerReputationLuck = {
 		DurationPerPurchaseSeconds = 15 * 60,
 		Levels = {
-			{ Id = 3708631611, Multiplier = 2 },
-			{ Id = 3708631623, Multiplier = 4 },
-			{ Id = 3708631649, Multiplier = 8 },
+			{ Id = 3718400218, Multiplier = 2 },
+			{ Id = 3718400186, Multiplier = 4 },
+			{ Id = 3718400157, Multiplier = 8 },
 		},
 	},
 
 	UpgradeDeveloperProducts = {
-		CooldownReduction = 3713290805,
-		PriceEstimation = 3708293655,
-		DailyCustomers = 3708293711,
-		PurchaseDiscount = 3708293785,
-		DisplaySpace = 3708293275,
+		CooldownReduction = 3718399770,
+		PriceEstimation = 3718400476,
+		DailyCustomers = 3718400442,
+		PurchaseDiscount = 3718400405,
+		DisplaySpace = 3718400498,
 	},
 
 	VIP = {

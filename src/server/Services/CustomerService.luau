@@ -1105,6 +1105,7 @@ function Customerservice:Init()
 				Mutation = Offer.Mutation,
 			}, Offer.Price)
 			Core:GetService("TutorialService"):MarkObjectBought(Player)
+			Core:GetService("FunnelService"):LogAfterTutorial(Player, "FirstOffer")
 			if not Offer.Emergency then
 				Core:GetService("DailyTaskService"):Record(Player, "Buy", {
 					ObjectKey = Offer.ObjectKey,

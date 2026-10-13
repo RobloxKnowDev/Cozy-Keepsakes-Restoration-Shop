@@ -44,7 +44,6 @@ local Stainburst = 16
 local Coveragegridwidth = Cleaningconfig.CoverageGrid
 local Coveragecellcount = Coveragegridwidth * Coveragegridwidth
 local Brushradii = { CottonTip = 1 / 12, ToothBrush = 3 / 32 }
-local Stainbrushradius = Brushradii.ToothBrush
 local Maxcleanpoints = 32
 local Maxdirtstrokes = 8
 local Finishassist = Cleaningconfig.FinishAssist
@@ -1590,6 +1589,7 @@ local function Initializedirt(
 	Object:SetAttribute("DirtVersion", Version)
 	Object:SetAttribute("DirtStep", Step)
 	Object:SetAttribute("BrushRadius", Brushradius)
+	Object:SetAttribute("StainBrushScale", if Singleface then 1 else Cleaningconfig.StainBrushScale)
 	Object:SetAttribute("Total_Dirt", Totaldirt)
 	Object:SetAttribute("Cleaned_Dirt", 0)
 	return Totaldirt
@@ -2006,7 +2006,8 @@ local function Cleanstain(Player: Player, Kind: string, Target: any, Points: any
 	if not Allowrequest(Allowances, Target, Stainburst) then
 		return
 	end
-	local Radius = Facemapping.GetBrushRadius((Target.Parent :: BasePart).Size, Target.Face.Name, Stainbrushradius, Sessionobject:GetAttribute("BrushRadius"))
+	local Scale = Sessionobject:GetAttribute("StainBrushScale")
+	local Radius = Facemapping.GetBrushRadius((Target.Parent :: BasePart).Size, Target.Face.Name, Brushradii.ToothBrush * Scale, Sessionobject:GetAttribute("BrushRadius") * Scale)
 	local Opaquecells = Coveragecellcount * Entry.Passes - Entry.Free
 	local Newlycovered = Stampstain(Entry, Points, Radius) + Snapentry(Entry, Finishassist.StainSnapRatio)
 	if Newlycovered <= 0 then
@@ -2351,6 +2352,7 @@ function Restorationservice:Init()
 			Restoreditem = Inventoryservice:AddRestoredItem(Player, Itemdata)
 		end
 		Core:GetService("TutorialService"):MarkObjectDone(Player)
+		Core:GetService("FunnelService"):LogAfterTutorial(Player, "FirstRestoration")
 		if Itemdata.RestorationPercent >= 100 and Startpercent < 100 then
 			Core:GetService("DailyTaskService"):Record(Player, "Restore", {
 				ObjectKey = Objectkey,

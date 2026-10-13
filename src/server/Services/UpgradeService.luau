@@ -195,6 +195,7 @@ function UpgradeService:PurchaseWithCash(Player: Player, UpgradeName: string)
 		Core:GetService("CashService"):AddCash(Player, Price, false)
 		return { Success = false, Reason = "UpgradeFailed" }
 	end
+	Core:GetService("FunnelService"):LogEarly(Player, "FirstUpgrade")
 	return { Success = true, State = self:GetUpgradeState(Player, UpgradeName) }
 end
 

@@ -89,6 +89,9 @@ end
 function Statsservice:AddItemsSold(Player: Player, Amount: number)
 	local Stats = self:EnsurePlayer(Player)
 	Stats.ItemsSold += Amount
+	if Stats.ItemsSold >= 10 then
+		Core:GetService("FunnelService"):LogEarly(Player, "TenItemsSold")
+	end
 	self:PushStats(Player)
 end
 
