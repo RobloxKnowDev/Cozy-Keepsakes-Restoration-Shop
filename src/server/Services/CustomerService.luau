@@ -565,9 +565,13 @@ local function Buildwardrobe(Player: Player)
 	end
 end
 
+local function Isquickvisit(State: ShopState): boolean
+	return State.Quickreturn or Core:GetService("TutorialService"):IsRunning(State.Player)
+end
+
 local function GetWaitInterval(State: ShopState): number
 	local Interval = Customerconfig.GetInterval(Core:GetService("UpgradeService"):GetValue(State.Player, "CooldownReduction"))
-	return if State.Quickreturn then math.min(Customerconfig.DeclineDelaySeconds, Interval) else Interval
+	return if Isquickvisit(State) then math.min(Customerconfig.DeclineDelaySeconds, Interval) else Interval
 end
 
 local function SetNextCustomerAt(State: ShopState, Timestamp: number)
@@ -578,7 +582,7 @@ end
 local function ArmCustomerTimer(State: ShopState)
 	local Interval = GetWaitInterval(State)
 	State.Player:SetAttribute("CustomerInterval", Interval)
-	State.Plannedvisit = Planvisit(State, State.Quickreturn)
+	State.Plannedvisit = Planvisit(State, Isquickvisit(State))
 	SetNextCustomerAt(State, Workspace:GetServerTimeNow() + Interval)
 end
 

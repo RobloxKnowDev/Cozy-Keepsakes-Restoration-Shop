@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
+local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Upgradesconfig = require(Replicatedstorage.Shared.Config.Upgrades)
 local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
 local Stainlayout = require(Replicatedstorage.Shared.Utils.StainLayout)
@@ -21,12 +22,24 @@ local Tutorialcontroller = {
 
 local Servicename = "TutorialService"
 local Stepversion = 2
-local Shadecolor = Color3.new(0, 0, 0)
-local Shadetransparency = 0.25
-local Ringcolor = Color3.new(1, 1, 1)
 local Categorytolerance = 0.97
 local Framenamebykind = { Ink = "Ink", Scratch = "ScratchesFrame" }
-local Holepadding = 14
+local Arrowgradient = Rarityconfig.Legendary.Gradient
+local Arrowfillcolor = Color3.new(1, 1, 1)
+local Arrowoutlinecolor = Color3.new(0, 0, 0)
+local Arrowoutline = 4
+local Arrowwidth = 72
+local Arrowheight = 84
+local Arrowpieces = {
+	{ Center = Vector2.new(36, 34), Size = Vector2.new(18, 54), Rotation = 0 },
+	{ Center = Vector2.new(26.8, 60), Size = Vector2.new(44, 18), Rotation = 45 },
+	{ Center = Vector2.new(45.2, 60), Size = Vector2.new(44, 18), Rotation = -45 },
+}
+local Arrowgap = 6
+local Arrowbob = 12
+local Arrowspeed = 6
+local Arrowreach = Arrowgap + Arrowbob + Arrowheight
+local Edgemargin = 12
 local Textwidth = 320
 local Textheight = 96
 local Largetextscale = 1.6
@@ -35,12 +48,17 @@ local Largetextsizemax = 42
 local Textgap = 18
 local Textfont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
 local Behindtext = {
-	Touch = "It's on the other side!",
-	Mouse = "It's on the other side!",
+	Touch = "It's on the other side! Swipe to turn it!",
+	Mouse = "It's on the other side! Hold right click and drag!",
 	Gamepad = "It's on the other side! Use the right stick!",
 }
 local Behindhandtext = "Tap the hand to turn it!"
 local Fliptext = { Touch = "Tap to flip it!", Mouse = "Tap to flip it!", Gamepad = "Press Y to flip it!" }
+local Flipdowntext = {
+	Touch = "Dirt underneath! Tap to flip it!",
+	Mouse = "Dirt underneath! Tap to flip it!",
+	Gamepad = "Dirt underneath! Press Y to flip it!",
+}
 local Downfacing = -0.8
 local Handimage = "rbxassetid://116068912861302"
 local Mouseimage = "rbxassetid://123373213717142"
@@ -57,11 +75,7 @@ local Toolnames = {
 	HeatGun = "heat gun",
 }
 local Brushtools = { "ToothBrush", "CottonTip" }
-local Handtaketext = "Tap the hand."
-local Spintext = { Touch = "Tap here to spin it!", Mouse = "Tap here to spin it!", Gamepad = "Press X to spin it!" }
 local Legacycheckpoints = { [1] = "Welcome", [3] = "Computer", [26] = "Computerintro", [30] = "Shelf", [34] = "Desk" }
-local Turntravel = 2
-local Spintravel = 0.8
 local Handsize = 96
 local Toolsize = 84
 local Keysize = 40
@@ -116,7 +130,6 @@ local Gestures = {
 	},
 }
 local Steptweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local Pulsetweeninfo = TweenInfo.new(0.65, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 local Surfaceoffset = 0.01
 local Surfacerefresh = 0.5
 local function Grid(Low: number, High: number, Count: number): { Vector2 }
@@ -133,15 +146,18 @@ local Decalgrid = Grid(0.02, 0.98, 7)
 local Stainlayouts = setmetatable({} :: { [ImageLabel]: Stainlayout.Layout }, { __mode = "k" })
 local Surfacepoints = setmetatable({} :: { [Instance]: { Time: number, Points: { Vector3 } } }, { __mode = "k" })
 
-local function Makeshade(Parent: ScreenGui, Name: string): Frame
-	local Shade = Instance.new("Frame")
-	Shade.Name = Name
-	Shade.BackgroundColor3 = Shadecolor
-	Shade.BackgroundTransparency = Shadetransparency
-	Shade.BorderSizePixel = 0
-	Shade.Size = UDim2.fromOffset(0, 0)
-	Shade.Parent = Parent
-	return Shade
+local function Makearrowpiece(Parent: GuiObject, Piece, Grow: number, Color: Color3)
+	local Frame = Instance.new("Frame")
+	Frame.AnchorPoint = Vector2.new(0.5, 0.5)
+	Frame.BackgroundColor3 = Color
+	Frame.BorderSizePixel = 0
+	Frame.Position = UDim2.fromOffset(Piece.Center.X, Piece.Center.Y)
+	Frame.Size = UDim2.fromOffset(Piece.Size.X + Grow * 2, Piece.Size.Y + Grow * 2)
+	Frame.Rotation = Piece.Rotation
+	Frame.Parent = Parent
+	local Corner = Instance.new("UICorner")
+	Corner.CornerRadius = UDim.new(0.5, 0)
+	Corner.Parent = Frame
 end
 
 function Tutorialcontroller:Buildgui()
@@ -156,26 +172,24 @@ function Tutorialcontroller:Buildgui()
 	self.gui.Enabled = false
 	self.gui.Parent = Playergui
 
-	self.shades = {
-		Makeshade(self.gui, "ShadeTop"),
-		Makeshade(self.gui, "ShadeBottom"),
-		Makeshade(self.gui, "ShadeLeft"),
-		Makeshade(self.gui, "ShadeRight"),
-	}
-
-	self.ring = Instance.new("Frame")
-	self.ring.Name = "Ring"
-	self.ring.BackgroundTransparency = 1
-	self.ring.BorderSizePixel = 0
-	self.ring.Parent = self.gui
-	local Corner = Instance.new("UICorner")
-	Corner.CornerRadius = UDim.new(0, 16)
-	Corner.Parent = self.ring
-	self.ringStroke = Instance.new("UIStroke")
-	self.ringStroke.Color = Ringcolor
-	self.ringStroke.Thickness = 4
-	self.ringStroke.Transparency = 0.15
-	self.ringStroke.Parent = self.ring
+	self.arrow = Instance.new("CanvasGroup")
+	self.arrow.Name = "Arrow"
+	self.arrow.AnchorPoint = Vector2.new(0.5, 0.5)
+	self.arrow.BackgroundTransparency = 1
+	self.arrow.BorderSizePixel = 0
+	self.arrow.Size = UDim2.fromOffset(Arrowwidth, Arrowheight)
+	self.arrow.Visible = false
+	self.arrow.Parent = self.gui
+	for _, Piece in ipairs(Arrowpieces) do
+		Makearrowpiece(self.arrow, Piece, Arrowoutline, Arrowoutlinecolor)
+	end
+	for _, Piece in ipairs(Arrowpieces) do
+		Makearrowpiece(self.arrow, Piece, 0, Arrowfillcolor)
+	end
+	local Arrowuigradient = Instance.new("UIGradient")
+	Arrowuigradient.Color = Arrowgradient
+	Arrowuigradient.Rotation = 90
+	Arrowuigradient.Parent = self.arrow
 
 	self.hand = Instance.new("ImageLabel")
 	self.hand.Name = "Hand"
@@ -479,45 +493,20 @@ function Tutorialcontroller:Isbehind(Target: Instance): boolean
 	return Behind == true
 end
 
-function Tutorialcontroller:Clearshades()
-	for _, Shade in ipairs(self.shades) do
-		Shade.Size = UDim2.fromOffset(0, 0)
-	end
-	self.ring.Size = UDim2.fromOffset(0, 0)
-	self.ring.Visible = false
-end
-
-function Tutorialcontroller:Applyspotlight(Position: Vector2?, Size: Vector2?)
-	local Viewport = self.gui.AbsoluteSize
-	local Bleed = math.max(Viewport.X, Viewport.Y)
+function Tutorialcontroller:Placearrow(Position: Vector2?, Size: Vector2?)
+	self.arrow.Visible = Position ~= nil and Size ~= nil
 	if not Position or not Size then
-		self.shades[1].Position = UDim2.fromOffset(-Bleed, -Bleed)
-		self.shades[1].Size = UDim2.fromOffset(Viewport.X + Bleed * 2, Viewport.Y + Bleed * 2)
-		for Index = 2, 4 do
-			self.shades[Index].Size = UDim2.fromOffset(0, 0)
-		end
-		self.ring.Size = UDim2.fromOffset(0, 0)
-		self.ring.Visible = false
 		return
 	end
-
-	local Left = math.floor(math.max(Position.X - Holepadding, 0))
-	local Top = math.floor(math.max(Position.Y - Holepadding, 0))
-	local Right = math.ceil(math.min(Position.X + Size.X + Holepadding, Viewport.X))
-	local Bottom = math.ceil(math.min(Position.Y + Size.Y + Holepadding, Viewport.Y))
-
-	self.shades[1].Position = UDim2.fromOffset(-Bleed, -Bleed)
-	self.shades[1].Size = UDim2.fromOffset(Viewport.X + Bleed * 2, Top + Bleed)
-	self.shades[2].Position = UDim2.fromOffset(-Bleed, Bottom)
-	self.shades[2].Size = UDim2.fromOffset(Viewport.X + Bleed * 2, Viewport.Y - Bottom + Bleed * 2)
-	self.shades[3].Position = UDim2.fromOffset(-Bleed, Top)
-	self.shades[3].Size = UDim2.fromOffset(Left + Bleed, Bottom - Top)
-	self.shades[4].Position = UDim2.fromOffset(Right, Top)
-	self.shades[4].Size = UDim2.fromOffset(Viewport.X - Right + Bleed * 2, Bottom - Top)
-
-	self.ring.Position = UDim2.fromOffset(Left, Top)
-	self.ring.Size = UDim2.fromOffset(Right - Left, Bottom - Top)
-	self.ring.Visible = true
+	local Viewport = self.gui.AbsoluteSize
+	local Half = Vector2.new(Arrowwidth, Arrowheight) * 0.5
+	local Offset = Arrowgap + Arrowbob * (0.5 + 0.5 * math.sin(os.clock() * Arrowspeed)) + Half.Y
+	local Centerx = Position.X + Size.X * 0.5
+	local Centery = if self.arrowUp then Position.Y + Size.Y + Offset else Position.Y - Offset
+	Centerx = math.min(math.max(Centerx, Half.X), math.max(Viewport.X - Half.X, Half.X))
+	Centery = math.min(math.max(Centery, Half.Y), math.max(Viewport.Y - Half.Y, Half.Y))
+	self.arrow.Position = UDim2.fromOffset(math.floor(Centerx), math.floor(Centery))
+	self.arrow.Rotation = if self.arrowUp then 180 else 0
 end
 
 function Tutorialcontroller:Placebubble(Position: Vector2?, Size: Vector2?)
@@ -531,12 +520,9 @@ function Tutorialcontroller:Placebubble(Position: Vector2?, Size: Vector2?)
 	local Centerx, Bubbley
 	if Position and Size then
 		Centerx = Position.X + Size.X * 0.5
-		local Above = Position.Y - Holepadding - Textgap - Height
-		if Above < 12 then
-			Bubbley = Position.Y + Size.Y + Holepadding + Textgap
-		else
-			Bubbley = Above
-		end
+		local Above = Position.Y - Arrowreach - Textgap - Height
+		self.arrowUp = Above < Edgemargin
+		Bubbley = if self.arrowUp then Position.Y + Size.Y + Arrowreach + Textgap else Above
 	else
 		Centerx = Viewport.X * 0.5
 		Bubbley = Viewport.Y * 0.62
@@ -857,7 +843,7 @@ local function Frontdone(): boolean
 	return Cleaned >= Total * Share * Categorytolerance
 end
 
-local function Backdone(): boolean
+local function Bottomdone(): boolean
 	return Facedecal(2) == nil or Categorydone("Dirt")
 end
 
@@ -873,32 +859,6 @@ local function Allclean(): boolean
 		and (tonumber(Object:GetAttribute("CleanedSpots")) or 0) >= (tonumber(Object:GetAttribute("TotalSpots")) or 0)
 end
 
-local function Backreference(): Instance?
-	local Decal = Facedecals(2)[1]
-	if Decal then
-		return Decal
-	end
-	local Object = Restoration():GetActiveObject()
-	local Sticker = Categoryspot("Sticker")
-	if Sticker and Sticker ~= Object then
-		return Sticker
-	end
-	return Categorytexture("Ink") or Categorytexture("Scratch")
-end
-
-local function Cameratravel(): number
-	return Inspection():GetOrbitTravel() + Inspection():GetRotateTravel()
-end
-
-function Tutorialcontroller:Backvisible(): boolean
-	local Reference = Backreference()
-	return Reference ~= nil and not self:Isbehind(Reference)
-end
-
-function Tutorialcontroller:Turned(): boolean
-	return self:Backvisible() or self.turnStart ~= nil and Cameratravel() - self.turnStart >= Turntravel
-end
-
 function Tutorialcontroller:Update()
 	if not self.running then
 		return
@@ -912,24 +872,20 @@ function Tutorialcontroller:Update()
 	end
 	Restoration():GetInterface():SetContinueLocked(Step.AllowFinish ~= true)
 	local Target = Gettarget(Step.Target)
-	local Hastarget = Step.Target ~= nil
 	local Position, Size, Behind = self:Resolve(Target)
 	local Kind = Inputkind()
 	local Text, Gesture, Keyimage
-	local Fullshade = false
 	if Behind and Facesdown(Target :: Instance) then
-		Hastarget = true
 		Position, Size = self:Resolve(Restoration():GetInterface().ReturnButton)
 		Text = Textfor(Fliptext)
-	elseif Behind and Kind == "Touch" and not Toolselected("Transform") then
-		Hastarget = true
+	elseif Behind and Step.Turnhint and Kind == "Touch" and not Toolselected("Transform") then
 		Position, Size = self:Resolve(Toolbutton("Transform"))
 		Text = Behindhandtext
-	elseif Behind then
-		Text, Gesture, Fullshade = Behindtext[Kind], "Rotate", true
+	elseif Behind and Step.Turnhint then
+		Text, Gesture = Behindtext[Kind], "Rotate"
+		Position, Size = nil, nil
 	elseif Step.Tool and not Toolselected(Step.Tool) then
 		local Tool = Firsttool(Step.Tool)
-		Hastarget = true
 		Position, Size = self:Resolve(Toolbutton(Tool))
 		Text = Textfor(Step.TakeText or "Take the " .. Toolnames[Tool] .. ".")
 	else
@@ -947,19 +903,9 @@ function Tutorialcontroller:Update()
 	end
 	self:Setkey(Keyimage)
 	self:Sethand(Gesture)
-	if Fullshade then
-		self:Applyspotlight(nil, nil)
-		self:Placebubble(nil, nil)
-		self:Placehand(nil, nil)
-	else
-		if Hastarget and not Position then
-			self:Clearshades()
-		else
-			self:Applyspotlight(Position, Size)
-		end
-		self:Placebubble(Position, Size)
-		self:Placehand(Position, Size)
-	end
+	self:Placebubble(Position, Size)
+	self:Placearrow(Position, Size)
+	self:Placehand(Position, Size)
 	if Step.MaxSeconds and os.clock() - self.stepStart >= Step.MaxSeconds then
 		self:Showstep(self.index + 1)
 		return
@@ -1011,7 +957,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Buy",
-			Text = "Buy this old frame!",
+			Text = "Buy this old clock!",
 			OnEnter = function()
 				self.boughtBaseline = #Core:GetController("ComputerController").inventoryItems
 			end,
@@ -1045,7 +991,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Card",
-			Text = "Tap your frame.",
+			Text = "Tap your clock.",
 			Target = function()
 				local Computer = Core:GetController("ComputerController")
 				if not Computer:IsOpen() then return Computer.computer end
@@ -1097,39 +1043,49 @@ function Tutorialcontroller:Buildsteps()
 			Done = Uvtorch.IsLit,
 		},
 		{
-			Id = "Turn",
-			Tool = "Transform",
-			TakeText = function()
-				return if Facedecal(2) then "Dirt on the back! Tap the hand." else Handtaketext
-			end,
-			Text = { Touch = "Swipe to turn it around!", Mouse = "Hold right click and drag!", Gamepad = "Use the right stick!" },
-			Gesture = "Rotate",
-			MinimumSeconds = 1,
-			OnEnter = function()
-				self.turnStart = Cameratravel()
+			Id = "Flip",
+			Text = function()
+				return if Facedecal(2) then Flipdowntext else Fliptext
 			end,
 			Skip = function()
-				return self:Backvisible()
+				return Inspection():GetFlipCount() >= 2 or Inspection():IsShowingBack()
+			end,
+			Target = function()
+				return Restoration():GetInterface().ReturnButton
 			end,
 			Done = function()
-				return self:Turned()
+				return Inspection():IsShowingBack()
 			end,
 		},
 		{
-			Id = "Back",
+			Id = "Bottom",
 			Tool = Brushtools,
 			Text = "Rub off the dirt!",
 			Gesture = "ToothBrush",
-			MaxSeconds = 120,
-			Skip = Backdone,
+			MaxSeconds = 60,
+			Skip = Bottomdone,
 			Target = function()
 				return Facedecal(2) or Categorydecal()
 			end,
-			Done = Backdone,
+			Done = Bottomdone,
+		},
+		{
+			Id = "Unflip",
+			Text = { Touch = "Flip it back!", Mouse = "Flip it back!", Gamepad = "Press Y again!" },
+			Skip = function()
+				return not Inspection():IsShowingBack() and Inspection():GetFlipCount() >= 2
+			end,
+			Target = function()
+				return Restoration():GetInterface().ReturnButton
+			end,
+			Done = function()
+				return not Inspection():IsShowingBack()
+			end,
 		},
 		{
 			Id = "Sticker",
 			Tool = "Tweezers",
+			Turnhint = true,
 			Text = { Touch = "Pull the sticker off!", Mouse = "Hold click and pull the sticker off!", Gamepad = "Hold R2 and pull the sticker off!" },
 			Gesture = "Tweezers",
 			MaxSeconds = 90,
@@ -1145,6 +1101,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Pour",
+			Turnhint = true,
 			Tool = "Solvent",
 			Text = { Touch = "Pour it on the ink!", Mouse = "Hold click to pour it on the ink!", Gamepad = "Hold R2 to pour it on the ink!" },
 			Gesture = "Solvent",
@@ -1162,6 +1119,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Ink",
+			Turnhint = true,
 			Tool = "CottonTip",
 			Text = "Rub the ink away!",
 			Gesture = "CottonTip",
@@ -1178,6 +1136,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Polish",
+			Turnhint = true,
 			Tool = "Polish",
 			Text = { Touch = "Rub it on the scratch!", Mouse = "Hold click to rub it on the scratch!", Gamepad = "Hold R2 to rub it on the scratch!" },
 			Gesture = "Polish",
@@ -1195,6 +1154,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Scratch",
+			Turnhint = true,
 			Tool = "CottonTip",
 			Text = "Rub the scratch away!",
 			Gesture = "CottonTip",
@@ -1231,86 +1191,6 @@ function Tutorialcontroller:Buildsteps()
 				return Categorydecal() or Restoration():GetActiveObject()
 			end,
 			Done = Dirtfinished,
-		},
-		{
-			Id = "Flip",
-			Text = Fliptext,
-			Skip = function()
-				return Inspection():GetFlipCount() >= 2 or Inspection():IsShowingBack()
-			end,
-			Target = function()
-				return Restoration():GetInterface().ReturnButton
-			end,
-			Done = function()
-				return Inspection():IsShowingBack()
-			end,
-		},
-		{
-			Id = "Unflip",
-			Text = { Touch = "Flip it back!", Mouse = "Flip it back!", Gamepad = "Press Y again!" },
-			Skip = function()
-				return not Inspection():IsShowingBack() and Inspection():GetFlipCount() >= 2
-			end,
-			Target = function()
-				return Restoration():GetInterface().ReturnButton
-			end,
-			Done = function()
-				return not Inspection():IsShowingBack()
-			end,
-		},
-		{
-			Id = "Spin",
-			Tool = "Transform",
-			TakeText = Handtaketext,
-			Text = Spintext,
-			Skip = function()
-				return Inspection():GetRotateTravel() >= Spintravel or Inspection():GetTransformMode() == "Rotate"
-			end,
-			Target = function()
-				return Restoration():GetInterface().TurnButton
-			end,
-			Done = function()
-				return Inspection():GetTransformMode() == "Rotate"
-			end,
-		},
-		{
-			Id = "Spindrag",
-			Tool = "Transform",
-			TakeText = Handtaketext,
-			Text = function()
-				if Inspection():GetTransformMode() ~= "Rotate" then
-					return Spintext
-				end
-				return { Touch = "Swipe to spin it!", Mouse = "Hold right click and drag!", Gamepad = "Use the right stick!" }
-			end,
-			Gesture = function()
-				return if Inspection():GetTransformMode() == "Rotate" then "Rotate" else nil
-			end,
-			MinimumSeconds = 1,
-			Skip = function()
-				return Inspection():GetRotateTravel() >= Spintravel
-			end,
-			Target = function()
-				return if Inspection():GetTransformMode() == "Rotate" then nil else Restoration():GetInterface().TurnButton
-			end,
-			Done = function()
-				return Inspection():GetRotateTravel() >= Spintravel
-			end,
-		},
-		{
-			Id = "Lock",
-			Tool = "Transform",
-			TakeText = Handtaketext,
-			Text = { Touch = "Tap the lock to stop.", Mouse = "Tap the lock to stop.", Gamepad = "Press X to stop." },
-			Skip = function()
-				return Inspection():GetTransformMode() == "Orbit"
-			end,
-			Target = function()
-				return Restoration():GetInterface().LockButton
-			end,
-			Done = function()
-				return Inspection():GetTransformMode() == "Orbit"
-			end,
 		},
 		{
 			Id = "Finish",
@@ -1406,7 +1286,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Put",
-			Text = "Put your frame on the shelf!",
+			Text = "Put your clock on the shelf!",
 			Target = function()
 				local Exposition = Core:GetController("ExpositionController")
 				if Exposition.infoFrame.Visible then return Exposition.infoCloseButton end
@@ -1419,8 +1299,8 @@ function Tutorialcontroller:Buildsteps()
 			end,
 		},
 		{
-			Id = "Reputation",
-			Text = "Items on the shelf give you reputation.\nMore reputation, better items!\nTap to continue.",
+			Id = "Luck",
+			Text = "Items on the shelf give you Luck.\nMore Luck, better items!\nTap to continue.",
 			Large = true,
 			MinimumSeconds = 1.5,
 			WaitForTap = true,
@@ -1442,9 +1322,8 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Ready",
 			Text = "You are ready. Have fun!",
-			MinimumSeconds = 3,
 			Done = function()
-				return true
+				return self.tapped or os.clock() - self.stepStart >= 3
 			end,
 		},
 	}
@@ -1463,7 +1342,6 @@ end
 
 function Tutorialcontroller:Start()
 	self:Buildsteps()
-	Tweenservice:Create(self.ringStroke, Pulsetweeninfo, { Thickness = 9, Transparency = 0.55 }):Play()
 	Userinputservice.InputBegan:Connect(function(Input)
 		if
 			Input.UserInputType == Enum.UserInputType.MouseButton1

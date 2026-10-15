@@ -5,7 +5,7 @@ local SaleBoost = DailyRewards.Rewards[4]
 
 return {
 	StarterReputation = {
-		Title = "Reputation Boost",
+		Title = "Luck Boost",
 		Icon = "rbxassetid://140355094643401",
 		Gradient = Rarity.Rare.Gradient,
 	},

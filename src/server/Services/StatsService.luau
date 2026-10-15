@@ -110,6 +110,7 @@ end
 function Statsservice:SetReputation(Player: Player, Amount: number): number
 	local Stats = self:EnsurePlayer(Player)
 	Stats.Reputation = math.max(RoundCurrency(Amount), 0)
+	Core:GetService("FunnelService"):LogLuck(Player, Stats.Reputation)
 	self:PushStats(Player)
 	return Stats.Reputation
 end

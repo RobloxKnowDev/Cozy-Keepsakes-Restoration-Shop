@@ -7,9 +7,9 @@ return {
 	Offer = {
 		EmergencyPriceMargin = 0.35,
 		EmergencyObject = "AlarmClock",
-		TutorialObject = "PhotoFrame",
+		TutorialObject = "AlarmClock",
 		TutorialDirtFace = "Left",
-		TutorialBackFace = "Right",
+		TutorialBottomFace = "Bottom",
 	},
 
 	Object = {

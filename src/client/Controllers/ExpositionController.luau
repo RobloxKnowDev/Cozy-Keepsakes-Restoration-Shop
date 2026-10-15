@@ -27,6 +27,7 @@ local Fastselectframehidetweeninfo = TweenInfo.new(0.07, Enum.EasingStyle.Quad, 
 local Detailstweeninfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ErrorMessageGradient = Rarityconfig.Mythic.Gradient
 local UnknownText = "???"
+local EmptyText = "Nothing to display yet!\nBuy items from customers."
 local ReputationMessageGradient = Rarityconfig.Common.Gradient
 
 local function FormatReputation(Value: number): string
@@ -426,6 +427,7 @@ function Controller:RenderSelectionItems()
 	end
 	table.clear(self.selectCards)
 	self.openCard = nil
+	self.selectEmptyText.Visible = #self.selectItems == 0
 
 	local Cardsenabled = self.selectFrameOpen and not self.selectPlacementPending and not self.infoFrame.Visible
 	local Infoitem
@@ -575,7 +577,7 @@ function Controller:PlaceDisplayItem(ItemId: number)
 		if type(Response.DisplayItems) == "table" then self:ApplyDisplayItems(Response.DisplayItems, true) end
 		local Grantedreputation = tonumber(Response.GrantedReputation) or 0
 		local Message = if Grantedreputation > 0
-			then "+" .. FormatReputation(Grantedreputation) .. " Reputation"
+			then "+" .. FormatReputation(Grantedreputation) .. " Luck"
 			else "Item added to display"
 		Core:GetController("FeedbackController"):PlaySound("SlotItem", 0.15)
 		Core:GetController("MessageController"):Show(Message, ReputationMessageGradient)
@@ -615,7 +617,7 @@ function Controller:RemoveDisplayItem(Slotindex: number)
 		Core:GetController("FeedbackController"):Fail()
 		local Removedreputation = tonumber(Response.RemovedReputation) or 0
 		local Message = if Removedreputation > 0
-			then "-" .. FormatReputation(Removedreputation) .. " Reputation"
+			then "-" .. FormatReputation(Removedreputation) .. " Luck"
 			else "Item returned to inventory"
 		local Gradient = if Removedreputation > 0 then ErrorMessageGradient else ReputationMessageGradient
 		Core:GetController("MessageController"):Show(Message, Gradient)
@@ -659,7 +661,7 @@ function Controller:EquipBest()
 		local Grantedreputation = tonumber(Response.GrantedReputation) or 0
 		if (tonumber(Response.Changed) or 0) > 0 then
 			local Message = if Grantedreputation > 0
-				then "+" .. FormatReputation(Grantedreputation) .. " Reputation"
+				then "+" .. FormatReputation(Grantedreputation) .. " Luck"
 				else "Best items equipped"
 			Core:GetController("FeedbackController"):PlaySound("SlotItem", 0.15)
 			Core:GetController("MessageController"):Show(Message, ReputationMessageGradient)
@@ -834,6 +836,7 @@ function Controller:Init()
 	self.selectScrollingFrame = Selectscrollingframe
 	self.selectGridLayout = Selectscrollingframe:WaitForChild("UIGridLayout") :: UIGridLayout
 	self.selectTemplate = Selectscrollingframe:WaitForChild("Template") :: GuiObject
+	self.selectEmptyText = Shared.CreateEmptyText(Selectscrollingframe, EmptyText)
 	self.selectCloseButton = Selectframe:WaitForChild("CloseButton") :: GuiButton
 	self.equipBestButton = Expositionui:WaitForChild("EquipBestButton") :: GuiButton
 	self.blackFrame = Selectframe:WaitForChild("BlackFrame") :: GuiObject

@@ -9,6 +9,32 @@ local ActiveButtonScale = 1.03
 local NoticeText = "!"
 local Topbarnotices = setmetatable({}, { __mode = "k" })
 local Noticelabels = setmetatable({}, { __mode = "k" })
+local EmptyTextFont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
+local EmptyTextColor = Color3.fromRGB(162, 162, 162)
+
+function Shared.CreateEmptyText(Scrolling: ScrollingFrame, Text: string): TextLabel
+	local Label = Instance.new("TextLabel")
+	Label.Name = "EmptyText"
+	Label.AnchorPoint = Scrolling.AnchorPoint
+	Label.Position = Scrolling.Position
+	Label.Size = Scrolling.Size
+	Label.BackgroundTransparency = 1
+	Label.FontFace = EmptyTextFont
+	Label.Text = Text
+	Label.TextColor3 = EmptyTextColor
+	Label.TextScaled = true
+	Label.TextWrapped = true
+	Label.TextStrokeTransparency = 0.6
+	Label.ZIndex = Scrolling.ZIndex + 1
+	Label.Parent = Scrolling.Parent
+	local Padding = Instance.new("UIPadding")
+	Padding.PaddingLeft = UDim.new(0.12, 0)
+	Padding.PaddingRight = UDim.new(0.12, 0)
+	Padding.PaddingTop = UDim.new(0.36, 0)
+	Padding.PaddingBottom = UDim.new(0.36, 0)
+	Padding.Parent = Label
+	return Label
+end
 
 function Shared.SetTopbarNotice(Icon, Active: boolean)
 	local Notice = Topbarnotices[Icon]

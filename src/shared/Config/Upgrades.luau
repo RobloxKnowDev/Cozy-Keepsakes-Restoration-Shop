@@ -14,7 +14,7 @@ return {
 	CooldownReduction = {
 		DisplayName = "Cooldown Reduction",
 		DefaultLevel = 0,
-		MaxLevel = 10,
+		MaxLevel = 6,
 		DeveloperProductId = Monetization.UpgradeDeveloperProducts.CooldownReduction,
 		CashPriceLevel1 = 250,
 		PriceGrowth = 1.5,

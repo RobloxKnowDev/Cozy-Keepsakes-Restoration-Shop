@@ -1,7 +1,7 @@
 local Customer = {
-	SpawnIntervalSeconds = 90,
+	SpawnIntervalSeconds = 60,
 	MinimumIntervalSeconds = 30,
-	SecondsPerCooldownLevel = 6,
+	SecondsPerCooldownLevel = 5,
 	SkipArrivalSeconds = 4,
 	SkipMarginSeconds = 6,
 	DeclineDelaySeconds = 8,

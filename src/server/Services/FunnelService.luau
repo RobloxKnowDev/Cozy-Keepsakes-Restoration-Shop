@@ -56,6 +56,15 @@ function Funnelservice:LogEarly(Player: Player, Name: string)
 	end)
 end
 
+function Funnelservice:LogLuck(Player: Player, Luck: number)
+	for _, Milestone in ipairs(Funnelconfig.Early.Luck) do
+		if Luck < Milestone.Amount then
+			return
+		end
+		self:LogEarly(Player, Milestone.Name)
+	end
+end
+
 function Funnelservice:LogAfterTutorial(Player: Player, Name: string)
 	if Core:GetService("TutorialService"):IsActive(Player) then
 		return

@@ -28,7 +28,7 @@ function Home.ApplyReputationBoost(State)
 		2,
 		nil,
 		string.format(
-			"x%d on your global reputation for %s",
+			"x%d on your Luck for %s",
 			MonetizationConfig.StarterPack.ReputationMultiplier,
 			FormatBoostDuration(State.PersonalReputationBoostDuration)
 		)

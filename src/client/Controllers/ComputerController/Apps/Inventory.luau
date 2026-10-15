@@ -17,6 +17,7 @@ local UnknownText = "???"
 local CleanText = "Clean"
 local SellText = "Sell"
 local BusyText = "..."
+local EmptyText = "Your inventory is empty!\nBuy items from customers."
 local ObjectWaitSeconds = 10
 local DetailsTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
@@ -296,6 +297,7 @@ function Inventory.Render(Controller)
 	end
 	table.clear(Controller.inventoryCards)
 	Controller.inventoryOpenCard = nil
+	Controller.inventoryEmptyText.Visible = #Controller.inventoryItems == 0
 
 	local InfoItem
 	for Order, Item in ipairs(Controller.inventoryItems) do
@@ -345,6 +347,7 @@ function Inventory.Init(Controller)
 	Controller.inventoryScrollingFrame = ScrollingFrame
 	Controller.inventoryGridLayout = ScrollingFrame:WaitForChild("UIGridLayout")
 	Controller.inventoryTemplate = ScrollingFrame:WaitForChild("Template")
+	Controller.inventoryEmptyText = Shared.CreateEmptyText(ScrollingFrame, EmptyText)
 	Controller.inventoryBlackFrame = Page:WaitForChild("BlackFrame")
 	Controller.inventoryInfoFrame = InfoFrame
 	Controller.inventoryInfoScale = Shared.EnsureScale(InfoFrame)
