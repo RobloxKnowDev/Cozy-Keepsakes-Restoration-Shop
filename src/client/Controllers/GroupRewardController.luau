@@ -9,6 +9,7 @@ local Config = require(ReplicatedStorage.Shared.Config.FreeReward)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
 local GroupRewardController = {
@@ -40,13 +41,13 @@ function GroupRewardController:RefreshClaim()
 	if self:IsClaimed() then
 		self.cooldownEnd = nil
 		self.claimCover.Visible = true
-		self.claimText.Text = ClaimedText
+		Translation.Set(self.claimText, ClaimedText)
 		return
 	end
 	local Remaining = if self.cooldownEnd then math.ceil(self.cooldownEnd - os.clock()) else 0
 	if Remaining > 0 then
 		self.claimCover.Visible = true
-		self.claimText.Text = string.format("%ds", Remaining)
+		Translation.Raw(self.claimText, string.format("%ds", Remaining))
 		return
 	end
 	self.cooldownEnd = nil

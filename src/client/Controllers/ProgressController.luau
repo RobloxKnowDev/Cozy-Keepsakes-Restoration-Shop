@@ -5,6 +5,7 @@ local TweenService = game:GetService("TweenService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Percent = require(ReplicatedStorage.Shared.Utils.RestorationPercent)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 
 local ProgressController = { Name = "ProgressController", Priority = 9 }
 local Kinds = { "Dirt", "Sticker", "Ink", "Scratch" }
@@ -41,7 +42,7 @@ function ProgressController:AnimateText(Label: TextLabel, From: number, To: numb
 		while self.textIds[Label] == Id and Label.Parent do
 			local Alpha = math.clamp((os.clock() - Started) / Duration, 0, 1)
 			local Eased = TweenService:GetValue(Alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-			Label.Text = string.format("%d%%", math.round(From + (To - From) * Eased))
+			Translation.Raw(Label, string.format("%d%%", math.round(From + (To - From) * Eased)))
 			if Alpha >= 1 then return end
 			RunService.Heartbeat:Wait()
 		end
@@ -85,12 +86,12 @@ function ProgressController:Reset(Object: Model | BasePart)
 		self.textIds[self.texts[Kind]] = (self.textIds[self.texts[Kind]] or 0) + 1
 		self.previousRatios[Kind] = Ratio
 		self.completed[Kind] = Ratio >= 1
-		self.texts[Kind].Text = string.format("%d%%", Percent(Ratio))
+		Translation.Raw(self.texts[Kind], string.format("%d%%", Percent(Ratio)))
 		self.texts[Kind].TextColor3 = self.baseColors[Kind]
 		self.bars[Kind].Size = UDim2.fromScale(Ratio, 1)
 		self.rows[Kind]:SetAttribute("Completed", Ratio >= 1)
 	end
-	self.globalText.Text = string.format("%d%%", Percent(self.previousGlobal))
+	Translation.Raw(self.globalText, string.format("%d%%", Percent(self.previousGlobal)))
 end
 
 function ProgressController:CompleteCategory(Kind: string)
@@ -129,7 +130,7 @@ function ProgressController:Update(Object: Model | BasePart, InteractionPosition
 			self.feedback:Pulse(self.globalText, 1.07)
 			local Threshold = if Full then nil else self:Crossed(Previous, GlobalRatio)
 			if Threshold then
-				self.feedback:CenterText(string.format("%d%% Restored", Threshold * 100), Gradients.Scratch)
+				self.feedback:CenterText(Translation.Format("{1}% Restored", math.round(Threshold * 100)), Gradients.Scratch)
 				self.feedback:Burst(self.percentFrame, Colors.Scratch, 12)
 				self.feedback:PlaySound("Pourcentage", 0.1, 0.96 + Threshold * 0.18)
 			else

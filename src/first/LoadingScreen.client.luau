@@ -1,3 +1,4 @@
+local Localizationservice = game:GetService("LocalizationService")
 local Players = game:GetService("Players")
 local Replicatedfirst = game:GetService("ReplicatedFirst")
 local Tweenservice = game:GetService("TweenService")
@@ -6,10 +7,11 @@ local Displayorder = 10000
 local Fadeduration = 0.6
 local Maximumwait = 25
 local Dotinterval = 0.35
+local Loadingword = "Loading"
 local Loadingframes = {
-	'Loading.<font transparency="1">..</font>',
-	'Loading..<font transparency="1">.</font>',
-	"Loading...",
+	'.<font transparency="1">..</font>',
+	'..<font transparency="1">.</font>',
+	"...",
 }
 local Pulsescale = 1.06
 local Pulseinfo = TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
@@ -42,8 +44,9 @@ Label.Position = UDim2.fromScale(0.5, 0.5)
 Label.Size = UDim2.fromOffset(360, 56)
 Label.BackgroundTransparency = 1
 Label.FontFace = Textfont
+Label.AutoLocalize = false
 Label.RichText = true
-Label.Text = Loadingframes[1]
+Label.Text = Loadingword .. Loadingframes[1]
 Label.TextColor3 = Color3.new(1, 1, 1)
 Label.TextScaled = true
 Label.ZIndex = 2
@@ -51,8 +54,24 @@ Label.Parent = Gui
 local Labelscale = Instance.new("UIScale")
 Labelscale.Parent = Label
 
+local Capture = Instance.new("TextLabel")
+Capture.Name = "Capture"
+Capture.BackgroundTransparency = 1
+Capture.TextTransparency = 1
+Capture.Size = UDim2.fromOffset(1, 1)
+Capture.Text = Loadingword
+Capture.Parent = Gui
+
 Gui.Parent = Playergui
 Replicatedfirst:RemoveDefaultLoadingScreen()
+
+local Word = Loadingword
+task.spawn(function()
+	local Success, Translator = pcall(Localizationservice.GetTranslatorForPlayerAsync, Localizationservice, Players.LocalPlayer)
+	if Success then
+		Word = Translator:Translate(Capture, Loadingword)
+	end
+end)
 
 local Pulse = Tweenservice:Create(Labelscale, Pulseinfo, { Scale = Pulsescale })
 Pulse:Play()
@@ -61,7 +80,7 @@ task.spawn(function()
 	while Gui.Enabled do
 		task.wait(Dotinterval)
 		Frame = Frame % #Loadingframes + 1
-		Label.Text = Loadingframes[Frame]
+		Label.Text = Word .. Loadingframes[Frame]
 	end
 end)
 

@@ -10,6 +10,7 @@ local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
 local DailyRewardController = {
@@ -181,11 +182,11 @@ function DailyRewardController:Refresh()
 	local Complete = CurrentDay <= 0
 	local Ready = not Complete and Available
 	if Complete then
-		self.timeText.Text = CompleteText
+		Translation.Set(self.timeText, CompleteText)
 	elseif Ready then
-		self.timeText.Text = ReadyText
+		Translation.Set(self.timeText, ReadyText)
 	else
-		self.timeText.Text = FormatDuration(self.state.NextClaimAt - workspace:GetServerTimeNow())
+		Translation.Raw(self.timeText, FormatDuration(self.state.NextClaimAt - workspace:GetServerTimeNow()))
 	end
 	self:SetSwing(Ready)
 	Shared.SetTopbarNotice(self.topbarIcon, Ready)
@@ -301,7 +302,7 @@ function DailyRewardController:Claim()
 		FeedbackController:PlaySound("DailyReward", 0.2)
 		if Result.RewardType == "Item" then
 			local Definition = Objectconfig.Object[Config.Rewards[Result.Day].ObjectKey]
-			Core:GetController("MessageController"):Show(Definition.Name .. " added to your inventory", Rarityconfig[Definition.Rarity].Gradient)
+			Core:GetController("MessageController"):Show("{1} added to your inventory", Rarityconfig[Definition.Rarity].Gradient, Translation.Format(Definition.Name))
 		end
 	end
 end

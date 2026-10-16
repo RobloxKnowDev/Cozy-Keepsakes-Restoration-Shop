@@ -11,6 +11,7 @@ local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
 local SettingController = {
@@ -215,7 +216,7 @@ function SettingController:BindSlider(Bar: GuiObject, PourcentageText: TextLabel
 			ArrowPosition.Y.Scale,
 			ArrowPosition.Y.Offset
 		)
-		PourcentageText.Text = string.format("%d%%", math.round(Alpha * 100))
+		Translation.Raw(PourcentageText, string.format("%d%%", math.round(Alpha * 100)))
 	end
 
 	local function Update(Position: Vector3)
@@ -312,7 +313,7 @@ function SettingController:RedeemCode()
 	local Message = Core:GetController("MessageController")
 	if Result.Success then
 		self.codesBox.Text = ""
-		Message:Show("Code redeemed: " .. tostring(Result.ValueText), SuccessGradient)
+		Message:Show("Code redeemed: {1}", SuccessGradient, tostring(Result.ValueText))
 	elseif Result.Reason == "AlreadyClaimed" then
 		Message:Show("You already claimed this code", ErrorGradient)
 	elseif Result.Reason == "RewardFailed" then

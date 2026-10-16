@@ -6,6 +6,7 @@ local Tweenservice = game:GetService("TweenService")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
+local Translation = require(Replicatedstorage.Shared.Utils.Translation)
 
 local Cashcontroller = {
 	Name = "CashController",
@@ -30,7 +31,7 @@ end
 
 function Cashcontroller:SetDisplayedCash(Value: number)
 	self.displayedCash = Value
-	self.cashText.Text = Formatcurrency(Value)
+	Translation.Raw(self.cashText, Formatcurrency(Value))
 end
 
 function Cashcontroller:GetCash(): number

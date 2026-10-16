@@ -6,6 +6,7 @@ local Config = require(ReplicatedStorage.Shared.Config.DailyTasks)
 local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local Shared = require(script.Parent.Shared)
 
 local DailyTasks = {}
@@ -20,11 +21,11 @@ end
 
 local function TaskText(Task): string
 	local Definition = Config.Tasks[Task.Id]
-	return string.format(Definition.Text, FormatAmount(Definition, Task.Goal))
+	return Translation.Format(Definition.Text, FormatAmount(Definition, Task.Goal))
 end
 
 function DailyTasks.UpdateReset(Controller)
-	Controller.dailyTasksResetText.Text = "Reset in " .. FormatDuration(Controller.dailyTasksResetAt - Workspace:GetServerTimeNow())
+	Translation.Set(Controller.dailyTasksResetText, "Reset in {1}", FormatDuration(Controller.dailyTasksResetAt - Workspace:GetServerTimeNow()))
 end
 
 function DailyTasks.Apply(Controller, State)
@@ -39,9 +40,9 @@ function DailyTasks.Apply(Controller, State)
 		Card.Name = "Task_" .. Order
 		Card.LayoutOrder = Order
 		Card.Visible = true
-		Card:WaitForChild("NameText").Text = TaskText(Task)
-		Card:WaitForChild("NumberText").Text = FormatAmount(Definition, Task.Progress) .. "/" .. FormatAmount(Definition, Task.Goal)
-		Card:WaitForChild("CashText").Text = Shared.FormatCurrency(Task.Reward)
+		Translation.Set(Card:WaitForChild("NameText"), Definition.Text, FormatAmount(Definition, Task.Goal))
+		Translation.Raw(Card:WaitForChild("NumberText"), FormatAmount(Definition, Task.Progress) .. "/" .. FormatAmount(Definition, Task.Goal))
+		Translation.Raw(Card:WaitForChild("CashText"), Shared.FormatCurrency(Task.Reward))
 		Card:WaitForChild("FrameBar"):WaitForChild("Bar").Size = UDim2.fromScale(math.clamp(Task.Progress / Task.Goal, 0, 1), 1)
 		Card.Parent = Controller.dailyTasksList
 		table.insert(Controller.dailyTaskCards, Card)
@@ -57,6 +58,11 @@ function DailyTasks.Init(Controller)
 	Controller.dailyTasksList:WaitForChild("UIListLayout").SortOrder = Enum.SortOrder.LayoutOrder
 	Controller.dailyTaskTemplate.Visible = false
 	Controller.dailyTaskCards = {}
+	local Texts = {}
+	for _, Definition in pairs(Config.Tasks) do
+		table.insert(Texts, Definition.Text)
+	end
+	Translation.Prepare(Texts)
 	DailyTasks.Apply(Controller, RemoteManager:InvokeServer("DailyTaskService", "GetState"))
 end
 
@@ -66,8 +72,10 @@ function DailyTasks.Start(Controller)
 	end)
 	RemoteManager:OnClientEvent("DailyTaskService", "TaskCompleted", function(Task)
 		Core:GetController("MessageController"):Show(
-			"Task completed: " .. TaskText(Task) .. " +" .. Shared.FormatCurrency(Task.Reward),
-			CompletedGradient
+			"Task completed: {1} +{2}",
+			CompletedGradient,
+			TaskText(Task),
+			Shared.FormatCurrency(Task.Reward)
 		)
 		Core:GetController("FeedbackController"):DailyTaskReward(Task.Reward)
 	end)

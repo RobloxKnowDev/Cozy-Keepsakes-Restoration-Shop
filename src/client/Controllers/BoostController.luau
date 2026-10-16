@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BoostConfig = require(ReplicatedStorage.Shared.Config.Boosts)
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 
 local BoostController = {
 	Name = "BoostController",
@@ -50,7 +51,7 @@ function BoostController:CreateBoost(Name: string)
 	return Boost
 end
 
-function BoostController:SetBoost(Name: string, EndsAt: number, LayoutOrder: number, Multiplier: number?, Description: string?)
+function BoostController:SetBoost(Name: string, EndsAt: number, LayoutOrder: number, Multiplier: number?, Description: string?, ...: any)
 	if EndsAt <= workspace:GetServerTimeNow() then
 		self:RemoveBoost(Name)
 		return
@@ -58,20 +59,24 @@ function BoostController:SetBoost(Name: string, EndsAt: number, LayoutOrder: num
 
 	local Info = BoostConfig[Name]
 	local Boost = self.boosts[Name] or self:CreateBoost(Name)
-	Boost.NameText.Text = if Multiplier then string.format("%s x%d", Info.Title, Multiplier) else Info.Title
-	Boost.DescriptionText.Text = Description or Info.Description
+	if Multiplier then
+		Translation.Raw(Boost.NameText, string.format("%s x%d", Translation.Format(Info.Title), Multiplier))
+	else
+		Translation.Set(Boost.NameText, Info.Title)
+	end
+	Translation.Set(Boost.DescriptionText, Description or Info.Description, ...)
 	Boost.Frame.LayoutOrder = LayoutOrder
 	Boost.EndsAt = EndsAt
-	Boost.Text.Text = FormatDuration(EndsAt - workspace:GetServerTimeNow())
+	Translation.Raw(Boost.Text, FormatDuration(EndsAt - workspace:GetServerTimeNow()))
 end
 
-function BoostController:SetPermanentBoost(Name: string, LayoutOrder: number, Text: string, Description: string)
+function BoostController:SetPermanentBoost(Name: string, LayoutOrder: number, Text: string, Description: string, ...: any)
 	local Boost = self.boosts[Name] or self:CreateBoost(Name)
 	Boost.Permanent = true
-	Boost.NameText.Text = BoostConfig[Name].Title
-	Boost.DescriptionText.Text = Description
+	Translation.Set(Boost.NameText, BoostConfig[Name].Title)
+	Translation.Set(Boost.DescriptionText, Description, ...)
 	Boost.Frame.LayoutOrder = LayoutOrder
-	Boost.Text.Text = Text
+	Translation.Raw(Boost.Text, Text)
 end
 
 function BoostController:PlayGain(Name: string, WithMessage: boolean)
@@ -81,7 +86,7 @@ function BoostController:PlayGain(Name: string, WithMessage: boolean)
 	local Title = if Boost.Permanent then Boost.NameText.Text .. " " .. Boost.Text.Text else Boost.NameText.Text
 	Core:GetController("FeedbackController"):BoostGain(Boost.Frame, Title .. "!", Gradient, os.clock() - Boost.CreatedAt < AppearWindow)
 	if WithMessage then
-		Core:GetController("MessageController"):Show(Boost.NameText.Text .. ": " .. Boost.DescriptionText.Text, Gradient)
+		Core:GetController("MessageController"):Show("{1}: {2}", Gradient, Boost.NameText.Text, Boost.DescriptionText.Text)
 	end
 end
 
@@ -93,7 +98,7 @@ function BoostController:Update()
 			if Remaining <= 0 then
 				self:RemoveBoost(Name)
 			else
-				Boost.Text.Text = FormatDuration(Remaining)
+				Translation.Raw(Boost.Text, FormatDuration(Remaining))
 			end
 		end
 	end

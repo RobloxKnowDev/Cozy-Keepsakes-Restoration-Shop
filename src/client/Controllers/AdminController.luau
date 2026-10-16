@@ -22,6 +22,7 @@ local Textfont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.Fon
 local function Makelabel(Parent: Instance, Order: number): TextLabel
 	local Label = Instance.new("TextLabel")
 	Label.Name = "Row" .. Order
+	Label.AutoLocalize = false
 	Label.LayoutOrder = Order
 	Label.BackgroundTransparency = 1
 	Label.Size = UDim2.new(1, -20, 0, Rowheight)

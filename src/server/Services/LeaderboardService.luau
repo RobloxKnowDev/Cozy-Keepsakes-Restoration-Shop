@@ -308,6 +308,10 @@ function Leaderboardservice:Init()
 		local List = Leaderboards:WaitForChild(Modelbyboard[Board]):WaitForChild("SurfaceGui"):WaitForChild("ScrollingFrame") :: ScrollingFrame
 		local Template = List:WaitForChild("Template") :: GuiObject
 		Template.Visible = false
+		for _, Name in ipairs({ "Place", "Name", "Value" }) do
+			local Label = Template:WaitForChild(Name) :: TextLabel
+			Label.AutoLocalize = false
+		end
 		List.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		Displaybyboard[Board] = { List = List, Template = Template, Rows = {} }
 	end

@@ -9,6 +9,7 @@ local Daynightconfig = require(Replicatedstorage.Shared.Config.DayNight)
 local Monetizationconfig = require(Replicatedstorage.Shared.Config.Monetization)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Dayclock = require(Replicatedstorage.Shared.Utils.DayClock)
+local Translation = require(Replicatedstorage.Shared.Utils.Translation)
 local Uifade = require(Replicatedstorage.Shared.Utils.UiFade)
 
 local Daynightcontroller = {
@@ -38,13 +39,13 @@ local function Formattime(Clocktime: number): string
 end
 
 local function Loadskipdayprice(Robuxtext: TextLabel)
-	Robuxtext.Text = "..."
+	Translation.Raw(Robuxtext, "...")
 	task.spawn(function()
 		local Success, Productinfo = pcall(function()
 			return MarketplaceService:GetProductInfoAsync(Monetizationconfig.SkipDayProductId, Enum.InfoType.Product)
 		end)
 		local Price = if Success then tonumber(Productinfo.PriceInRobux) else nil
-		Robuxtext.Text = if Price then string.format("%s%d", Robuxicon, math.floor(Price)) else "N/A"
+		Translation.Raw(Robuxtext, if Price then string.format("%s%d", Robuxicon, math.floor(Price)) else "N/A")
 	end)
 end
 
@@ -76,8 +77,8 @@ function Daynightcontroller:Update()
 		Lighting.ClockTime = Clocktime
 	end
 	local Day = Player:GetAttribute("Day") or 1
-	self.DayText.Text = "Day " .. tostring(Day)
-	self.HourText.Text = Formattime(Clocktime)
+	Translation.Set(self.DayText, "Day {1}", Day)
+	Translation.Raw(self.HourText, Formattime(Clocktime))
 	local Showskip = (Clocktime >= Daynightconfig.SkipDayAvailableHour or Clocktime < Daynightconfig.DayStartHour)
 		and not Dayclock.IsWarping(Clock, Now)
 		and not Player:GetAttribute("CustomersDone")

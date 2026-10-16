@@ -13,7 +13,7 @@ return {
 	},
 
 	Announcement = {
-		Text = "{Name} just supported the game with a donation of {Amount}! \u{2764}\u{FE0F}",
+		Text = "{1} just supported the game with a donation of {2}! \u{2764}\u{FE0F}",
 		NameColor = "#FFD66B",
 		AmountColor = "#7EFF91",
 	},

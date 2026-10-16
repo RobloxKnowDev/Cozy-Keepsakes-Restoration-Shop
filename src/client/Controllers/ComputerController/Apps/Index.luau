@@ -6,6 +6,7 @@ local Indexrewards = require(ReplicatedStorage.Shared.Config.IndexRewards)
 local Mutationconfig = require(ReplicatedStorage.Shared.Config.Mutation)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local Uigradient = require(ReplicatedStorage.Shared.Utils.UiGradient)
 local Shared = require(script.Parent.Shared)
 
@@ -34,18 +35,27 @@ function Index.ApplyBonus(Counts: { [string]: number }, Required: number)
 		"IndexSellBonus",
 		0,
 		string.format("+%g%%", Pages * Indexrewards.SellPercent),
-		string.format("+%g%% on all sales per index at %d%% (%d/%d)", Indexrewards.SellPercent, RequiredPercent, Pages, #Mutationconfig.Order)
+		"+{1}% on all sales per index at {2}% ({3}/{4})",
+		string.format("%g", Indexrewards.SellPercent),
+		RequiredPercent,
+		Pages,
+		#Mutationconfig.Order
 	)
 end
 
 function Index.ApplyReward(Controller, Page: string, Count: number, Total: number, Required: number)
-	local Items = if Page == "Normal" then "items" else Mutationconfig[Page].Name .. " items"
-	local Bonus = if Page == "Normal" then "Bonus" else Mutationconfig[Page].Name .. " bonus"
-	Controller.indexRewardCountText.Text = string.format("%d/%d", Count, Total)
+	local Percent = string.format("%g", Indexrewards.SellPercent)
+	Translation.Raw(Controller.indexRewardCountText, string.format("%d/%d", Count, Total))
 	Controller.indexRewardBar.Size = UDim2.fromScale(Count / Total, 1)
-	Controller.indexRewardText.Text = if Count >= Required
-		then string.format("%s unlocked: +%g%% on all sales", Bonus, Indexrewards.SellPercent)
-		else string.format("Unlock %d %s to get +%g%% on all sales", Required, Items, Indexrewards.SellPercent)
+	if Page == "Normal" and Count >= Required then
+		Translation.Set(Controller.indexRewardText, "Bonus unlocked: +{1}% on all sales", Percent)
+	elseif Page == "Normal" then
+		Translation.Set(Controller.indexRewardText, "Unlock {1} items to get +{2}% on all sales", Required, Percent)
+	elseif Count >= Required then
+		Translation.Set(Controller.indexRewardText, "{1} bonus unlocked: +{2}% on all sales", Translation.Format(Mutationconfig[Page].Name), Percent)
+	else
+		Translation.Set(Controller.indexRewardText, "Unlock {1} {2} items to get +{3}% on all sales", Required, Translation.Format(Mutationconfig[Page].Name), Percent)
+	end
 end
 
 function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
@@ -128,13 +138,13 @@ function Index.ApplyEntries(Controller, Entries, Unlockedkey, Unlockedmutation)
 		local Mutation = Mutationconfig[tostring(Unlockedmutation)]
 		local Count = Counts[tostring(Unlockedmutation)]
 		local Label = if Unlockedmutation == "Normal"
-			then Unlockedname
-			else Mutation.Name .. " " .. Unlockedname
-		Core:GetController("MessageController"):Show(string.format("New index entry unlocked: %s (%d/%d)", Label, Count, #Entries), GainGradient)
+			then Translation.Format(Unlockedname)
+			else Translation.Format(Mutation.Name) .. " " .. Translation.Format(Unlockedname)
+		Core:GetController("MessageController"):Show("New index entry unlocked: {1} ({2}/{3})", GainGradient, Label, Count, #Entries)
 		if Count == Required then
 			Core:GetController("FeedbackController"):RewardPopup(
-				string.format("%s Index %d%%!", Mutation.Name, RequiredPercent),
-				string.format("+%g%% Sell Bonus", Indexrewards.SellPercent),
+				Translation.Format("{1} Index {2}%!", Translation.Format(Mutation.Name), RequiredPercent),
+				Translation.Format("+{1}% Sell Bonus", string.format("%g", Indexrewards.SellPercent)),
 				if Unlockedmutation == "Normal" then nil else Mutation.Gradient,
 				Unlockedmutation == "Rainbow"
 			)

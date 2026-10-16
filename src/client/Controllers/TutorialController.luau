@@ -13,6 +13,7 @@ local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Upgradesconfig = require(Replicatedstorage.Shared.Config.Upgrades)
 local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
 local Stainlayout = require(Replicatedstorage.Shared.Utils.StainLayout)
+local Translation = require(Replicatedstorage.Shared.Utils.Translation)
 local Uvtorch = require(script.Parent.RestorationController.UvTorch)
 
 local Tutorialcontroller = {
@@ -59,6 +60,7 @@ local Flipdowntext = {
 	Mouse = "Dirt underneath! Tap to flip it!",
 	Gamepad = "Dirt underneath! Press Y to flip it!",
 }
+local Finishtexts = { Clean = "All clean! Tap to finish.", Partial = "Tap to finish." }
 local Downfacing = -0.8
 local Handimage = "rbxassetid://116068912861302"
 local Mouseimage = "rbxassetid://123373213717142"
@@ -540,6 +542,16 @@ local function Inputkind(): string
 		return "Touch"
 	end
 	return "Mouse"
+end
+
+local function Collecttexts(Texts: { string }, Value: any)
+	if type(Value) == "string" then
+		table.insert(Texts, Value)
+	elseif type(Value) == "table" then
+		for _, Text in pairs(Value) do
+			table.insert(Texts, Text)
+		end
+	end
 end
 
 local function Textfor(Value: any): string
@@ -1195,7 +1207,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Finish",
 			Text = function()
-				return if Allclean() then "All clean! Tap to finish." else "Tap to finish."
+				return if Allclean() then Finishtexts.Clean else Finishtexts.Partial
 			end,
 			AllowFinish = true,
 			Target = function()
@@ -1340,8 +1352,23 @@ function Tutorialcontroller:Init()
 	self.stepStart = 0
 end
 
+function Tutorialcontroller:Preparetexts()
+	local Texts = {}
+	for _, Value in ipairs({ Behindtext, Behindhandtext, Fliptext, Flipdowntext, Finishtexts }) do
+		Collecttexts(Texts, Value)
+	end
+	for _, Name in pairs(Toolnames) do
+		Collecttexts(Texts, "Take the " .. Name .. ".")
+	end
+	for _, Step in ipairs(self.steps) do
+		Collecttexts(Texts, Step.Text)
+	end
+	Translation.Prepare(Texts)
+end
+
 function Tutorialcontroller:Start()
 	self:Buildsteps()
+	self:Preparetexts()
 	Userinputservice.InputBegan:Connect(function(Input)
 		if
 			Input.UserInputType == Enum.UserInputType.MouseButton1

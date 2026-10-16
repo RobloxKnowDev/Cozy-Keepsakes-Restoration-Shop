@@ -9,6 +9,7 @@ local Customerconfig = require(Replicatedstorage.Shared.Config.Customer)
 local Monetizationconfig = require(Replicatedstorage.Shared.Config.Monetization)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Formatduration = require(Replicatedstorage.Shared.Utils.DurationFormatter)
+local Translation = require(Replicatedstorage.Shared.Utils.Translation)
 local Uifade = require(Replicatedstorage.Shared.Utils.UiFade)
 
 local Hudcustomercontroller = {
@@ -24,20 +25,20 @@ local Robuxicon = "\u{E002}"
 local Skipsavedgradient = Rarityconfig.Common.Gradient
 
 local function Loadskipprice(Robuxtext: TextLabel)
-	Robuxtext.Text = "..."
+	Translation.Raw(Robuxtext, "...")
 	task.spawn(function()
 		local Success, Productinfo = pcall(function()
 			return MarketplaceService:GetProductInfoAsync(Monetizationconfig.SkipCooldownProductId, Enum.InfoType.Product)
 		end)
 		local Price = if Success then tonumber(Productinfo.PriceInRobux) else nil
-		Robuxtext.Text = if Price then string.format("%s%d", Robuxicon, math.floor(Price)) else "N/A"
+		Translation.Raw(Robuxtext, if Price then string.format("%s%d", Robuxicon, math.floor(Price)) else "N/A")
 	end)
 end
 
 function Hudcustomercontroller:UpdateCustomerText()
 	local Current = Player:GetAttribute("CustomersToday") or 0
 	local Maximum = Player:GetAttribute("MaxCustomersPerDay") or 0
-	self.customerText.Text = string.format("%d/%d", Current, Maximum)
+	Translation.Raw(self.customerText, string.format("%d/%d", Current, Maximum))
 end
 
 function Hudcustomercontroller:UpdateTimer()
@@ -59,7 +60,7 @@ function Hudcustomercontroller:UpdateTimer()
 	local Ratio = math.clamp(Remaining / Interval, 0, 1)
 	self.cooldownBar.Size =
 		UDim2.new(Ratio * Barmaxscale, 0, self.cooldownBarSize.Y.Scale, self.cooldownBarSize.Y.Offset)
-	self.nextText.Text = "Next Customer in " .. Formatduration(Remaining)
+	Translation.Set(self.nextText, "Next Customer in {1}", Formatduration(Remaining))
 end
 
 function Hudcustomercontroller:SetHudVisible(Visible: boolean)

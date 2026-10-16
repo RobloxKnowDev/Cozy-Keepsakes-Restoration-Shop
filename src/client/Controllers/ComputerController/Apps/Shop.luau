@@ -8,6 +8,7 @@ local MonetizationConfig = require(ReplicatedStorage.Shared.Config.Monetization)
 local ObjectConfig = require(ReplicatedStorage.Shared.Config.Object)
 local RarityConfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local Shared = require(script.Parent.Shared)
 
 local Shop = {}
@@ -26,7 +27,7 @@ end
 
 local function SetPriceText(Card, Text: string)
 	Card.RequestId += 1
-	Card.PriceText.Text = Text
+	Translation.Set(Card.PriceText, Text)
 end
 
 local function LoadPrice(Card, Id: number, InfoType: Enum.InfoType)
@@ -40,7 +41,7 @@ local function LoadPrice(Card, Id: number, InfoType: Enum.InfoType)
 		local Success, Info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, Id, InfoType)
 		if Card.RequestId ~= RequestId then return end
 		local Price = if Success then tonumber(Info.PriceInRobux) else nil
-		Card.PriceText.Text = if Price then string.format("%s%d", RobuxIcon, Price) else "N/A"
+		Translation.Raw(Card.PriceText, if Price then string.format("%s%d", RobuxIcon, Price) else "N/A")
 	end)
 end
 
@@ -74,9 +75,9 @@ function Shop.ApplyState(Controller, State)
 		end
 	end
 	local IsMax = State.ServerLuckNextMultiplier == nil
-	Controller.serverLuckFirstText.Text = tostring(State.ServerLuckMultiplier) .. "x"
-	Controller.serverLuckMiddleText.Text = if IsMax then "Max" else Controller.serverLuckMiddleDefaultText
-	Controller.serverLuckSecondText.Text = tostring(State.ServerLuckNextMultiplier or State.ServerLuckMultiplier) .. "x"
+	Translation.Raw(Controller.serverLuckFirstText, tostring(State.ServerLuckMultiplier) .. "x")
+	Translation.Set(Controller.serverLuckMiddleText, if IsMax then "Max" else Controller.serverLuckMiddleDefaultText)
+	Translation.Raw(Controller.serverLuckSecondText, tostring(State.ServerLuckNextMultiplier or State.ServerLuckMultiplier) .. "x")
 	local ProductId = State.ServerLuckNextProductId
 	if ProductId == Controller.serverLuckProductId then return end
 	Controller.serverLuckProductId = ProductId
@@ -127,7 +128,7 @@ function Shop.Start(Controller)
 	end)
 	RemoteManager:OnClientEvent("MonetizationService", "StarterPackGranted", function()
 		local Definition = ObjectConfig.Object[MonetizationConfig.StarterPack.ObjectKey]
-		Core:GetController("MessageController"):Show(Definition.Name .. " added to your inventory", RarityConfig[Definition.Rarity].Gradient)
+		Core:GetController("MessageController"):Show("{1} added to your inventory", RarityConfig[Definition.Rarity].Gradient, Translation.Format(Definition.Name))
 	end)
 end
 

@@ -664,7 +664,10 @@ local function Tasktext(Task: any): string
 	if not Definition then
 		return Clean(Task.Id) .. " (removed task)"
 	end
-	return string.format(Definition.Text, Taskamount(Definition, Task.Goal))
+	local Amount = Taskamount(Definition, Task.Goal)
+	return (string.gsub(Definition.Text, "{1}", function()
+		return Amount
+	end))
 end
 
 local function Tasksdone(Tasks: { any }): number

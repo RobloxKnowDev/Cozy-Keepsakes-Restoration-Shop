@@ -22,6 +22,7 @@ local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local FormatCurrency = require(ReplicatedStorage.Shared.Utils.CurrencyFormatter)
 local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local MicroTween = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local ReturnTween = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local SuccessColor = Color3.fromRGB(255, 211, 105)
@@ -210,6 +211,7 @@ function FeedbackController:CenterText(Text: string, Gradient: ColorSequence, Ma
 	if not self:IsDecorativeEnabled() then return end
 	local Label = Instance.new("TextLabel")
 	Label.Name = "CenterFeedbackText"
+	Label.AutoLocalize = false
 	Label.AnchorPoint = Vector2.new(0.5, 0.5)
 	Label.Position = UDim2.fromScale(0.5, 0.5)
 	Label.Size = UDim2.fromOffset(if Major then 620 else 460, if Major then 100 else 74)
@@ -242,6 +244,7 @@ function FeedbackController:CleaningPercent(Position: Vector2, Amount: number)
 	if not self:IsDecorativeEnabled() then return end
 	local Label = Instance.new("TextLabel")
 	Label.Name = "CleaningPercentText"
+	Label.AutoLocalize = false
 	Label.AnchorPoint = Vector2.new(0.5, 0.5)
 	Label.Position = UDim2.fromOffset(Position.X + math.random(-42, 42), Position.Y + math.random(-32, 22))
 	local Size = math.random(18, 28)
@@ -798,7 +801,8 @@ function FeedbackController:DonationThanks(AmountText: string)
 	Subtitle.Size = UDim2.fromScale(0.7, 0.26)
 	Subtitle.BackgroundTransparency = 1
 	Subtitle.FontFace = TextFont
-	Subtitle.Text = AmountText .. " Donated"
+	Subtitle.AutoLocalize = false
+	Subtitle.Text = Translation.Format("{1} Donated", AmountText)
 	Subtitle.TextColor3 = White
 	Subtitle.TextScaled = true
 	Subtitle.TextStrokeColor3 = Color3.fromRGB(16, 40, 22)
@@ -903,14 +907,14 @@ end
 function FeedbackController:Sale(Name: string, Value: number, Count: number?)
 	local Amount = FormatCurrency(Value)
 	local Text = if Count and Count > 1
-		then string.format("%d Items Sold  +%s", Count, Amount)
-		else string.format("%s Sold  +%s", Name, Amount)
+		then Translation.Format("{1} Items Sold  +{2}", Count, Amount)
+		else Translation.Format("{1} Sold  +{2}", Translation.Format(Name), Amount)
 	self:CenterText(Text, GainGradient, Count ~= nil and Count > 1)
 	self:PlaySound("SellItem", ConfirmCooldown)
 end
 
 function FeedbackController:DailyTaskReward(Reward: number)
-	self:RewardPopup("Daily Task Complete!", "+" .. FormatCurrency(Reward))
+	self:RewardPopup(Translation.Format("Daily Task Complete!"), "+" .. FormatCurrency(Reward))
 end
 
 function FeedbackController:RewardPopup(TitleText: string, RewardText: string, TitleGradient: ColorSequence?, Rainbow: boolean?)
@@ -935,6 +939,7 @@ function FeedbackController:RewardPopup(TitleText: string, RewardText: string, T
 		Title.Size = UDim2.fromScale(1, 0.5)
 		Title.BackgroundTransparency = 1
 		Title.FontFace = TextFont
+		Title.AutoLocalize = false
 		Title.Text = TitleText
 		Title.TextColor3 = White
 		Title.TextScaled = true
@@ -964,6 +969,7 @@ function FeedbackController:RewardPopup(TitleText: string, RewardText: string, T
 		RewardLabel.Size = UDim2.fromScale(0.6, 0.38)
 		RewardLabel.BackgroundTransparency = 1
 		RewardLabel.FontFace = TextFont
+		RewardLabel.AutoLocalize = false
 		RewardLabel.Text = RewardText
 		RewardLabel.TextColor3 = White
 		RewardLabel.TextScaled = true
@@ -1018,6 +1024,7 @@ function FeedbackController:BoostGain(Target: ImageLabel, Text: string, Gradient
 	if Previous then Previous:Destroy() end
 	local Label = Instance.new("TextLabel")
 	Label.Name = "BoostGainText"
+	Label.AutoLocalize = false
 	Label.AnchorPoint = Vector2.new(0, 1)
 	Label.Position = UDim2.fromScale(0, -0.04)
 	Label.Size = UDim2.fromScale(3.6, 0.4)

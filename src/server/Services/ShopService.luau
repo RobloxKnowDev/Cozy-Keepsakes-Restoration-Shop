@@ -9,7 +9,6 @@ local Shopservice = {
 	Priority = 1,
 }
 
-local Emptysign = "N/A"
 local Cameramarkers = { "CamPart", "CamPartComputer", "CamPartExposition" }
 
 local Shopsfolder: Folder
@@ -17,13 +16,8 @@ local Signsfolder: Model
 local Owners: { [Model]: Player } = {}
 local Shopbyplayer: { [Player]: Model } = {}
 
-local function Setsign(Shop: Model, Text: string)
-	local Surfacegui = Signsfolder:WaitForChild(Shop.Name .. "Text"):WaitForChild("SurfaceGui")
-	for _, Label in ipairs(Surfacegui:GetChildren()) do
-		if Label:IsA("TextLabel") then
-			Label.Text = Text
-		end
-	end
+local function Setsign(Shop: Model, Owner: string?)
+	Signsfolder:WaitForChild(Shop.Name .. "Text"):WaitForChild("SurfaceGui"):SetAttribute("Owner", Owner)
 end
 
 local function Preparecamera(Shop: Model)
@@ -43,7 +37,7 @@ local function Claim(Player: Player, Shop: Model)
 	Shopbyplayer[Player] = Shop
 	Player:SetAttribute("Shop", Shop.Name)
 	Player.ReplicationFocus = Shop:WaitForChild("Camera"):WaitForChild("CamPart") :: BasePart
-	Setsign(Shop, Player.DisplayName .. "'s Shop")
+	Setsign(Shop, Player.DisplayName)
 end
 
 local function Assign(Player: Player): Model
@@ -71,7 +65,7 @@ local function Release(Player: Player)
 	end
 	Owners[Shop] = nil
 	Shopbyplayer[Player] = nil
-	Setsign(Shop, Emptysign)
+	Setsign(Shop, nil)
 end
 
 function Shopservice:GetShop(Player: Player): Model
@@ -106,7 +100,7 @@ function Shopservice:MoveToNextShop(Player: Player): (Model?, string?)
 		local Candidate = Shopsfolder:WaitForChild("Shop" .. (Start + Step - 1) % Count + 1) :: Model
 		if not Owners[Candidate] then
 			Owners[Previous] = nil
-			Setsign(Previous, Emptysign)
+			Setsign(Previous, nil)
 			Claim(Player, Candidate)
 			Core:GetService("ExpositionService"):MoveShop(Player, Previous)
 			Core:GetService("CustomerService"):MoveShop(Player)
@@ -120,8 +114,9 @@ function Shopservice:Init()
 	local Map = Workspace:WaitForChild("Map")
 	Shopsfolder = Map:WaitForChild("Shops") :: Folder
 	Signsfolder = Map:WaitForChild("ShopSigns") :: Model
+	Signsfolder.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
 	for _, Shop in ipairs(Shopsfolder:GetChildren()) do
-		Setsign(Shop :: Model, Emptysign)
+		Setsign(Shop :: Model, nil)
 		Preparecamera(Shop :: Model)
 	end
 	for _, Player in ipairs(Players:GetPlayers()) do

@@ -22,6 +22,7 @@ local Maximumpitch = math.rad(82)
 local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 local Getobjectrotation = require(Replicatedstorage.Shared.Utils.ObjectRotation)
 local Restorationpercent = require(Replicatedstorage.Shared.Utils.RestorationPercent)
+local Translation = require(Replicatedstorage.Shared.Utils.Translation)
 
 type RestorationObject = Model | BasePart
 
@@ -216,9 +217,9 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 	self.rainbowGradients = if Rainbow then { self.mutationGradient, self.mutationFrameGradient } else nil
 	self.rarityText.Text = Rarity.Name
 	self.rarityGradient.Color = Rarity.Gradient
-	self.totalProgressText.Text = string.format("%d%%", Restorationpercent(Overallratio))
-	self.valueText.Text = Formatcurrency(Currentvalue)
-	self.reputationText.Text = Formatreputation(Reputation)
+	Translation.Raw(self.totalProgressText, string.format("%d%%", Restorationpercent(Overallratio)))
+	Translation.Raw(self.valueText, Formatcurrency(Currentvalue))
+	Translation.Raw(self.reputationText, Formatreputation(Reputation))
 
 	table.clear(self.emptyRows)
 	for _, Kind in ipairs(Completionkinds) do
@@ -227,7 +228,7 @@ function Completioncontroller:ApplyProgressStats(Object: RestorationObject)
 		if (Object:GetAttribute("Total_" .. Kind) or 0) <= 0 then
 			self.emptyRows[Row] = true
 		end
-		Row:WaitForChild("PercentText").Text = string.format("%d%%", Restorationpercent(Ratio))
+		Translation.Raw(Row:WaitForChild("PercentText"), string.format("%d%%", Restorationpercent(Ratio)))
 		Row:WaitForChild("FrameBar"):WaitForChild("Bar").Size = UDim2.fromScale(Ratio, 1)
 	end
 end

@@ -12,6 +12,7 @@ local Formatcurrency = require(Replicatedstorage.Shared.Utils.CurrencyFormatter)
 local Interactionoutline = require(Replicatedstorage.Shared.Utils.InteractionOutline)
 local Objectconfig = require(Replicatedstorage.Shared.Config.Object)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
+local Translation = require(Replicatedstorage.Shared.Utils.Translation)
 local Uigradient = require(Replicatedstorage.Shared.Utils.UiGradient)
 
 local Customercontroller = {
@@ -56,7 +57,7 @@ end
 
 function Customercontroller:RevealEstimate(MaxPrice: number)
 	self.estimateAnimationId += 1
-	self.estimatePriceText.Text = Formatcurrency(MaxPrice)
+	Translation.Raw(self.estimatePriceText, Formatcurrency(MaxPrice))
 	self.estimatePriceText.Visible = true
 	self.estimatePriceText.TextTransparency = 1
 	self.estimatePriceText.TextStrokeTransparency = 1
@@ -72,7 +73,7 @@ end
 function Customercontroller:UpdateEstimateButtonAppearance()
 	local HasEstimatedCurrentOffer = self.activeOfferId ~= nil and self.estimatedOfferId == self.activeOfferId
 	local IsAvailable = self.estimatesRemaining > 0 and not HasEstimatedCurrentOffer
-	self.estimateCountText.Text = string.format("x%d", self.estimatesRemaining)
+	Translation.Raw(self.estimateCountText, string.format("x%d", self.estimatesRemaining))
 	self.estimateButton.Visible = self:IsVisible()
 	self.estimateButton.Interactable = not HasEstimatedCurrentOffer
 	self.estimateButton.Active = true
@@ -240,7 +241,11 @@ function Customercontroller:ShowOffer(Offer)
 	self.objectLabel.Text = Offer.ObjectName
 	self.rarityText.Text = Rarity.Name
 	self.rarityGradient.Color = Rarity.Gradient
-	self.buyPriceText.Text = if self.activeOfferPrice > 0 then Formatcurrency(Offer.Price) else "Free"
+	if self.activeOfferPrice > 0 then
+		Translation.Raw(self.buyPriceText, Formatcurrency(Offer.Price))
+	else
+		Translation.Set(self.buyPriceText, "Free")
+	end
 	self.iconImage.Image = tostring(Offer.ImageId or "")
 	if HasCachedEstimate then
 		self:RevealEstimate(self.estimatedMaxPrice)
@@ -364,7 +369,11 @@ function Customercontroller:Respond(Decision: string)
 			Core:GetController("MessageController"):Show("Not enough money", ErrorMessageGradient)
 		elseif Reason == "EmergencyOfferPresented" then
 			local Emergencyname = string.lower(Objectconfig.Object[Objectconfig.Offer.EmergencyObject].Name)
-			Core:GetController("MessageController"):Show("You cannot afford this item. Restore this free " .. Emergencyname .. " to recover.", ErrorMessageGradient)
+			Core:GetController("MessageController"):Show(
+				"You cannot afford this item. Restore this free {1} to recover.",
+				ErrorMessageGradient,
+				Translation.Format(Emergencyname)
+			)
 		end
 		return
 	end

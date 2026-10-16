@@ -9,6 +9,7 @@ local Config = require(ReplicatedStorage.Shared.Config.Donation)
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Separatenumber = require(ReplicatedStorage.Shared.Utils.NumberAbbreviator)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
 
 local DonationController = {
@@ -92,9 +93,9 @@ end
 
 function DonationController:AnnounceDonation(Name: string, Amount: number)
 	local Announcement = Config.Announcement
-	local Message = string.gsub(EscapeRichText(Announcement.Text), "{(%a+)}", {
-		Name = string.format('<font color="%s"><b>%s</b></font>', Announcement.NameColor, EscapeRichText(Name)),
-		Amount = string.format('<font color="%s"><b>%s Robux</b></font>', Announcement.AmountColor, Separatenumber(Amount)),
+	local Message = string.gsub(EscapeRichText(Translation.Format(Announcement.Text)), "{(%d+)}", {
+		["1"] = string.format('<font color="%s"><b>%s</b></font>', Announcement.NameColor, EscapeRichText(Name)),
+		["2"] = string.format('<font color="%s"><b>%s Robux</b></font>', Announcement.AmountColor, Separatenumber(Amount)),
 	})
 	TextChatService:WaitForChild("TextChannels"):WaitForChild("RBXGeneral"):DisplaySystemMessage(Message, "Donation")
 end
@@ -112,7 +113,7 @@ function DonationController:Init()
 
 	for _, Product in ipairs(Config.Products) do
 		local Button = self.frame:WaitForChild(tostring(Product.Amount))
-		Button:WaitForChild("Text").Text = RobuxIcon .. Separatenumber(Product.Amount)
+		Translation.Raw(Button:WaitForChild("Text"), RobuxIcon .. Separatenumber(Product.Amount))
 		Shared.AnimateButton(Button, function() return false end)
 		Core:GetController("GamepadController"):OnActivated(Button, function()
 			MarketplaceService:PromptProductPurchase(Player, Product.Id)

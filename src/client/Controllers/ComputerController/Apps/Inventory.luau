@@ -9,6 +9,7 @@ local Mutationconfig = require(ReplicatedStorage.Shared.Config.Mutation)
 local Playershop = require(ReplicatedStorage.Shared.Utils.PlayerShop)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local Uigradient = require(ReplicatedStorage.Shared.Utils.UiGradient)
 local Shared = require(script.Parent.Shared)
 
@@ -38,14 +39,14 @@ local function FillItemStats(Frame: GuiObject, Item)
 	local CashText = Frame:WaitForChild("CashText") :: TextLabel
 	local ReputationText = Frame:WaitForChild("ReputationText") :: TextLabel
 	Icon.Image = tostring(Item.ImageId or "")
-	CashText.Text = Shared.FormatCurrency(Item.CurrentValue or 0)
-	ReputationText.Text = tostring(GetReputation(Item))
+	Translation.Raw(CashText, Shared.FormatCurrency(Item.CurrentValue or 0))
+	Translation.Raw(ReputationText, tostring(GetReputation(Item)))
 end
 
 local function FillItemProgress(Frame: GuiObject, Item)
 	local FrameBar = Frame:WaitForChild("FrameBar")
 	local Percent = GetPercent(Item)
-	FrameBar:WaitForChild("PourcentageText").Text = string.format("%d%%", Percent)
+	Translation.Raw(FrameBar:WaitForChild("PourcentageText"), string.format("%d%%", Percent))
 	FrameBar:WaitForChild("Bar").Size = UDim2.fromScale(Percent / 100, 1)
 end
 
@@ -132,7 +133,7 @@ function Inventory.ShowItemInfo(Controller, Item, Animate: boolean?)
 	Controller.inventoryInfoMutationFrameGradient.Color = if HasMutation
 		then Mutation.BackgroundGradient
 		else Controller.inventoryInfoMutationFrameBaseGradient
-	Controller.inventoryInfoReputationText.Text = tostring(GetReputation(Item))
+	Translation.Raw(Controller.inventoryInfoReputationText, tostring(GetReputation(Item)))
 	local Rainbow = HasMutation and Item.Mutation == "Rainbow"
 	Controller.inventoryRainbowGradients = if Rainbow
 		then { Controller.inventoryInfoMutationGradient, Controller.inventoryInfoMutationFrameGradient }

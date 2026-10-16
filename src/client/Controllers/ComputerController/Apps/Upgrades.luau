@@ -7,6 +7,7 @@ local Customerconfig = require(ReplicatedStorage.Shared.Config.Customer)
 local FormatDuration = require(ReplicatedStorage.Shared.Utils.DurationFormatter)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local Shared = require(script.Parent.Shared)
 
 local Upgrades = {}
@@ -29,10 +30,10 @@ local function LoadRobuxPrice(CardData, ProductId: number)
 	CardData.ProductRequestId = (CardData.ProductRequestId or 0) + 1
 	local RequestId = CardData.ProductRequestId
 	if ProductId <= 0 then
-		CardData.RobuxPriceText.Text = "N/A"
+		Translation.Raw(CardData.RobuxPriceText, "N/A")
 		return
 	end
-	CardData.RobuxPriceText.Text = "..."
+	Translation.Raw(CardData.RobuxPriceText, "...")
 	task.spawn(function()
 		local Success, Info = pcall(function()
 			return MarketplaceService:GetProductInfo(ProductId, Enum.InfoType.Product)
@@ -41,7 +42,7 @@ local function LoadRobuxPrice(CardData, ProductId: number)
 			return
 		end
 		local Price = Success and type(Info) == "table" and tonumber(Info.PriceInRobux) or nil
-		CardData.RobuxPriceText.Text = if Price then string.format("%s%d", RobuxIcon, math.floor(Price)) else "N/A"
+		Translation.Raw(CardData.RobuxPriceText, if Price then string.format("%s%d", RobuxIcon, math.floor(Price)) else "N/A")
 	end)
 end
 
@@ -54,21 +55,24 @@ local function ApplyCard(Controller, UpgradeName: string, State)
 	local WasMax = CardData.IsMaxLevel == true
 	CardData.IsMaxLevel = IsMax
 	local FormatValue = ValueTexts[UpgradeName]
-	CardData.LevelText.Text = if FormatValue
+	Translation.Raw(CardData.LevelText, if FormatValue
 		then FormatValue(State.CurrentValue)
 		elseif State.MaxLevel then string.format("%d/%d", State.Level, State.MaxLevel)
-		else string.format("%d/∞", State.Level)
-	CardData.CashPriceText.Text = if IsMax
-		then "Max"
-		elseif State.CashPrice == 0 then "Free"
-		else Shared.FormatCurrency(State.CashPrice or 0)
+		else string.format("%d/∞", State.Level))
+	if IsMax then
+		Translation.Set(CardData.CashPriceText, "Max")
+	elseif State.CashPrice == 0 then
+		Translation.Set(CardData.CashPriceText, "Free")
+	else
+		Translation.Raw(CardData.CashPriceText, Shared.FormatCurrency(State.CashPrice or 0))
+	end
 	CardData.RobuxButton.Visible = State.CashPrice ~= 0
 	CardData.SecondText.Visible = SecondTexts[UpgradeName] ~= nil and not IsMax
 	local ProductId = tonumber(State.DeveloperProductId) or 0
 	CardData.ProductId = ProductId
 	if IsMax then
 		CardData.ProductRequestId += 1
-		CardData.RobuxPriceText.Text = "Max"
+		Translation.Set(CardData.RobuxPriceText, "Max")
 	elseif WasMax or CardData.LastProductId ~= ProductId then
 		CardData.LastProductId = ProductId
 		LoadRobuxPrice(CardData, ProductId)
@@ -91,7 +95,7 @@ local function BindCard(Controller, UpgradeName: string)
 	local CashButton = Button:WaitForChild("BuyButton")
 	local RobuxButton = Button:WaitForChild("RobuxButton")
 	local SecondText = CashButton:WaitForChild("SecondText")
-	SecondText.Text = SecondTexts[UpgradeName] or ""
+	Translation.Raw(SecondText, SecondTexts[UpgradeName] or "")
 	local CardData = {
 		CashButton = CashButton,
 		RobuxButton = RobuxButton,

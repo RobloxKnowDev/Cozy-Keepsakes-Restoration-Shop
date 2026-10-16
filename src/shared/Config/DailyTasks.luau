@@ -9,7 +9,7 @@ return {
 	Tasks = {
 		BuyItems = {
 			Event = "Buy",
-			Text = "Buy %s items",
+			Text = "Buy {1} items",
 			Tiers = {
 				{ Goal = 3, Reward = 100 },
 				{ Goal = 5, Reward = 175 },
@@ -18,7 +18,7 @@ return {
 		},
 		SpendCash = {
 			Event = "Buy",
-			Text = "Spend %s on items",
+			Text = "Spend {1} on items",
 			Measure = "Value",
 			Currency = true,
 			Tiers = {
@@ -61,7 +61,7 @@ return {
 		},
 		BuyHousehold = {
 			Event = "Buy",
-			Text = "Buy %s household items",
+			Text = "Buy {1} household items",
 			Family = "Household",
 			Tiers = {
 				{ Goal = 2, Reward = 100 },
@@ -70,7 +70,7 @@ return {
 		},
 		CleanDirt = {
 			Event = "Clean",
-			Text = "Clean %s dirt patches",
+			Text = "Clean {1} dirt patches",
 			Tiers = {
 				{ Goal = 6, Reward = 100 },
 				{ Goal = 12, Reward = 175 },
@@ -79,7 +79,7 @@ return {
 		},
 		ScrubWithBrush = {
 			Event = "Clean",
-			Text = "Scrub %s dirt patches with the brush",
+			Text = "Scrub {1} dirt patches with the brush",
 			Tool = "ToothBrush",
 			Tiers = {
 				{ Goal = 4, Reward = 125 },
@@ -88,7 +88,7 @@ return {
 		},
 		WipeWithCotton = {
 			Event = "Clean",
-			Text = "Wipe %s dirt patches with the cotton",
+			Text = "Wipe {1} dirt patches with the cotton",
 			Tool = "CottonTip",
 			Tiers = {
 				{ Goal = 4, Reward = 125 },
@@ -97,7 +97,7 @@ return {
 		},
 		RestoreItems = {
 			Event = "Restore",
-			Text = "Fully restore %s items",
+			Text = "Fully restore {1} items",
 			Tiers = {
 				{ Goal = 2, Reward = 150 },
 				{ Goal = 4, Reward = 250 },
@@ -106,7 +106,7 @@ return {
 		},
 		RestoreInOneGo = {
 			Event = "Restore",
-			Text = "Fully restore %s items in one go",
+			Text = "Fully restore {1} items in one go",
 			FromScratch = true,
 			Tiers = {
 				{ Goal = 2, Reward = 175 },
@@ -115,7 +115,7 @@ return {
 		},
 		RestoreValue = {
 			Event = "Restore",
-			Text = "Restore items worth %s",
+			Text = "Restore items worth {1}",
 			Measure = "Value",
 			Currency = true,
 			Tiers = {
@@ -166,7 +166,7 @@ return {
 		},
 		RestoreHousehold = {
 			Event = "Restore",
-			Text = "Fully restore %s household items",
+			Text = "Fully restore {1} household items",
 			Family = "Household",
 			Tiers = {
 				{ Goal = 2, Reward = 150 },
@@ -175,7 +175,7 @@ return {
 		},
 		SellItems = {
 			Event = "Sell",
-			Text = "Sell %s items",
+			Text = "Sell {1} items",
 			Tiers = {
 				{ Goal = 3, Reward = 150 },
 				{ Goal = 5, Reward = 225 },
@@ -184,7 +184,7 @@ return {
 		},
 		EarnCash = {
 			Event = "Sell",
-			Text = "Earn %s from sales",
+			Text = "Earn {1} from sales",
 			Measure = "Value",
 			Currency = true,
 			Tiers = {
@@ -195,7 +195,7 @@ return {
 		},
 		MakeProfit = {
 			Event = "Sell",
-			Text = "Make %s profit from sales",
+			Text = "Make {1} profit from sales",
 			Measure = "Profit",
 			Currency = true,
 			Tiers = {
@@ -206,7 +206,7 @@ return {
 		},
 		SellValuable = {
 			Event = "Sell",
-			Text = "Sell an item for %s",
+			Text = "Sell an item for {1}",
 			Measure = "Value",
 			Single = true,
 			Currency = true,
@@ -250,7 +250,7 @@ return {
 		},
 		KeepShopOpen = {
 			Event = "Day",
-			Text = "Keep your shop open for %s days",
+			Text = "Keep your shop open for {1} days",
 			Tiers = {
 				{ Goal = 2, Reward = 100 },
 				{ Goal = 4, Reward = 200 },

@@ -9,6 +9,7 @@ local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local InteractionOutline = require(ReplicatedStorage.Shared.Utils.InteractionOutline)
 local PlayerShop = require(ReplicatedStorage.Shared.Utils.PlayerShop)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local UiFade = require(ReplicatedStorage.Shared.Utils.UiFade)
 local DailyTasks = require(script.Apps.DailyTasks)
 local Home = require(script.Apps.Home)
@@ -117,20 +118,20 @@ end
 
 function ComputerController:SyncHeader()
 	if self.cashText and self.hudCashText then
-		self.cashText.Text = self.hudCashText.Text
+		Translation.Raw(self.cashText, self.hudCashText.Text)
 	end
 	if self.dayText and self.hudDayText then
-		self.dayText.Text = self.hudDayText.Text
+		Translation.Raw(self.dayText, self.hudDayText.Text)
 	end
 	if self.timeText and self.hudHourText then
-		self.timeText.Text = self.hudHourText.Text
+		Translation.Raw(self.timeText, self.hudHourText.Text)
 	end
 end
 
 function ComputerController:SetDisplayedComputerCash(Value: number)
 	self.displayedComputerCash = Value
 	if self.cashText then
-		self.cashText.Text = Shared.FormatCurrency(Value)
+		Translation.Raw(self.cashText, Shared.FormatCurrency(Value))
 	end
 end
 

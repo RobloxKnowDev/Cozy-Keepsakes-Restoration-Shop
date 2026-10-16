@@ -6,6 +6,7 @@ local Tweenservice = game:GetService("TweenService")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
+local Translation = require(Replicatedstorage.Shared.Utils.Translation)
 local Uigradient = require(Replicatedstorage.Shared.Utils.UiGradient)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Shared = require(script.Parent.ComputerController.Apps.Shared)
@@ -280,14 +281,14 @@ end
 
 function Controller:FillItemStats(Frame: GuiObject, Item)
 	Frame:WaitForChild("Icon").Image = tostring(Item.ImageId or "")
-	Frame:WaitForChild("CashText").Text = Shared.FormatCurrency(Item.CurrentValue or 0)
-	Frame:WaitForChild("ReputationText").Text = tostring(self:GetBaseReputation(Item))
+	Translation.Raw(Frame:WaitForChild("CashText") :: TextLabel, Shared.FormatCurrency(Item.CurrentValue or 0))
+	Translation.Raw(Frame:WaitForChild("ReputationText") :: TextLabel, tostring(self:GetBaseReputation(Item)))
 end
 
 function Controller:FillItemProgress(Frame: GuiObject, Item)
 	local Framebar = Frame:WaitForChild("FrameBar")
 	local Percent = math.clamp(tonumber(Item.RestorationPercent) or 0, 0, 100)
-	Framebar:WaitForChild("PourcentageText").Text = string.format("%d%%", Percent)
+	Translation.Raw(Framebar:WaitForChild("PourcentageText"), string.format("%d%%", Percent))
 	Framebar:WaitForChild("Bar").Size = UDim2.fromScale(Percent / 100, 1)
 end
 
@@ -342,7 +343,7 @@ function Controller:ShowItemInfo(Item, Animate: boolean?)
 	self.infoMutationText.Text = if Mutation then Mutation.Name else UnknownText
 	self.infoMutationGradient.Color = if Hasmutation then Mutation.Gradient else self.infoMutationBaseGradient
 	self.infoMutationFrameGradient.Color = if Hasmutation then Mutation.BackgroundGradient else self.infoMutationFrameBaseGradient
-	self.infoReputationText.Text = tostring(self:GetBaseReputation(Item))
+	Translation.Raw(self.infoReputationText, tostring(self:GetBaseReputation(Item)))
 	local Rainbow = Hasmutation and Item.Mutation == "Rainbow"
 	self.selectRainbowGradients = if Rainbow then { self.infoMutationGradient, self.infoMutationFrameGradient } else nil
 	self.blackFrame.Visible = true
@@ -577,10 +578,10 @@ function Controller:PlaceDisplayItem(ItemId: number)
 		if type(Response.DisplayItems) == "table" then self:ApplyDisplayItems(Response.DisplayItems, true) end
 		local Grantedreputation = tonumber(Response.GrantedReputation) or 0
 		local Message = if Grantedreputation > 0
-			then "+" .. FormatReputation(Grantedreputation) .. " Luck"
+			then "+{1} Luck"
 			else "Item added to display"
 		Core:GetController("FeedbackController"):PlaySound("SlotItem", 0.15)
-		Core:GetController("MessageController"):Show(Message, ReputationMessageGradient)
+		Core:GetController("MessageController"):Show(Message, ReputationMessageGradient, FormatReputation(Grantedreputation))
 		self:CloseSelectionFrame(false)
 		return
 	end
@@ -617,10 +618,10 @@ function Controller:RemoveDisplayItem(Slotindex: number)
 		Core:GetController("FeedbackController"):Fail()
 		local Removedreputation = tonumber(Response.RemovedReputation) or 0
 		local Message = if Removedreputation > 0
-			then "-" .. FormatReputation(Removedreputation) .. " Luck"
+			then "-{1} Luck"
 			else "Item returned to inventory"
 		local Gradient = if Removedreputation > 0 then ErrorMessageGradient else ReputationMessageGradient
-		Core:GetController("MessageController"):Show(Message, Gradient)
+		Core:GetController("MessageController"):Show(Message, Gradient, FormatReputation(Removedreputation))
 		return
 	end
 
@@ -661,10 +662,10 @@ function Controller:EquipBest()
 		local Grantedreputation = tonumber(Response.GrantedReputation) or 0
 		if (tonumber(Response.Changed) or 0) > 0 then
 			local Message = if Grantedreputation > 0
-				then "+" .. FormatReputation(Grantedreputation) .. " Luck"
+				then "+{1} Luck"
 				else "Best items equipped"
 			Core:GetController("FeedbackController"):PlaySound("SlotItem", 0.15)
-			Core:GetController("MessageController"):Show(Message, ReputationMessageGradient)
+			Core:GetController("MessageController"):Show(Message, ReputationMessageGradient, FormatReputation(Grantedreputation))
 			if Iscurrentrequest then self:CloseSelectionFrame(false) end
 			return
 		end

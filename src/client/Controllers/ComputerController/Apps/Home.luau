@@ -4,6 +4,7 @@ local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local MonetizationConfig = require(ReplicatedStorage.Shared.Config.Monetization)
 local RarityConfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Translation = require(ReplicatedStorage.Shared.Utils.Translation)
 local UiGradient = require(ReplicatedStorage.Shared.Utils.UiGradient)
 local Shared = require(script.Parent.Shared)
 
@@ -27,11 +28,9 @@ function Home.ApplyReputationBoost(State)
 		State.PersonalReputationBoostEndsAt,
 		2,
 		nil,
-		string.format(
-			"x%d on your Luck for %s",
-			MonetizationConfig.StarterPack.ReputationMultiplier,
-			FormatBoostDuration(State.PersonalReputationBoostDuration)
-		)
+		"x{1} on your Luck for {2}",
+		MonetizationConfig.StarterPack.ReputationMultiplier,
+		FormatBoostDuration(State.PersonalReputationBoostDuration)
 	)
 	BoostController:SetBoost("ServerReputationLuck", State.ServerLuckEndsAt, 3, State.ServerLuckMultiplier)
 end
@@ -46,11 +45,9 @@ function Home.ApplyVIP(State)
 		"VIP",
 		1,
 		string.format("+%g%%", MonetizationConfig.VIP.SaleBonusPercent),
-		string.format(
-			"+%g%% on all sales, -%g%% on all purchases",
-			MonetizationConfig.VIP.SaleBonusPercent,
-			MonetizationConfig.VIP.CustomerDiscountPercent
-		)
+		"+{1}% on all sales, -{2}% on all purchases",
+		string.format("%g", MonetizationConfig.VIP.SaleBonusPercent),
+		string.format("%g", MonetizationConfig.VIP.CustomerDiscountPercent)
 	)
 end
 
@@ -69,9 +66,9 @@ end
 
 function Home.ApplyStats(Controller, Stats)
 	local Profit = Stats.DailyProfit or 0
-	Controller.itemsText.Text = tostring(Stats.ItemsSold or 0)
-	Controller.reputationText.Text = tostring(Stats.Reputation or 0)
-	Controller.dailyProfitText.Text = Shared.FormatProfit(Profit)
+	Translation.Raw(Controller.itemsText, tostring(Stats.ItemsSold or 0))
+	Translation.Raw(Controller.reputationText, tostring(Stats.Reputation or 0))
+	Translation.Raw(Controller.dailyProfitText, Shared.FormatProfit(Profit))
 	Controller.dailyProfitGradient.Color = if Profit < 0 then RarityConfig.Mythic.Gradient else Controller.dailyProfitBaseGradient
 end
 

@@ -1,5 +1,8 @@
 local Players = game:GetService("Players")
+local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Tweenservice = game:GetService("TweenService")
+
+local Translation = require(Replicatedstorage.Shared.Utils.Translation)
 
 local Messagecontroller = {
 	Name = "MessageController",
@@ -10,7 +13,7 @@ local Messagetweeninfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingD
 local Messagelifetime = 3
 local White = Color3.fromRGB(255, 255, 255)
 
-function Messagecontroller:Show(Text: string, Gradient: ColorSequence?)
+function Messagecontroller:Show(Text: string, Gradient: ColorSequence?, ...: any)
 	if not self.template then
 		return
 	end
@@ -21,7 +24,7 @@ function Messagecontroller:Show(Text: string, Gradient: ColorSequence?)
 	local Stroke = Label:WaitForChild("UIStroke") :: UIStroke
 	Label.Name = "Message_" .. tostring(Currentmessageid)
 	Label.Visible = true
-	Label.Text = tostring(Text)
+	Translation.Raw(Label, Translation.Format(Text, ...))
 	Label.TextTransparency = 1
 	Label.TextColor3 = if Gradient then White else self.baseTextColor
 	if Gradient then

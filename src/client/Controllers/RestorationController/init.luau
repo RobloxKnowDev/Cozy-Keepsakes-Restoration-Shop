@@ -13,6 +13,7 @@ local Monetizationconfig = require(Replicatedstorage.Shared.Config.Monetization)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Translation = require(Replicatedstorage.Shared.Utils.Translation)
 local Interfacemodule = require(script.Runtime.Interface)
 local Toolruntime = require(script.Runtime.ToolRuntime)
 
@@ -114,7 +115,11 @@ local function Updateprogress(InteractionPosition: Vector2?)
 end
 
 local function Refreshcleanalltext()
-	Interface.CleanAllText.Text = if (Pendingcleanall or 0) > 0 then "Free" else Cleanallprice
+	if (Pendingcleanall or 0) > 0 then
+		Translation.Set(Interface.CleanAllText, "Free")
+	else
+		Translation.Raw(Interface.CleanAllText, Cleanallprice)
+	end
 end
 
 local function Loadcleanallprice()
