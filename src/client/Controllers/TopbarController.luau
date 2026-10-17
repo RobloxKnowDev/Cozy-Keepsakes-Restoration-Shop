@@ -41,8 +41,15 @@ function TopbarController:Start()
 		Core:GetController("LeaderboardController").topbarIcon,
 		Core:GetController("SettingController").topbarIcon,
 	}
+	self.menuCount = #Menuicons
 	self.menuIcon:setMenu(Menuicons)
-	self.menuIcon:modifyTheme({ "Menu", "MaxIcons", #Menuicons })
+	self.menuIcon:modifyTheme({ "Menu", "MaxIcons", self.menuCount })
+end
+
+function TopbarController:AddMenuIcon(Menuicon)
+	Menuicon:joinMenu(self.menuIcon)
+	self.menuCount += 1
+	self.menuIcon:modifyTheme({ "Menu", "MaxIcons", self.menuCount })
 end
 
 return TopbarController

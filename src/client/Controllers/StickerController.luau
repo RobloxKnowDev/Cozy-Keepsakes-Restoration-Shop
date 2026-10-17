@@ -87,6 +87,10 @@ function Stickercontroller:Reset()
 	Core:GetController("FeedbackController"):SetLoop("Sticker", false)
 end
 
+function Stickercontroller:GetPeelDistance(): number
+	return Peeldistance
+end
+
 function Stickercontroller:GetLockedToolPivot(): CFrame?
 	return self.lockedToolPivot
 end

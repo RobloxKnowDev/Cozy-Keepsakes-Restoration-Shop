@@ -170,6 +170,54 @@ local function Applyoverlay(Decal: Decal, Created: EditableImage)
 	end)
 end
 
+local Budgetmessage = "the editable memory budget of this device is full"
+
+local function Neweditable(Size: Vector2): EditableImage
+	local Editable = Assetservice:CreateEditableImage({ Size = Size })
+	assert(Editable, Budgetmessage)
+	return Editable
+end
+
+local Fallbacks: { [Decal]: { Transparency: number, Remaining: number?, Dirty: boolean } } = {}
+
+local function Startfallback(Decal: Decal)
+	Overlaypending[Decal] = false
+	Fallbacks[Decal] = { Transparency = Decal.Transparency, Remaining = nil, Dirty = true }
+end
+
+local function Showfallback(Decal: Decal)
+	local Fallback = Fallbacks[Decal]
+	local Mask = Leftovers[Decal]
+	if not Fallback or not Mask or Decal:GetAttribute("Cleaned") == true then return end
+	local Remaining = 0
+	for Cell = 0, buffer.len(Mask) - 1 do
+		Remaining += buffer.readu8(Mask, Cell)
+	end
+	Fallback.Remaining = Fallback.Remaining or math.max(Remaining, 1)
+	local Cleaned = 1 - math.min(Remaining / Fallback.Remaining, 1)
+	Decal.Transparency = Fallback.Transparency + (1 - Fallback.Transparency) * Cleaned
+end
+
+local function Refreshfallbacks()
+	local Now = os.clock()
+	local Requested = {}
+	for Decal, Fallback in pairs(Fallbacks) do
+		if Fallback.Dirty and #Requested < Maxdirtstrokes and Now - (Leftoverrequests[Decal] or 0) >= Leftoverinterval then
+			Fallback.Dirty = false
+			Leftoverrequests[Decal] = Now
+			table.insert(Requested, Decal)
+		end
+	end
+	if #Requested == 0 then return end
+	task.spawn(function()
+		local Masks = Remotemanager:InvokeServer("RestorationService", "GetLeftovers", Requested)
+		for Index, Decal in ipairs(Requested) do
+			Leftovers[Decal] = Masks[Index]
+			Showfallback(Decal)
+		end
+	end)
+end
+
 local function Shrinkpixels(Source: Pixelsource, Scalex: number, Scaley: number): Pixelsource
 	local Pixels = Source.Pixels
 	local Sourcewidth, Sourceheight = Source.Size.X, Source.Size.Y
@@ -219,6 +267,7 @@ local function Loadsource(Image: string): Pixelsource?
 		Sourceloading[Image] = true
 		local Success, Result = pcall(function()
 			local Editable = Assetservice:CreateEditableImageAsync(Content.fromUri(Image))
+			assert(Editable, Budgetmessage)
 			local Source = { Pixels = Editable:ReadPixelsBuffer(Vector2.zero, Editable.Size), Size = Editable.Size }
 			Editable:Destroy()
 			return Source
@@ -362,7 +411,7 @@ local function Composestain(Stain: Stain, Source: Pixelsource?, Scale: number)
 		return
 	end
 	local Success, Created = pcall(function()
-		return Assetservice:CreateEditableImage({ Size = Vector2.new(Width, Height) })
+		return Neweditable(Vector2.new(Width, Height))
 	end)
 	if not Success then
 		Overlaypending[Decal] = false
@@ -446,7 +495,7 @@ local function Composestain(Stain: Stain, Source: Pixelsource?, Scale: number)
 	Settlesurface(Stain, true)
 end
 
-local function Preloaddecals(Decals: { Decal }, Stains: { Stain })
+local function Preloaddecals(Decals: { Decal }, Stains: { Stain }, Onloaded: () -> ())
 	local Shrinks: { [Decal]: Vector2 } = {}
 	for _, Decal in ipairs(Decals) do
 		Overlaypending[Decal] = true
@@ -525,13 +574,13 @@ local function Preloaddecals(Decals: { Decal }, Stains: { Stain })
 			local Image = Decal.Texture
 			local Source = Sources[Image]
 			if not Source then
-				Overlaypending[Decal] = false
+				Startfallback(Decal)
 			elseif Decal.Parent then
 				local Base = Getscaled(Image, Source, Scale)
 				local Level = Getlevel(Image, Scale, Base, Shrinks[Decal])
 				if Decal.Parent then
 					local Success, Created = pcall(function()
-						local Overlay = Assetservice:CreateEditableImage({ Size = Level.Size })
+						local Overlay = Neweditable(Level.Size)
 						Overlay:WritePixelsBuffer(Vector2.zero, Level.Size, Level.Pixels)
 						return Overlay
 					end)
@@ -539,7 +588,7 @@ local function Preloaddecals(Decals: { Decal }, Stains: { Stain })
 						Applyoverlay(Decal, Created)
 						Overlayscales[Decal] = Level.Size / Base.Size * math.min(Base.Size.X, Base.Size.Y)
 					else
-						Overlaypending[Decal] = false
+						Startfallback(Decal)
 						warn("CleaningController: EditableImage failed for " .. Decal:GetFullName() .. ": " .. tostring(Created))
 					end
 				end
@@ -551,6 +600,7 @@ local function Preloaddecals(Decals: { Decal }, Stains: { Stain })
 		for _, Stain in ipairs(Stains) do
 			Composestain(Stain, Sources[Stain.Texture.Image], Scale)
 		end
+		Onloaded()
 	end)
 end
 
@@ -561,10 +611,12 @@ local function Getoverlayimage(Decal: Decal): EditableImage?
 	Overlaypending[Decal] = true
 	task.spawn(function()
 		local Success, Created = pcall(function()
-			return Assetservice:CreateEditableImageAsync(Content.fromUri(Decal.Texture))
+			local Loaded = Assetservice:CreateEditableImageAsync(Content.fromUri(Decal.Texture))
+			assert(Loaded, Budgetmessage)
+			return Loaded
 		end)
 		if not Success then
-			Overlaypending[Decal] = false
+			Startfallback(Decal)
 			warn("CleaningController: EditableImage failed for " .. Decal:GetFullName() .. ": " .. tostring(Created))
 			return
 		end
@@ -582,6 +634,7 @@ local function Dissolvecells(Decal: Decal, Cells: buffer)
 		table.insert(Indices, Index)
 		if Mask then buffer.writeu8(Mask, Index, 0) end
 	end
+	Showfallback(Decal)
 	if not Editable then return end
 	task.spawn(function()
 		for _, Keep in ipairs(Dissolvekeep) do
@@ -857,6 +910,7 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 	table.clear(Pendingorder)
 	table.clear(Leftovers)
 	table.clear(Leftoverrequests)
+	table.clear(Fallbacks)
 	for _, Stain in pairs(Stainsbydecal) do
 		Stain.Settled = true
 	end
@@ -878,11 +932,6 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 	Object.Destroying:Connect(function()
 		Caster:Destroy()
 	end)
-	if (Object:GetAttribute("DirtVersion") :: number) >= 3 then
-		task.spawn(function()
-			Caster:Load()
-		end)
-	end
 	local Stains = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("Decal") and Stainkinds[Descendant.Name] then
@@ -911,7 +960,11 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 			table.insert(Active, Stain)
 		end
 	end
-	Preloaddecals(Decals, Active)
+	Preloaddecals(Decals, Active, function()
+		if Activecaster == Caster and (Object:GetAttribute("DirtVersion") :: number) >= 3 then
+			Caster:Load()
+		end
+	end)
 end
 
 function Cleaningcontroller:CastSurface(Origin: Vector3, Vector: Vector3): Surfacecast.Hit?
@@ -977,6 +1030,8 @@ function Cleaningcontroller:SendDirt(Toolname: string)
 		local Decal = table.remove(Pendingorder, 1) :: Decal
 		if Decal.Parent and Decal:GetAttribute("Cleaned") ~= true then
 			table.insert(Strokes, { Target = Decal, Points = Pendingdirt[Decal] })
+			local Fallback = Fallbacks[Decal]
+			if Fallback then Fallback.Dirty = true end
 		end
 		Pendingdirt[Decal] = nil
 		Pendingticks[Decal] = nil
@@ -1034,6 +1089,7 @@ function Cleaningcontroller:Start()
 		if #Pendingstainorder > 0 and os.clock() - self.lastCotton >= Cleaninterval then
 			self:SendStain()
 		end
+		Refreshfallbacks()
 	end)
 end
 

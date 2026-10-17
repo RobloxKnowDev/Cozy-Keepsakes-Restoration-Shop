@@ -40,6 +40,9 @@ local Arrowgap = 6
 local Arrowbob = 12
 local Arrowspeed = 6
 local Arrowreach = Arrowgap + Arrowbob + Arrowheight
+local Arrowclearance = 6
+local Compactheight = 540
+local Compactscale = 0.75
 local Edgemargin = 12
 local Textwidth = 320
 local Textheight = 96
@@ -53,7 +56,6 @@ local Behindtext = {
 	Mouse = "It's on the other side! Hold right click and drag!",
 	Gamepad = "It's on the other side! Use the right stick!",
 }
-local Behindhandtext = "Tap the hand to turn it!"
 local Fliptext = { Touch = "Tap to flip it!", Mouse = "Tap to flip it!", Gamepad = "Press Y to flip it!" }
 local Flipdowntext = {
 	Touch = "Dirt underneath! Tap to flip it!",
@@ -86,7 +88,31 @@ local Handswipe = 72
 local Handheightscale = 0.45
 local Scrubreach = 46
 local Pourlift = 54
-local Pullreach = 62
+local Peelstart = Vector2.new(70, 50)
+local Peelapproach = 0.5
+local Peelgrab = 0.3
+local Peelpull = 1
+local Peelhold = 0.4
+local Peelreturn = 0.6
+local Peelcycle = Peelapproach + Peelgrab + Peelpull + Peelhold + Peelreturn
+
+local function Peelease(Alpha: number): number
+	return Tweenservice:GetValue(Alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+end
+
+local function Peeldirection(Center: Vector2, Viewport: Vector2, Peel: number): Vector2
+	if Center.Y >= Peel + Toolsize * 0.5 + Edgemargin then
+		return Vector2.new(0, -1)
+	end
+	local Best, Room = Vector2.new(0, 1), Viewport.Y - Center.Y
+	if Viewport.X - Center.X > Room then
+		Best, Room = Vector2.new(1, 0), Viewport.X - Center.X
+	end
+	if Center.X > Room then
+		Best = Vector2.new(-1, 0)
+	end
+	return Best
+end
 
 local Gestures = {
 	Rotate = {
@@ -126,8 +152,27 @@ local Gestures = {
 	},
 	Tweezers = {
 		Image = "rbxassetid://105078249168346",
-		Motion = function(Time: number): Vector2
-			return Vector2.new(0, -Pullreach * (Time * 0.8 % 1))
+		Motion = function(Time: number, Center: Vector2, Viewport: Vector2): Vector2
+			local Peel = Core:GetController("StickerController"):GetPeelDistance()
+			local Direction = Peeldirection(Center, Viewport, Peel)
+			local Start = Vector2.new(-Direction.Y, Direction.X) * Peelstart.X - Direction * Peelstart.Y
+			local Pulled = Direction * Peel
+			local Phase = Time % Peelcycle
+			if Phase < Peelapproach then
+				return Start:Lerp(Vector2.zero, Peelease(Phase / Peelapproach))
+			end
+			Phase -= Peelapproach + Peelgrab
+			if Phase < 0 then
+				return Vector2.zero
+			end
+			if Phase < Peelpull then
+				return Pulled * Peelease(Phase / Peelpull)
+			end
+			Phase -= Peelpull + Peelhold
+			if Phase < 0 then
+				return Pulled
+			end
+			return Pulled:Lerp(Start, Peelease(Phase / Peelreturn))
 		end,
 	},
 }
@@ -180,6 +225,7 @@ function Tutorialcontroller:Buildgui()
 	self.arrow.BackgroundTransparency = 1
 	self.arrow.BorderSizePixel = 0
 	self.arrow.Size = UDim2.fromOffset(Arrowwidth, Arrowheight)
+	self.arrow.ZIndex = 2
 	self.arrow.Visible = false
 	self.arrow.Parent = self.gui
 	for _, Piece in ipairs(Arrowpieces) do
@@ -506,6 +552,14 @@ function Tutorialcontroller:Placearrow(Position: Vector2?, Size: Vector2?)
 	local Centerx = Position.X + Size.X * 0.5
 	local Centery = if self.arrowUp then Position.Y + Size.Y + Offset else Position.Y - Offset
 	Centerx = math.min(math.max(Centerx, Half.X), math.max(Viewport.X - Half.X, Half.X))
+	local Bubble = self.bubbleRect
+	if Bubble and Centerx + Half.X > Bubble.Left and Centerx - Half.X < Bubble.Right then
+		if self.arrowUp then
+			Centery -= math.clamp(Position.Y + Size.Y + Arrowreach + Arrowclearance - Bubble.Top, 0, Arrowheight)
+		else
+			Centery += math.clamp(Bubble.Bottom + Arrowclearance - Position.Y + Arrowreach, 0, Arrowheight)
+		end
+	end
 	Centery = math.min(math.max(Centery, Half.Y), math.max(Viewport.Y - Half.Y, Half.Y))
 	self.arrow.Position = UDim2.fromOffset(math.floor(Centerx), math.floor(Centery))
 	self.arrow.Rotation = if self.arrowUp then 180 else 0
@@ -513,7 +567,9 @@ end
 
 function Tutorialcontroller:Placebubble(Position: Vector2?, Size: Vector2?)
 	local Viewport = self.gui.AbsoluteSize
-	local Scale = if self.bubbleLarge then Largetextscale else 1
+	local Screenscale = math.clamp(Viewport.Y / Compactheight, Compactscale, 1)
+	local Scale = (if self.bubbleLarge then Largetextscale else 1) * Screenscale
+	self.textSizeConstraint.MaxTextSize = math.floor((if self.bubbleLarge then Largetextsizemax else Textsizemax) * Screenscale)
 	local Keywidth = if self.key.Visible then Keysize + Keygap else 0
 	local Width = math.min((Textwidth + Keywidth) * Scale, Viewport.X - 24)
 	local Height = math.min(Textheight * Scale, Viewport.Y - 24)
@@ -532,6 +588,7 @@ function Tutorialcontroller:Placebubble(Position: Vector2?, Size: Vector2?)
 	Centerx = math.min(math.max(Centerx, Width * 0.5 + 12), math.max(Viewport.X - Width * 0.5 - 12, Width * 0.5 + 12))
 	Bubbley = math.min(math.max(Bubbley, 12), math.max(Viewport.Y - Height - 12, 12))
 	self.bubble.Position = UDim2.fromOffset(Centerx, Bubbley)
+	self.bubbleRect = { Left = Centerx - Width * 0.5, Right = Centerx + Width * 0.5, Top = Bubbley, Bottom = Bubbley + Height }
 end
 
 local function Inputkind(): string
@@ -589,7 +646,7 @@ function Tutorialcontroller:Placehand(Position: Vector2?, Size: Vector2?)
 	local Center = if Position and Size
 		then Position + Size * 0.5
 		else Vector2.new(Viewport.X * 0.5, Viewport.Y * Handheightscale)
-	local Offset = Gestures[self.gesture].Motion(os.clock() - self.gestureStart)
+	local Offset = Gestures[self.gesture].Motion(os.clock() - self.gestureStart, Center, Viewport)
 	self.hand.Position = UDim2.fromOffset(math.floor(Center.X + Offset.X), math.floor(Center.Y + Offset.Y))
 end
 
@@ -633,7 +690,6 @@ function Tutorialcontroller:Showstep(Index: number)
 	end
 	Remotemanager:FireServer(Servicename, "SetStep", Index)
 	self.bubbleLarge = Step.Large == true
-	self.textSizeConstraint.MaxTextSize = if Step.Large then Largetextsizemax else Textsizemax
 	self.text.Text = ""
 	self:Setkey(nil)
 	if Step.OnEnter then
@@ -871,6 +927,32 @@ local function Allclean(): boolean
 		and (tonumber(Object:GetAttribute("CleanedSpots")) or 0) >= (tonumber(Object:GetAttribute("TotalSpots")) or 0)
 end
 
+function Tutorialcontroller:Getswipespot(): Vector2?
+	local Object = Restoration():GetActiveObject()
+	if not Object then
+		return nil
+	end
+	local Position, Size = self:Getworldrect(Object)
+	if not Position or not Size then
+		return nil
+	end
+	local Viewport = self.gui.AbsoluteSize
+	local Interface = Restoration():GetInterface()
+	local Inset = Guiservice:GetGuiInset()
+	local Centery = Position.Y + Size.Y * 0.5
+	local Leftroom = Position.X
+	local Rightroom = Viewport.X - Position.X - Size.X
+	local Margin = Handsize * 0.5 + Handswipe
+	local Right = Vector2.new(math.min(Position.X + Size.X + Rightroom * 0.5, Viewport.X - Margin), Centery)
+	local Left = Vector2.new(math.max(Leftroom * 0.5, Margin), Centery)
+	local Rightfree = not Interface:IsPointerOverUi(Right - Inset)
+	local Leftfree = not Interface:IsPointerOverUi(Left - Inset)
+	if Rightfree ~= Leftfree then
+		return if Rightfree then Right else Left
+	end
+	return if Rightroom >= Leftroom then Right else Left
+end
+
 function Tutorialcontroller:Update()
 	if not self.running then
 		return
@@ -886,16 +968,16 @@ function Tutorialcontroller:Update()
 	local Target = Gettarget(Step.Target)
 	local Position, Size, Behind = self:Resolve(Target)
 	local Kind = Inputkind()
-	local Text, Gesture, Keyimage
+	local Text, Gesture, Keyimage, Handspot
 	if Behind and Facesdown(Target :: Instance) then
 		Position, Size = self:Resolve(Restoration():GetInterface().ReturnButton)
 		Text = Textfor(Fliptext)
-	elseif Behind and Step.Turnhint and Kind == "Touch" and not Toolselected("Transform") then
-		Position, Size = self:Resolve(Toolbutton("Transform"))
-		Text = Behindhandtext
 	elseif Behind and Step.Turnhint then
 		Text, Gesture = Behindtext[Kind], "Rotate"
 		Position, Size = nil, nil
+		if Kind == "Touch" then
+			Handspot = self:Getswipespot()
+		end
 	elseif Step.Tool and not Toolselected(Step.Tool) then
 		local Tool = Firsttool(Step.Tool)
 		Position, Size = self:Resolve(Toolbutton(Tool))
@@ -917,7 +999,11 @@ function Tutorialcontroller:Update()
 	self:Sethand(Gesture)
 	self:Placebubble(Position, Size)
 	self:Placearrow(Position, Size)
-	self:Placehand(Position, Size)
+	if Handspot then
+		self:Placehand(Handspot, Vector2.zero)
+	else
+		self:Placehand(Position, Size)
+	end
 	if Step.MaxSeconds and os.clock() - self.stepStart >= Step.MaxSeconds then
 		self:Showstep(self.index + 1)
 		return
@@ -1033,6 +1119,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Front",
+			Turnhint = true,
 			Tool = Brushtools,
 			Text = "Rub off the dirt!",
 			Gesture = "ToothBrush",
@@ -1045,6 +1132,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Light",
+			Turnhint = true,
 			Tool = "UvTorch",
 			Text = { Touch = "Tap to find hidden dirt!", Mouse = "Click to find hidden dirt!", Gamepad = "Press R2 to find hidden dirt!" },
 			HoldSeconds = 1.5,
@@ -1071,6 +1159,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Bottom",
+			Turnhint = true,
 			Tool = Brushtools,
 			Text = "Rub off the dirt!",
 			Gesture = "ToothBrush",
@@ -1194,6 +1283,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Last",
+			Turnhint = true,
 			Tool = Brushtools,
 			Text = "Rub off the last dirt!",
 			Gesture = "ToothBrush",
@@ -1354,7 +1444,7 @@ end
 
 function Tutorialcontroller:Preparetexts()
 	local Texts = {}
-	for _, Value in ipairs({ Behindtext, Behindhandtext, Fliptext, Flipdowntext, Finishtexts }) do
+	for _, Value in ipairs({ Behindtext, Fliptext, Flipdowntext, Finishtexts }) do
 		Collecttexts(Texts, Value)
 	end
 	for _, Name in pairs(Toolnames) do

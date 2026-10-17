@@ -2,7 +2,9 @@ local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Userinputservice = game:GetService("UserInputService")
 
+local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
+local Icon = require(Replicatedstorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
 
 local Admincontroller = {
 	Name = "AdminController",
@@ -208,7 +210,24 @@ function Admincontroller:Setopen(Open: boolean)
 		self.input:CaptureFocus()
 	else
 		self.input:ReleaseFocus()
+		if self.topbarIcon then
+			self.topbarIcon:deselect()
+		end
 	end
+end
+
+function Admincontroller:Addtopbaricon()
+	local Topbar = Core:GetController("TopbarController")
+	if not Topbar.isPhone then
+		return
+	end
+	self.topbarIcon = Icon.new()
+		:setName("Admin")
+		:setLabel("Admin")
+		:setCaption("Admin Panel")
+	self.topbarIcon.selected:Connect(function() self:Setopen(true) end)
+	self.topbarIcon.deselected:Connect(function() self:Setopen(false) end)
+	Topbar:AddMenuIcon(self.topbarIcon)
 end
 
 function Admincontroller:Submit()
@@ -246,6 +265,7 @@ function Admincontroller:Start()
 		end
 		self.commands = Result.Commands
 		self.options = if type(Result.Options) == "table" then Result.Options else {}
+		self:Addtopbaricon()
 		Userinputservice.InputBegan:Connect(function(Input, Processed)
 			if Processed or Input.KeyCode ~= Togglekey then
 				return
@@ -260,7 +280,7 @@ function Admincontroller:Start()
 		self.input.FocusLost:Connect(function(Entered)
 			if Entered then
 				self:Submit()
-			else
+			elseif not self.topbarIcon then
 				self:Setopen(false)
 			end
 		end)

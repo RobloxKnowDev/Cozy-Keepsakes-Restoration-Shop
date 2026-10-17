@@ -54,6 +54,7 @@ end
 
 local function Loadmesh(Part: MeshPart): MeshEntry
 	local Mesh = Assetservice:CreateEditableMeshAsync(Part.MeshContent)
+	assert(Mesh, "the editable memory budget of this device is full")
 	local Minimum = Vector3.one * math.huge
 	local Maximum = -Minimum
 	for _, Vertex in ipairs(Mesh:GetVertices()) do

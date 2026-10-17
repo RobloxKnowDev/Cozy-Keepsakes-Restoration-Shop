@@ -49,8 +49,9 @@ local function Getlight(Context): Light
 	return Context.Display.Tip:WaitForChild("Light") :: Light
 end
 
-local function Buildhaloimage(): EditableImage
+local function Buildhaloimage(): EditableImage?
 	local Image = Assetservice:CreateEditableImage({ Size = Vector2.new(Haloimagesize, Haloimagesize) })
+	if not Image then return nil end
 	local Pixels = buffer.create(Haloimagesize * Haloimagesize * 4)
 	local Half = Haloimagesize / 2
 	for Y = 0, Haloimagesize - 1 do
@@ -74,12 +75,13 @@ local function Buildhaloimage(): EditableImage
 	return Image
 end
 
-local function Gethalodecal(): Decal
+local function Gethalodecal(): Decal?
 	if Halodecal then return Halodecal end
 	if not Haloimage then Haloimage = Buildhaloimage() end
 	if not Halocanvas then
 		Halocanvas = Assetservice:CreateEditableImage({ Size = Vector2.new(Halocanvassize, Halocanvassize) })
 	end
+	if not Haloimage or not Halocanvas then return nil end
 	local Decal = Instance.new("Decal")
 	Decal.Name = "UvHalo"
 	Decal.TextureContent = Content.fromObject(Halocanvas)
@@ -92,8 +94,9 @@ local function Gethalodecal(): Decal
 	return Decal
 end
 
-local function Buildglowimage(): EditableImage
+local function Buildglowimage(): EditableImage?
 	local Image = Assetservice:CreateEditableImage({ Size = Vector2.new(Glowimagesize, Glowimagesize) })
+	if not Image then return nil end
 	local Pixels = buffer.create(Glowimagesize * Glowimagesize * 4)
 	local Half = Glowimagesize / 2
 	for Y = 0, Glowimagesize - 1 do
@@ -110,11 +113,12 @@ local function Buildglowimage(): EditableImage
 	return Image
 end
 
-local function Getglowdecal(): Decal
+local function Getglowdecal(): Decal?
 	if Glowdecal then return Glowdecal end
 	if not Glowimage then Glowimage = Buildglowimage() end
 	local Canvas = Glowcanvas or Assetservice:CreateEditableImage({ Size = Vector2.new(Halocanvassize, Halocanvassize) })
 	Glowcanvas = Canvas
+	if not Glowimage or not Canvas then return nil end
 	local Decal = Instance.new("Decal")
 	Decal.Name = "UvGlow"
 	Decal.TextureContent = Content.fromObject(Canvas)
@@ -182,10 +186,10 @@ local function Scan(Context)
 		Display.DecalNormal,
 		Leftoverradius
 	)
-	if Leftoverdecal and #Spots > 0 then
-		local Decal = Getglowdecal()
-		Decal.Face = Leftoverdecal.Face
-		Decal.Parent = Leftoverdecal.Parent
+	local Glow = if Leftoverdecal and #Spots > 0 then Getglowdecal() else nil
+	if Glow then
+		Glow.Face = Leftoverdecal.Face
+		Glow.Parent = Leftoverdecal.Parent
 		Drawglow(Spots)
 		Glowtarget = Glowalpha
 	else
@@ -205,6 +209,10 @@ local function Scan(Context)
 	local Extent = 2 * Halopixels / Haloringratio
 	local Size = Vector2.new(Extent * Found.Scale.X, Extent * Found.Scale.Y)
 	local Decal = Gethalodecal()
+	if not Decal then
+		Halotarget.Alpha = 0
+		return
+	end
 	if Halodirt ~= Found.Decal then
 		local Moved = Halodirt == nil or Halodirt.Parent ~= Found.Decal.Parent or Halodirt.Face ~= Found.Decal.Face
 		Halodirt = Found.Decal
