@@ -15,7 +15,7 @@ local Leaderboardservice = {
 }
 
 type Entry = { UserId: number, Value: number }
-type Row = { Frame: GuiObject, Name: TextLabel, Value: TextLabel }
+type Row = { Frame: GuiObject, Name: TextLabel, Value: TextLabel, Verified: ImageLabel }
 type Display = { List: ScrollingFrame, Template: GuiObject, Rows: { Row } }
 
 local Boardorder = { "Reputation", "ItemSold", "Donation" }
@@ -64,6 +64,7 @@ local Stores: { [string]: OrderedDataStore } = {}
 local Entriesbyboard: { [string]: { Entry } } = {}
 local Lastwritten: { [Player]: { [string]: number } } = {}
 local Namesbyuserid: { [number]: string } = {}
+local Verifiedbyuserid: { [number]: boolean } = {}
 local Displaybyboard: { [string]: Display } = {}
 local Pendingwrites = 0
 local Pushscheduled = false
@@ -109,6 +110,7 @@ local function Resolvenames()
 		if Success then
 			for _, Info in ipairs(Infos) do
 				Namesbyuserid[Info.Id] = Info.DisplayName
+				Verifiedbyuserid[Info.Id] = Info.HasVerifiedBadge == true
 			end
 		end
 	end
@@ -126,6 +128,7 @@ local function Createrow(Display: Display, Rank: number): Row
 		Frame = Rowframe,
 		Name = Rowframe:WaitForChild("Name") :: TextLabel,
 		Value = Rowframe:WaitForChild("Value") :: TextLabel,
+		Verified = Rowframe:WaitForChild("Verified") :: ImageLabel,
 	}
 	Display.Rows[Rank] = Row
 	return Row
@@ -139,6 +142,7 @@ local function Renderboards()
 			local Row = Display.Rows[Rank] or Createrow(Display, Rank)
 			Row.Name.Text = Namesbyuserid[Current.UserId] or "..."
 			Row.Value.Text = Valueprefixbyboard[Board] .. Separatenumber(Current.Value)
+			Row.Verified.Visible = Verifiedbyuserid[Current.UserId] == true
 			Row.Frame.Visible = true
 		end
 		for Rank = #Entries + 1, #Display.Rows do
@@ -308,6 +312,8 @@ function Leaderboardservice:Init()
 		local List = Leaderboards:WaitForChild(Modelbyboard[Board]):WaitForChild("SurfaceGui"):WaitForChild("ScrollingFrame") :: ScrollingFrame
 		local Template = List:WaitForChild("Template") :: GuiObject
 		Template.Visible = false
+		local Verified = Template:WaitForChild("Verified") :: ImageLabel
+		Verified.Visible = false
 		for _, Name in ipairs({ "Place", "Name", "Value" }) do
 			local Label = Template:WaitForChild(Name) :: TextLabel
 			Label.AutoLocalize = false

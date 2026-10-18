@@ -41,10 +41,11 @@ return {
 	},
 	BrushMinimumRadius = 0.075,
 	StainBrushScale = 0.6,
+	GamepadBrushScale = 1.5,
 	CleaningSpeed = {
 		BaseCleaningSpeed = 1,
 		TargetCleaningDuration = 85,
-		TutorialCleaningDuration = 20,
+		TutorialCleaningDuration = 8,
 		MinCleaningMultiplier = 0.15,
 		MaxCleaningMultiplier = 4,
 		RarityDuration = {

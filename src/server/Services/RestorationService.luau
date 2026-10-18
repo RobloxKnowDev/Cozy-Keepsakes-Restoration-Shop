@@ -2436,7 +2436,7 @@ function Restorationservice:Init()
 		return true
 	end)
 
-	Remotemanager:OnServerEvent(self.Name, "CleanDirt", function(Player, Toolname, Strokes)
+	Remotemanager:OnServerEvent(self.Name, "CleanDirt", function(Player, Toolname, Strokes, Gamepad)
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Dirttools[Toolname] then return end
 		if type(Strokes) ~= "table" or #Strokes > Maxdirtstrokes then return end
@@ -2444,7 +2444,8 @@ function Restorationservice:Init()
 		if #Strokes == 0 and Ratio < Pingstart then return end
 		if not Allowrequest(Dirtallowance, Player, Dirtburst) then return end
 
-		local Minimumradius = Sessionobject:GetAttribute("BrushRadius") * Brushradii[Toolname] / Brushradii.ToothBrush
+		local Brushscale = if Gamepad == true then Cleaningconfig.GamepadBrushScale else 1
+		local Minimumradius = Sessionobject:GetAttribute("BrushRadius") * Brushradii[Toolname] / Brushradii.ToothBrush * Brushscale
 		local Removeddirt = 0
 		local Seen = {}
 		local Touched = {}
@@ -2461,7 +2462,7 @@ function Restorationservice:Init()
 			then
 				Seen[Target] = true
 				local Opaquepasses = Coveragecellcount * Entry.Passes - Entry.Free
-				local Radius = Facemapping.GetBrushRadius((Target.Parent :: BasePart).Size, Target.Face.Name, Brushradii[Toolname], Minimumradius)
+				local Radius = Facemapping.GetBrushRadius((Target.Parent :: BasePart).Size, Target.Face.Name, Brushradii[Toolname] * Brushscale, Minimumradius)
 				local Newlycovered = Stampcells(Entry, Stroke.Points, Radius)
 				Newlycovered += Settledirt(Player, Target, Entry, Toolname)
 				Removeddirt += Newlycovered * Entry.Units / Opaquepasses

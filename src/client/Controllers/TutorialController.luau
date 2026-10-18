@@ -24,6 +24,7 @@ local Tutorialcontroller = {
 local Servicename = "TutorialService"
 local Stepversion = 2
 local Categorytolerance = 0.97
+local Fronttolerance = 0.85
 local Framenamebykind = { Ink = "Ink", Scratch = "ScratchesFrame" }
 local Arrowgradient = Rarityconfig.Legendary.Gradient
 local Arrowfillcolor = Color3.new(1, 1, 1)
@@ -854,14 +855,21 @@ local function Liquidsdry(): boolean
 end
 
 local function Liquidspot(): Instance?
+	local Hidden = nil
 	for _, Name in ipairs({ "SolventLiquid", "PolishLiquid" }) do
 		local Folder = Liquidfolder(Name)
-		local Drop = if Folder then Folder:FindFirstChildWhichIsA("BasePart") else nil
-		if Drop then
-			return Drop
+		if Folder then
+			for _, Drop in ipairs(Folder:GetChildren()) do
+				if Drop:IsA("BasePart") then
+					if not Isbehindobject(Drop) then
+						return Drop
+					end
+					Hidden = Hidden or Drop
+				end
+			end
 		end
 	end
-	return Restoration():GetActiveObject()
+	return Hidden or Restoration():GetActiveObject()
 end
 
 local function Facedecals(Face: number): { Decal }
@@ -908,7 +916,7 @@ local function Frontdone(): boolean
 	end
 	local Total = tonumber(Object:GetAttribute("Total_Dirt")) or 0
 	local Cleaned = tonumber(Object:GetAttribute("Cleaned_Dirt")) or 0
-	return Cleaned >= Total * Share * Categorytolerance
+	return Cleaned >= Total * Share * Fronttolerance
 end
 
 local function Bottomdone(): boolean
@@ -1123,7 +1131,7 @@ function Tutorialcontroller:Buildsteps()
 			Tool = Brushtools,
 			Text = "Rub off the dirt!",
 			Gesture = "ToothBrush",
-			MaxSeconds = 120,
+			MaxSeconds = 40,
 			Skip = Frontdone,
 			Target = function()
 				return Facedecal(1) or Categorydecal() or Restoration():GetActiveObject()
@@ -1134,13 +1142,13 @@ function Tutorialcontroller:Buildsteps()
 			Id = "Light",
 			Turnhint = true,
 			Tool = "UvTorch",
-			Text = { Touch = "Tap to find hidden dirt!", Mouse = "Click to find hidden dirt!", Gamepad = "Press R2 to find hidden dirt!" },
-			HoldSeconds = 1.5,
-			Skip = Uvtorch.IsLit,
+			Text = { Touch = "Slide over the clock to find hidden dirt!", Mouse = "Click to find hidden dirt!", Gamepad = "Press R2 to find hidden dirt!" },
+			HoldSeconds = 1,
+			Skip = Uvtorch.IsLighting,
 			Target = function()
 				return Facedecals(1)[1] or Restoration():GetActiveObject()
 			end,
-			Done = Uvtorch.IsLit,
+			Done = Uvtorch.IsLighting,
 		},
 		{
 			Id = "Flip",
@@ -1272,6 +1280,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Dry",
+			Turnhint = true,
 			Tool = "HeatGun",
 			Text = { Touch = "Dry it all!", Mouse = "Hold click to dry it all!", Gamepad = "Hold R2 to dry it all!" },
 			Gesture = "HeatGun",

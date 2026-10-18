@@ -101,6 +101,7 @@ local Preloadframebudget = 0.005
 local Overlayradiusratio = 1 / 16
 local Cottonscale = 4 / 3
 local Brushscale = 1.5
+local Gamepadbrushscale = Cleaningconfig.GamepadBrushScale
 local Toothbrushradius = Overlayradiusratio * Brushscale
 local Stainsamplestep = 2
 local Stainspotratio = 0.2
@@ -155,6 +156,14 @@ export type StainCluster = {
 	Amount: number,
 	Spot: number,
 }
+
+local function Usinggamepad(): boolean
+	return Core:GetController("GamepadController"):IsActive()
+end
+
+local function Inputbrushscale(): number
+	return if Usinggamepad() then Gamepadbrushscale else 1
+end
 
 local function Applyoverlay(Decal: Decal, Created: EditableImage)
 	Decal.TextureContent = Content.fromObject(Created)
@@ -1040,7 +1049,7 @@ function Cleaningcontroller:SendDirt(Toolname: string)
 	self.pingPending = false
 	self.lastRequest = os.clock()
 	Fadetick = Fadetick % 65535 + 1
-	Remotemanager:FireServer("RestorationService", "CleanDirt", Toolname, Strokes)
+	Remotemanager:FireServer("RestorationService", "CleanDirt", Toolname, Strokes, Usinggamepad())
 end
 
 function Cleaningcontroller:SendStain(): boolean
@@ -1299,7 +1308,7 @@ end
 function Cleaningcontroller:TryCleanDirt(Hit: Surfacecast.Hit, Toolname: string)
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
 	local Radiusscale = if Toolname == "CottonTip" then Cottonscale else Brushscale
-	if not self:EraseDirtOverlay(Hit.Instance, Hit.Position, Hit.DecalNormal, Radiusscale) then
+	if not self:EraseDirtOverlay(Hit.Instance, Hit.Position, Hit.DecalNormal, Radiusscale * Inputbrushscale()) then
 		self:QueuePing(Hit.Position)
 	end
 	self:SendDirt(Toolname)
@@ -1309,7 +1318,7 @@ function Cleaningcontroller:TryCleanCotton(Hit: Surfacecast.Hit)
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
 	self.lastCotton = os.clock()
 	local Stained = self:EraseStains(Hit.Instance, Hit.Position, Hit.DecalNormal)
-	if not self:EraseDirtOverlay(Hit.Instance, Hit.Position, Hit.DecalNormal, Cottonscale) and not Stained then
+	if not self:EraseDirtOverlay(Hit.Instance, Hit.Position, Hit.DecalNormal, Cottonscale * Inputbrushscale()) and not Stained then
 		self:QueuePing(Hit.Position)
 	end
 	self:SendCotton()

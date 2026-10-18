@@ -1,5 +1,6 @@
 local Assetservice = game:GetService("AssetService")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
+local Userinputservice = game:GetService("UserInputService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 
@@ -21,6 +22,7 @@ local Halosmoothing = 16
 local Halobreathspeed = 2.4
 local Halobreathamount = 0.04
 local Lit = false
+local Lighting = false
 local Lastscan = 0
 local Lastupdate = os.clock()
 local Halocanvassize = 256
@@ -43,6 +45,14 @@ local Glowstate = 0
 
 function Uvtorch.IsLit(): boolean
 	return Lit
+end
+
+function Uvtorch.IsLighting(): boolean
+	return Lighting
+end
+
+local function Touching(): boolean
+	return Userinputservice:GetLastInputType() == Enum.UserInputType.Touch
 end
 
 local function Getlight(Context): Light
@@ -175,7 +185,8 @@ end
 local function Scan(Context)
 	local Display = Context.Display
 	local Light = Getlight(Context)
-	if not (Light.Enabled and Context.Object and Display.OnObject) then
+	Lighting = Light.Enabled and Context.Object ~= nil and Display.OnObject
+	if not Lighting then
 		Halotarget.Alpha = 0
 		Glowtarget = 0
 		return
@@ -264,13 +275,18 @@ local function Animatehalo(Deltatime: number)
 end
 
 function Uvtorch.OnSelected(Context)
-	Lit = false
-	Getlight(Context).Enabled = false
+	Lit = Touching()
+	Lighting = false
+	Getlight(Context).Enabled = Lit
 	Lastupdate = os.clock()
 	Hidehalo()
+	if Lit then
+		Core:GetController("FeedbackController"):PlaySound("UvTorch")
+	end
 end
 
 function Uvtorch.OnInputBegan(Context)
+	if Touching() then return end
 	local Light = Getlight(Context)
 	Light.Enabled = not Light.Enabled
 	Lit = Light.Enabled
@@ -296,6 +312,7 @@ end
 
 function Uvtorch.OnDeselected()
 	Lit = false
+	Lighting = false
 	Hidehalo()
 end
 
