@@ -25,6 +25,40 @@ local SecondTexts = {
 	PurchaseDiscount = "-1%",
 	CooldownReduction = string.format("-%ds", Customerconfig.SecondsPerCooldownLevel),
 }
+local CardNames = {
+	"PriceEstimation",
+	"DailyCustomers",
+	"PurchaseDiscount",
+	"DisplaySpace",
+	"CooldownReduction",
+}
+local PeekCard = 3
+local PeekShare = 0.5
+
+local function FitCards(Controller)
+	local Scrolling = Controller.upgradesScrollingFrame
+	local Grid = Controller.upgradesGridLayout
+	local Columns = Grid.AbsoluteCellCount.X
+	local Window = Scrolling.AbsoluteWindowSize.Y
+	if Columns <= 0 or Window <= 0 then
+		return
+	end
+	local Cards = {}
+	for _, Name in ipairs(CardNames) do
+		table.insert(Cards, Scrolling:WaitForChild(Name) :: GuiObject)
+	end
+	table.sort(Cards, function(Left: GuiObject, Right: GuiObject): boolean
+		if Left.AbsolutePosition.Y ~= Right.AbsolutePosition.Y then
+			return Left.AbsolutePosition.Y < Right.AbsolutePosition.Y
+		end
+		return Left.AbsolutePosition.X < Right.AbsolutePosition.X
+	end)
+	local Row = math.ceil(PeekCard / Columns) - 1
+	local First = Cards[1].AbsolutePosition.Y
+	local Top = First - Scrolling.AbsolutePosition.Y + Scrolling.CanvasPosition.Y
+	local Gap = if Row > 0 then (Cards[PeekCard].AbsolutePosition.Y - First) / Row - Grid.AbsoluteCellSize.Y else 0
+	Grid.CellSize = UDim2.new(Grid.CellSize.X, UDim.new(0, (Window - Top - Row * Gap) / (Row + PeekShare)))
+end
 
 local function LoadRobuxPrice(CardData, ProductId: number)
 	CardData.ProductRequestId = (CardData.ProductRequestId or 0) + 1
@@ -160,13 +194,7 @@ function Upgrades.Init(Controller)
 	Controller.upgradesGridLayout = Controller.upgradesScrollingFrame:WaitForChild("UIGridLayout")
 	Controller.upgradeCards = {}
 	Controller.upgradeState = {}
-	for _, Name in ipairs({
-		"PriceEstimation",
-		"DailyCustomers",
-		"PurchaseDiscount",
-		"DisplaySpace",
-		"CooldownReduction",
-	}) do
+	for _, Name in ipairs(CardNames) do
 		BindCard(Controller, Name)
 	end
 end
@@ -176,6 +204,13 @@ function Upgrades.Start(Controller)
 		Controller.upgradesScrollingFrame.CanvasSize =
 			UDim2.fromOffset(0, Controller.upgradesGridLayout.AbsoluteContentSize.Y)
 	end)
+	Controller.upgradesGridLayout:GetPropertyChangedSignal("AbsoluteCellCount"):Connect(function()
+		FitCards(Controller)
+	end)
+	Controller.upgradesScrollingFrame:GetPropertyChangedSignal("AbsoluteWindowSize"):Connect(function()
+		FitCards(Controller)
+	end)
+	FitCards(Controller)
 	RemoteManager:OnClientEvent("UpgradeService", "UpgradesUpdated", function(State)
 		Upgrades.Apply(Controller, State)
 	end)

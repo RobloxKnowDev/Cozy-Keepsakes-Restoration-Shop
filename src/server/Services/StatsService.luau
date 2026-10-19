@@ -18,6 +18,8 @@ type PlayerStats = {
 	Reputation: number,
 	RankedReputation: number,
 	RobuxDonated: number,
+	PlayTime: number,
+	JoinedAt: number,
 	DailyProfit: number,
 	LastDay: number,
 }
@@ -40,6 +42,8 @@ function Statsservice:EnsurePlayer(Player: Player): PlayerStats
 			Reputation = 0,
 			RankedReputation = 0,
 			RobuxDonated = 0,
+			PlayTime = 0,
+			JoinedAt = os.clock(),
 			DailyProfit = 0,
 			LastDay = GetCurrentDay(Player),
 		}
@@ -92,6 +96,7 @@ function Statsservice:AddItemsSold(Player: Player, Amount: number)
 	if Stats.ItemsSold >= 10 then
 		Core:GetService("FunnelService"):LogEarly(Player, "TenItemsSold")
 	end
+	Core:GetService("BadgeAwardService"):Check(Player)
 	self:PushStats(Player)
 end
 
@@ -117,6 +122,7 @@ end
 
 function Statsservice:SetRankedReputation(Player: Player, Amount: number)
 	self:EnsurePlayer(Player).RankedReputation = math.max(RoundCurrency(Amount), 0)
+	Core:GetService("BadgeAwardService"):Check(Player)
 end
 
 function Statsservice:Init()
@@ -127,6 +133,7 @@ function Statsservice:Init()
 			Stats.Reputation = math.max(tonumber(Saved.Reputation) or 0, 0)
 			Stats.RankedReputation = math.max(tonumber(Saved.RankedReputation) or 0, 0)
 			Stats.RobuxDonated = math.max(tonumber(Saved.RobuxDonated) or 0, 0)
+			Stats.PlayTime = math.max(tonumber(Saved.PlayTime) or 0, 0)
 			Stats.DailyProfit = 0
 			Stats.LastDay = GetCurrentDay(Player)
 			self:PushStats(Player)
@@ -138,6 +145,7 @@ function Statsservice:Init()
 				Reputation = Stats.Reputation,
 				RankedReputation = Stats.RankedReputation,
 				RobuxDonated = Stats.RobuxDonated,
+				PlayTime = math.floor(Stats.PlayTime + os.clock() - Stats.JoinedAt),
 			}
 		end,
 		Clear = function(Player)

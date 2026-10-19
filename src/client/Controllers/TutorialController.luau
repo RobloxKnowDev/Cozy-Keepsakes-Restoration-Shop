@@ -14,7 +14,6 @@ local Upgradesconfig = require(Replicatedstorage.Shared.Config.Upgrades)
 local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
 local Stainlayout = require(Replicatedstorage.Shared.Utils.StainLayout)
 local Translation = require(Replicatedstorage.Shared.Utils.Translation)
-local Uvtorch = require(script.Parent.RestorationController.UvTorch)
 
 local Tutorialcontroller = {
 	Name = "TutorialController",
@@ -57,6 +56,11 @@ local Behindtext = {
 	Mouse = "It's on the other side! Hold right click and drag!",
 	Gamepad = "It's on the other side! Use the right stick!",
 }
+local Tilttext = {
+	Touch = "It's on top! Swipe down to see it!",
+	Mouse = "It's on top! Hold right click and drag down!",
+	Gamepad = "It's on top! Push the right stick down!",
+}
 local Fliptext = { Touch = "Tap to flip it!", Mouse = "Tap to flip it!", Gamepad = "Press Y to flip it!" }
 local Flipdowntext = {
 	Touch = "Dirt underneath! Tap to flip it!",
@@ -65,14 +69,19 @@ local Flipdowntext = {
 }
 local Finishtexts = { Clean = "All clean! Tap to finish.", Partial = "Tap to finish." }
 local Downfacing = -0.8
+local Upfacing = 0.8
 local Handimage = "rbxassetid://116068912861302"
 local Mouseimage = "rbxassetid://123373213717142"
 local Gamepadimage = "rbxassetid://133575975410772"
 local Turnimages = { Touch = Handimage, Mouse = Mouseimage, Gamepad = Gamepadimage }
+local Tiltimages = {
+	Touch = "rbxassetid://113613120259082",
+	Mouse = "rbxassetid://130914886140948",
+	Gamepad = "rbxassetid://120810455415199",
+}
 local Toolnames = {
 	ToothBrush = "brush",
 	CottonTip = "cotton",
-	UvTorch = "UV torch",
 	Transform = "hand",
 	Tweezers = "tweezers",
 	Solvent = "solvent",
@@ -96,6 +105,8 @@ local Peelpull = 1
 local Peelhold = 0.4
 local Peelreturn = 0.6
 local Peelcycle = Peelapproach + Peelgrab + Peelpull + Peelhold + Peelreturn
+local Tiltstroke = 1.1
+local Tiltpause = 0.5
 
 local function Peelease(Alpha: number): number
 	return Tweenservice:GetValue(Alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
@@ -117,8 +128,16 @@ end
 
 local Gestures = {
 	Rotate = {
+		Images = Turnimages,
 		Motion = function(Time: number): Vector2
 			return Vector2.new(math.sin(Time * 1.6) * Handswipe, 0)
+		end,
+	},
+	Tilt = {
+		Images = Tiltimages,
+		Motion = function(Time: number): Vector2
+			local Alpha = math.min(Time % (Tiltstroke + Tiltpause) / Tiltstroke, 1)
+			return Vector2.new(0, (Peelease(Alpha) - 0.5) * Handswipe * 2)
 		end,
 	},
 	HeatGun = {
@@ -473,20 +492,29 @@ local function Isbehindobject(Target: BasePart): boolean
 	return Visibleside:Dot(Workspace.CurrentCamera.CFrame.Position - Target.Position) <= 0
 end
 
-local function Facesdown(Target: Instance): boolean
-	local Normal
+local function Targetnormal(Target: Instance): Vector3?
 	if Target:IsA("Decal") then
-		Normal = (Target.Parent :: BasePart).CFrame:VectorToWorldSpace(Vector3.FromNormalId(Target.Face))
-	elseif Target:IsA("BasePart") then
-		local Image = Target:FindFirstChildWhichIsA("Decal") or Target:FindFirstChildWhichIsA("SurfaceGui")
-		Normal = if Image then Target.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Image.Face)) else Thinaxis(Target)
-	elseif Target:IsA("ImageLabel") and Isstaintexture(Target) then
-		local Layout = Stainlayouts[Target] or Stainlayout.GetLayout(Target)
-		Normal = Layout.Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Layout.Face))
-	else
-		return false
+		return (Target.Parent :: BasePart).CFrame:VectorToWorldSpace(Vector3.FromNormalId(Target.Face))
 	end
-	return Normal.Y < Downfacing
+	if Target:IsA("BasePart") then
+		local Image = Target:FindFirstChildWhichIsA("Decal") or Target:FindFirstChildWhichIsA("SurfaceGui")
+		return if Image then Target.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Image.Face)) else Thinaxis(Target)
+	end
+	if Target:IsA("ImageLabel") and Isstaintexture(Target) then
+		local Layout = Stainlayouts[Target] or Stainlayout.GetLayout(Target)
+		return Layout.Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Layout.Face))
+	end
+	return nil
+end
+
+local function Facesdown(Target: Instance): boolean
+	local Normal = Targetnormal(Target)
+	return Normal ~= nil and Normal.Y < Downfacing
+end
+
+local function Facesup(Target: Instance): boolean
+	local Normal = Targetnormal(Target)
+	return Normal ~= nil and Normal.Y > Upfacing
 end
 
 function Tutorialcontroller:Getworldrect(Target: Model | BasePart): (Vector2?, Vector2?)
@@ -631,7 +659,7 @@ function Tutorialcontroller:Sethand(Gesture: string?)
 	self.gestureKind = Kind
 	self.gestureStart = os.clock()
 	local Definition = if Gesture then Gestures[Gesture] else nil
-	local Image = if Definition then Definition.Image or Turnimages[Kind] else ""
+	local Image = if Definition then Definition.Image or Definition.Images[Kind] else ""
 	self.hand.Image = Image
 	self.hand.Size = if Definition and Definition.Image
 		then UDim2.fromOffset(Toolsize, Toolsize)
@@ -705,6 +733,7 @@ function Tutorialcontroller:Finish()
 	self.running = false
 	self:Sethand(nil)
 	self.gui.Enabled = false
+	Core:GetController("ComputerController"):SetHighlighted(false)
 	Core:GetController("ComputerController"):SetSellLocked(false)
 	Core:GetController("RestorationController"):GetInterface():SetContinueLocked(false)
 	Remotemanager:FireServer(Servicename, "Complete")
@@ -974,6 +1003,8 @@ function Tutorialcontroller:Update()
 	end
 	Restoration():GetInterface():SetContinueLocked(Step.AllowFinish ~= true)
 	local Target = Gettarget(Step.Target)
+	local Computer = Core:GetController("ComputerController")
+	Computer:SetHighlighted(Target ~= nil and Target == Computer.computer)
 	local Position, Size, Behind = self:Resolve(Target)
 	local Kind = Inputkind()
 	local Text, Gesture, Keyimage, Handspot
@@ -981,7 +1012,9 @@ function Tutorialcontroller:Update()
 		Position, Size = self:Resolve(Restoration():GetInterface().ReturnButton)
 		Text = Textfor(Fliptext)
 	elseif Behind and Step.Turnhint then
-		Text, Gesture = Behindtext[Kind], "Rotate"
+		local Tilt = Facesup(Target :: Instance)
+		Text = if Tilt then Tilttext[Kind] else Behindtext[Kind]
+		Gesture = if Tilt then "Tilt" else "Rotate"
 		Position, Size = nil, nil
 		if Kind == "Touch" then
 			Handspot = self:Getswipespot()
@@ -1076,7 +1109,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Computer",
-			Text = "Open your computer.",
+			Text = { Touch = "Tap your computer!", Mouse = "Click your computer!", Gamepad = "Open your computer." },
 			Checkpoint = true,
 			Target = function()
 				return Core:GetController("ComputerController").computer
@@ -1137,18 +1170,6 @@ function Tutorialcontroller:Buildsteps()
 				return Facedecal(1) or Categorydecal() or Restoration():GetActiveObject()
 			end,
 			Done = Frontdone,
-		},
-		{
-			Id = "Light",
-			Turnhint = true,
-			Tool = "UvTorch",
-			Text = { Touch = "Slide over the clock to find hidden dirt!", Mouse = "Click to find hidden dirt!", Gamepad = "Press R2 to find hidden dirt!" },
-			HoldSeconds = 1,
-			Skip = Uvtorch.IsLighting,
-			Target = function()
-				return Facedecals(1)[1] or Restoration():GetActiveObject()
-			end,
-			Done = Uvtorch.IsLighting,
 		},
 		{
 			Id = "Flip",
@@ -1453,7 +1474,7 @@ end
 
 function Tutorialcontroller:Preparetexts()
 	local Texts = {}
-	for _, Value in ipairs({ Behindtext, Fliptext, Flipdowntext, Finishtexts }) do
+	for _, Value in ipairs({ Behindtext, Tilttext, Fliptext, Flipdowntext, Finishtexts }) do
 		Collecttexts(Texts, Value)
 	end
 	for _, Name in pairs(Toolnames) do

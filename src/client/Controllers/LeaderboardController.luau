@@ -1,4 +1,7 @@
 local Replicatedstorage = game:GetService("ReplicatedStorage")
+local Runservice = game:GetService("RunService")
+local Userinputservice = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Icon = require(Replicatedstorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
@@ -10,6 +13,30 @@ local Leaderboardcontroller = {
 }
 
 local Cameras = { "CamRobux", "CamSold", "CamReputation" }
+local Boards = { "Robux", "Sold", "Reputation" }
+local Stickdeadzone = 0.2
+local Windowspersecond = 1.2
+
+function Leaderboardcontroller:GetList(Index: number): ScrollingFrame
+	local Leaderboards = Workspace:WaitForChild("Map"):WaitForChild("Leaderboards")
+	return Leaderboards:WaitForChild(Boards[Index]):WaitForChild("SurfaceGui"):WaitForChild("ScrollingFrame") :: ScrollingFrame
+end
+
+function Leaderboardcontroller:Scroll(Deltatime: number)
+	local Direction = (if Userinputservice:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, Enum.KeyCode.DPadDown) then 1 else 0)
+		- (if Userinputservice:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, Enum.KeyCode.DPadUp) then 1 else 0)
+	if math.abs(self.stick) > Stickdeadzone then
+		Direction -= math.sign(self.stick) * (math.abs(self.stick) - Stickdeadzone) / (1 - Stickdeadzone)
+	end
+	if Direction == 0 then
+		return
+	end
+	local List = self:GetList(self.cameraIndex)
+	local Window = List.AbsoluteWindowSize.Y
+	local Maximum = math.max(List.AbsoluteCanvasSize.Y - Window, 0)
+	local Next = math.clamp(List.CanvasPosition.Y + Direction * Window * Windowspersecond * Deltatime, 0, Maximum)
+	List.CanvasPosition = Vector2.new(List.CanvasPosition.X, Next)
+end
 
 function Leaderboardcontroller:IsOpen(): boolean
 	return self.isOpen == true
@@ -61,6 +88,17 @@ end
 function Leaderboardcontroller:Init()
 	self.isOpen = false
 	self.cameraIndex = 1
+	self.stick = 0
+	Userinputservice.InputChanged:Connect(function(Input)
+		if Input.KeyCode == Enum.KeyCode.Thumbstick2 then
+			self.stick = Input.Position.Y
+		end
+	end)
+	Runservice.RenderStepped:Connect(function(Deltatime)
+		if self:IsOpen() then
+			self:Scroll(Deltatime)
+		end
+	end)
 	self.topbarIcon = Icon.new()
 		:setName("Leaderboards")
 		:setImage(self.topbarImage)

@@ -1305,6 +1305,10 @@ function Cleaningcontroller:TryApplyScratchPolish(Part: BasePart, Worldposition:
 	return Found
 end
 
+function Cleaningcontroller:DryStain(Target: Instance)
+	Remotemanager:FireServer("RestorationService", "DryStain", Target)
+end
+
 function Cleaningcontroller:TryCleanDirt(Hit: Surfacecast.Hit, Toolname: string)
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
 	local Radiusscale = if Toolname == "CottonTip" then Cottonscale else Brushscale

@@ -7,7 +7,6 @@ return {
 		"Card",
 		"Clean",
 		"Front",
-		"Light",
 		"Flip",
 		"Bottom",
 		"Unflip",

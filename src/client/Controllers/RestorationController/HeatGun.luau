@@ -18,20 +18,45 @@ local function Setemitter(Context, Enabled: boolean)
 	Emitter.Enabled = Enabled
 end
 
+local function Iswet(Spots: Instance, Stain: Instance): boolean
+	for _, Foldername in ipairs(Liquidfolders) do
+		local Folder = Spots:FindFirstChild(Foldername)
+		if Folder then
+			for _, Drop in ipairs(Folder:GetChildren()) do
+				local Target = Drop:FindFirstChild("StainTarget") :: ObjectValue?
+				if Target and Target.Value == Stain then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
 local function Cleanliquid(Context)
 	local Display = Context.Display
 	if not Context.Object or not Display.OnObject or not Display.SurfacePosition then
 		return
 	end
 	local Spots = Context.Object:WaitForChild("RestorationSpots")
+	local Heated: { [Instance]: boolean } = {}
 	for _, Foldername in ipairs(Liquidfolders) do
 		local Folder = Spots:FindFirstChild(Foldername)
 		if Folder then
 			for _, Drop in ipairs(Folder:GetChildren()) do
 				if Drop:IsA("BasePart") and (Drop.Position - Display.SurfacePosition).Magnitude <= Cleanradius then
+					local Target = Drop:FindFirstChild("StainTarget") :: ObjectValue?
+					if Target and Target.Value then
+						Heated[Target.Value] = true
+					end
 					Drop:Destroy()
 				end
 			end
+		end
+	end
+	for Stain in pairs(Heated) do
+		if not Iswet(Spots, Stain) then
+			Core:GetController("CleaningController"):DryStain(Stain)
 		end
 	end
 end

@@ -36,7 +36,8 @@ local function Depositliquid(
 	Object: Model | BasePart,
 	Surface: BasePart,
 	Surfaceposition: Vector3,
-	Surfacenormal: Vector3
+	Surfacenormal: Vector3,
+	Target: ImageLabel?
 )
 	local Diameter = math.random(62, 82) / 100
 	local Puddle = Instance.new("Part")
@@ -61,6 +62,12 @@ local function Depositliquid(
 	Puddle.CFrame = CFrame.fromMatrix(Surfaceposition + Normal * (0.009 / Sizescale), Normal, Tangent)
 		* CFrame.Angles(math.rad(math.random(0, 359)), 0, 0)
 	Puddle.Parent = Liquidfolder(Object)
+	if Target then
+		local Staintarget = Instance.new("ObjectValue")
+		Staintarget.Name = "StainTarget"
+		Staintarget.Value = Target
+		Staintarget.Parent = Puddle
+	end
 
 	local Weld = Instance.new("WeldConstraint")
 	Weld.Part0 = Surface
@@ -99,7 +106,7 @@ function Polish.OnUpdate(Context)
 	if not Display.OnObject or not Surface or not Surface:IsA("BasePart") or not Position or not Normal then
 		return
 	end
-	Cleaningcontroller:TryApplyScratchPolish(Surface, Position, Display.DecalNormal)
+	local Target = Cleaningcontroller:TryApplyScratchPolish(Surface, Position, Display.DecalNormal)
 	if os.clock() - Lastpourtime < Pourinterval then
 		return
 	end
@@ -108,7 +115,7 @@ function Polish.OnUpdate(Context)
 	end
 	Lastpourtime = os.clock()
 	Lastpuddleposition = Position
-	Depositliquid(Context.Object, Surface, Position, Normal)
+	Depositliquid(Context.Object, Surface, Position, Normal, Target)
 	Core:GetController("FeedbackController"):PlaySound("Solvent", 0.08)
 end
 

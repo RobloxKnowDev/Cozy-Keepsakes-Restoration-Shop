@@ -79,7 +79,7 @@ local Claimedsections = {
 	FreeReward = true,
 }
 local Knownfields = {
-	Stats = { ItemsSold = true, Reputation = true, RankedReputation = true, RobuxDonated = true },
+	Stats = { ItemsSold = true, Reputation = true, RankedReputation = true, RobuxDonated = true, PlayTime = true },
 	Upgrades = { Levels = true, EstimatesUsed = true, EstimateDay = true },
 	Inventory = { Items = true, Index = true },
 	Restoration = { PendingCleanAll = true },
@@ -832,6 +832,7 @@ local function Moneysummary(Lines: { string }, Context: any)
 		table.insert(Parts, "reputation " .. Amount(Stats.Reputation))
 		table.insert(Parts, "sold " .. Amount(Stats.ItemsSold))
 		table.insert(Parts, "donated R$" .. Amount(Stats.RobuxDonated))
+		table.insert(Parts, if Stats.PlayTime == nil then "play time not tracked yet" else "played " .. Span(Number(Stats.PlayTime)))
 	end
 	if #Parts > 0 then
 		Addjoined(Lines, "", Parts, " | ")
@@ -1190,6 +1191,12 @@ local function Statsview(Lines: { string }, Context: any)
 	)
 	table.insert(Lines, "Items sold " .. Amount(Stats.ItemsSold) .. " (sold at 1% or more)")
 	table.insert(Lines, "Robux donated R$" .. Amount(Stats.RobuxDonated))
+	table.insert(
+		Lines,
+		if Stats.PlayTime == nil
+			then "Play time not tracked yet (counted from the next session)"
+			else "Play time " .. Span(Number(Stats.PlayTime)) .. " (sessions since the play time update)"
+	)
 	Leftovers(Lines, Context, "Stats")
 end
 

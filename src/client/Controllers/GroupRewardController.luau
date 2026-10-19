@@ -54,10 +54,20 @@ function GroupRewardController:RefreshClaim()
 	self.claimCover.Visible = false
 end
 
+function GroupRewardController:CanPopup(): boolean
+	return Player:GetAttribute("FreeRewardClaimed") == false
+		and not self:IsClaimed()
+		and not self:IsOpen()
+		and not Core:GetController("TutorialController").running
+		and Core:GetController("GamepadController"):IsIdle()
+		and Core:GetController("InspectionCameraController"):IsIntroCameraReady()
+end
+
 function GroupRewardController:Open()
 	if self:IsOpen() then
 		return
 	end
+	self.nextPopup = os.clock() + Config.PopupSeconds
 	Core:GetController("SettingController"):CloseForSwitch()
 	Core:GetController("DailyRewardController"):CloseForSwitch()
 	Core:GetController("DonationController"):CloseForSwitch()
@@ -220,9 +230,14 @@ function GroupRewardController:Start()
 			self:RefreshClaim()
 		end
 	end)
+	self.nextPopup = os.clock() + Config.FirstPopupSeconds
 	task.spawn(function()
 		while true do
 			self:RefreshClaim()
+			if os.clock() >= self.nextPopup and self:CanPopup() then
+				self.nextPopup = os.clock() + Config.PopupSeconds
+				self.topbarIcon:select()
+			end
 			task.wait(1)
 		end
 	end)

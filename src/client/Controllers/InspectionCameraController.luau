@@ -42,6 +42,17 @@ local Framingfactor = 0.95
 local Minimumdistance = 2.5
 local Cameraclearance = 0.5
 local Maxorbitpitch = math.rad(0)
+local Zoom = 0
+local Zoomgoal = 0
+local Zoomratio = 0.5
+local Wheelzoomstep = 0.2
+local Pinchzoomspeed = 1.4
+local Padzoomspeed = 1.2
+local Pinching = false
+local Pinchzoomstart = 0
+local Viewtouches: { [InputObject]: boolean } = {}
+local Boundslocal = CFrame.identity
+local Boundshalf = Vector3.one
 local Boundsoffset = Vector3.zero
 local Boundsradius = 1
 local Objectselected = false
@@ -149,6 +160,20 @@ local function Framingdistance(): number
 	return math.max(Boundsradius / math.sin(math.min(Halfvertical, Halfhorizontal)) * Framingfactor, Minimumdistance)
 end
 
+local function Cleardistance(Box: CFrame, Direction: Vector3): number
+	local Low, High = 0, Boundsradius + Cameraclearance
+	for _ = 1, 12 do
+		local Middle = (Low + High) * 0.5
+		local Localpoint = Box:PointToObjectSpace(Box.Position + Direction * Middle)
+		if (Localpoint - Localpoint:Max(-Boundshalf):Min(Boundshalf)).Magnitude >= Cameraclearance then
+			High = Middle
+		else
+			Low = Middle
+		end
+	end
+	return High
+end
+
 local function Verticalhalfextent(Object: InspectionTarget): number
 	if Object:IsA("Model") then
 		local _, Boundssize = Object:GetBoundingBox()
@@ -205,7 +230,7 @@ function Controller:FlipObject()
 end
 
 function Controller:IsDragging(): boolean
-	return Dragging or Stickdragging
+	return Dragging or Stickdragging or Pinching
 end
 
 function Controller:IsIntroCameraReady(): boolean
@@ -398,9 +423,14 @@ function Controller:Begin(Object: InspectionTarget)
 	Orbittravel = 0
 	Rotatetravel = 0
 	Flipcount = 0
+	Zoom = 0
+	Zoomgoal = 0
+	Pinching = false
 
 	local Boundscframe, Boundssize = Objectbounds(Object)
-	Boundsoffset = Objectpivot(Object):PointToObjectSpace(Boundscframe.Position)
+	Boundslocal = Objectpivot(Object):ToObjectSpace(Boundscframe)
+	Boundsoffset = Boundslocal.Position
+	Boundshalf = Boundssize * 0.5
 	Boundsradius = Boundssize.Magnitude * 0.5
 	Distance = Framingdistance()
 	Safecameradistance = Distance
@@ -424,6 +454,8 @@ function Controller:PrepareCompletion()
 	end
 	Enabled = false
 	Completionview = true
+	Zoomgoal = 0
+	Pinching = false
 	Enddrag()
 	Setobjectselected(false)
 end
@@ -434,6 +466,7 @@ function Controller:End()
 	Introcameraactive = false
 	Cameratransitionactive = false
 	CancelIntroCameraTween()
+	Pinching = false
 	Enddrag()
 	Setobjectselected(false)
 	Target = nil
@@ -488,7 +521,8 @@ function Controller:Start()
 		end
 
 		if Istouch then
-			if Dragging then
+			Viewtouches[Input] = true
+			if Dragging or Pinching then
 				return
 			end
 			local Ontarget = Ispointerontarget(Position)
@@ -514,9 +548,15 @@ function Controller:Start()
 		end
 	end)
 
-	Userinputservice.InputChanged:Connect(function(Input)
+	Userinputservice.InputChanged:Connect(function(Input, Processed)
 		if Input.KeyCode == Enum.KeyCode.Thumbstick2 then
 			Stick = Vector2.new(Input.Position.X, Input.Position.Y)
+			return
+		end
+		if Input.UserInputType == Enum.UserInputType.MouseWheel then
+			if not Processed and Target and not Completionview then
+				Zoomgoal = math.clamp(Zoomgoal + Input.Position.Z * Wheelzoomstep, 0, 1)
+			end
 			return
 		end
 		if not Target or Completionview or Cameratransitionactive then
@@ -551,6 +591,8 @@ function Controller:Start()
 	end)
 
 	local function Canceldrag()
+		table.clear(Viewtouches)
+		Pinching = false
 		if Dragging then
 			Enddrag()
 		end
@@ -558,7 +600,28 @@ function Controller:Start()
 	Userinputservice.WindowFocusReleased:Connect(Canceldrag)
 	Guiservice.MenuOpened:Connect(Canceldrag)
 
+	Userinputservice.TouchPinch:Connect(function(_, Scale, _, State, Processed)
+		if State == Enum.UserInputState.Begin then
+			local Count = 0
+			for _ in pairs(Viewtouches) do
+				Count += 1
+			end
+			Pinching = not Processed and Target ~= nil and not Completionview and Count >= 2
+			if Pinching then
+				Pinchzoomstart = Zoomgoal
+				Enddrag()
+			end
+		elseif State == Enum.UserInputState.Change then
+			if Pinching then
+				Zoomgoal = math.clamp(Pinchzoomstart + math.log(Scale) * Pinchzoomspeed, 0, 1)
+			end
+		else
+			Pinching = false
+		end
+	end)
+
 	Userinputservice.InputEnded:Connect(function(Input)
+		Viewtouches[Input] = nil
 		if not Dragging then
 			return
 		end
@@ -603,10 +666,20 @@ function Controller:Start()
 		Adjustedy = Currentposition.Y + (Desiredobjecty - Currentposition.Y) * Heightalpha
 		Pivotobject(Target, CFrame.new(Currentposition.X, Adjustedy, Currentposition.Z) * Objectpivot(Target).Rotation)
 
-		local Focus = Objectpivot(Target) * Boundsoffset
+		local Padzoom = (if Userinputservice:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, Enum.KeyCode.DPadUp) then 1 else 0)
+			- (if Userinputservice:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, Enum.KeyCode.DPadDown) then 1 else 0)
+		if Padzoom ~= 0 and not Completionview then
+			Zoomgoal = math.clamp(Zoomgoal + Padzoom * Padzoomspeed * Deltatime, 0, 1)
+		end
+		Zoom += (Zoomgoal - Zoom) * (1 - math.exp(-12 * Deltatime))
+
+		local Box = Objectpivot(Target) * Boundslocal
+		local Focus = Box.Position
 		local Orbit = CFrame.fromEulerAnglesYXZ(Pitch, Yaw, 0)
 		local Orbitdirection = Orbit:VectorToWorldSpace(Vector3.new(0, 0, 1))
-		local Direction = Orbitdirection * Distance
+		local Clearance = Cleardistance(Box, Orbitdirection)
+		local Zoomeddistance = Distance + (math.max(Distance * Zoomratio, Clearance) - Distance) * Zoom
+		local Direction = Orbitdirection * Zoomeddistance
 		local Params = RaycastParams.new()
 		Params.FilterType = Enum.RaycastFilterType.Exclude
 		Params.FilterDescendantsInstances = { Target, Player.Character, Generateditems }
@@ -620,7 +693,7 @@ function Controller:Start()
 		if Plancollision and (not Collision or Plancollision.Distance < Collision.Distance) then
 			Collision = Plancollision
 		end
-		local Alloweddistance = Distance
+		local Alloweddistance = Zoomeddistance
 		if Collision then
 			Alloweddistance = math.max(Collision.Distance - 0.45, 0.15)
 		end
@@ -630,8 +703,7 @@ function Controller:Start()
 			local Collisionalpha = 1 - math.exp(-8 * Deltatime)
 			Safecameradistance += (Alloweddistance - Safecameradistance) * Collisionalpha
 		end
-		local Clearradius = Boundsradius + Cameraclearance
-		Safecameradistance = math.max(Safecameradistance, Clearradius)
+		Safecameradistance = math.max(Safecameradistance, Clearance)
 		local Safeposition = Focus + Orbitdirection * Safecameradistance
 		local Desiredcamera = CFrame.lookAt(Safeposition, Focus)
 		if Cameratransitionactive then
@@ -652,8 +724,9 @@ function Controller:Start()
 			Camera.CFrame = Camera.CFrame:Lerp(Desiredcamera, Alpha)
 		end
 		local Camerafromcenter = Camera.CFrame.Position - Focus
-		if Camerafromcenter.Magnitude < Clearradius then
-			Camera.CFrame = CFrame.new(Focus + Camerafromcenter.Unit * Clearradius) * Camera.CFrame.Rotation
+		local Minimum = Cleardistance(Box, Camerafromcenter.Unit)
+		if Camerafromcenter.Magnitude < Minimum then
+			Camera.CFrame = CFrame.new(Focus + Camerafromcenter.Unit * Minimum) * Camera.CFrame.Rotation
 		end
 	end)
 end

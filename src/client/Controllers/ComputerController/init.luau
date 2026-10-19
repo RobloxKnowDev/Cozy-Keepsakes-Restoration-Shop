@@ -91,8 +91,20 @@ function ComputerController:IsComputerAtPosition(ScreenPosition: Vector2?, Expan
 	return false
 end
 
+function ComputerController:SetHighlighted(Value: boolean)
+	self.highlighted = Value
+end
+
 function ComputerController:UpdateOutline()
-	if not self:CanOpen() or UserInputService:GetLastInputType() == Enum.UserInputType.Touch then
+	if not self:CanOpen() then
+		self:SetOutlinedComputer(nil)
+		return
+	end
+	if self.highlighted then
+		self:SetOutlinedComputer(self.computer)
+		return
+	end
+	if UserInputService:GetLastInputType() == Enum.UserInputType.Touch then
 		self:SetOutlinedComputer(nil)
 		return
 	end

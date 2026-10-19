@@ -63,10 +63,10 @@ local function Depositliquid(
 		* CFrame.Angles(math.rad(math.random(0, 359)), 0, 0)
 	Puddle.Parent = Liquidfolder(Object)
 	if Target then
-		local Inktarget = Instance.new("ObjectValue")
-		Inktarget.Name = "InkTarget"
-		Inktarget.Value = Target
-		Inktarget.Parent = Puddle
+		local Staintarget = Instance.new("ObjectValue")
+		Staintarget.Name = "StainTarget"
+		Staintarget.Value = Target
+		Staintarget.Parent = Puddle
 	end
 
 	local Weld = Instance.new("WeldConstraint")

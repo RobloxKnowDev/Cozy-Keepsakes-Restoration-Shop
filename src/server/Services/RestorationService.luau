@@ -25,6 +25,7 @@ local Restorationservice = {
 		BeginPeel = "Function",
 		ApplyInkSolvent = "Event",
 		ApplyScratchPolish = "Event",
+		DryStain = "Event",
 		CleanInk = "Event",
 		CleanDirt = "Event",
 		GetLeftovers = "Function",
@@ -48,11 +49,12 @@ local Maxcleanpoints = 32
 local Maxdirtstrokes = 8
 local Finishassist = Cleaningconfig.FinishAssist
 local Pingstart = math.min(Finishassist.Start, Finishassist.StallStart)
-local Dirtversion = 6
+local Dirtversion = 7
 local Scratchversion = 5
 local Meshcastversion = 3
 local Mindirtshareversion = 4
 local Tutorialfacesversion = 6
+local Dirtpatternversion = 7
 local Tutorialminimumcells = 64
 local Tutorialfacenames = { Config.Offer.TutorialDirtFace, Config.Offer.TutorialBottomFace }
 local Stickerfacingdot = 0.5
@@ -1398,10 +1400,10 @@ local function Facearea(Decal: Decal): number
 	return Size.X * Size.Y * Size.Z / math.abs(Vector3.FromNormalId(Decal.Face):Dot(Size))
 end
 
-local function Pickdirttexture(Generator: Random, Excludedpattern: string?)
+local function Pickdirttexture(Generator: Random, Excludedpattern: string?, Patterns: { string }?)
 	local Choices = {}
 	for _, Texture in ipairs(Cleaningconfig.DirtTextures) do
-		if Texture.Pattern ~= Excludedpattern then
+		if Texture.Pattern ~= Excludedpattern and (not Patterns or table.find(Patterns, Texture.Pattern)) then
 			table.insert(Choices, Texture)
 		end
 	end
@@ -1461,6 +1463,7 @@ local function Initializedirt(
 	local Generator = Random.new(Seed)
 	local Styled = Version >= 2 and not Singleface
 	local Tutorialfaces = Singleface and Version >= Tutorialfacesversion
+	local Patterns = if Version >= Dirtpatternversion then Config.Object[Object.Name].DirtPatterns else nil
 	local Decals = {}
 	for _, Descendant in ipairs(Object:GetDescendants()) do
 		if Descendant:IsA("Decal") and Dirtdecalnames[Descendant.Name] then
@@ -1484,7 +1487,7 @@ local function Initializedirt(
 			return Facearea(Left) > Facearea(Right)
 		end)
 		for _, Decal in ipairs(Decals) do
-			local Texture = Pickdirttexture(Generator, nil)
+			local Texture = Pickdirttexture(Generator, nil, Patterns)
 			Decal.Texture = Texture.Image
 			Decal.ZIndex = Texture.ZIndex
 		end
@@ -1525,7 +1528,7 @@ local function Initializedirt(
 	local Mindirtshare = if Singleface or Version < Mindirtshareversion then 0 else Cleaningconfig.MinDirtShare
 	for _, Decal in ipairs(Decals) do
 		local Wanted = Kept < Keptcount or Keptarea < Totalarea * Mindirtshare
-		local Texture = if Styled and Wanted then Pickdirttexture(Generator, nil) else nil
+		local Texture = if Styled and Wanted then Pickdirttexture(Generator, nil, Patterns) else nil
 		if Texture then
 			Decal.Texture = Texture.Image
 			Decal.ZIndex = Texture.ZIndex
@@ -1544,7 +1547,7 @@ local function Initializedirt(
 			Decal:SetAttribute("Cleaned", false)
 			Totaldirt += 16
 			if Texture and Layers < Cleaningconfig.MaxDirtLayers and Generator:NextNumber() < Cleaningconfig.DirtLayerChance then
-				local Layertexture = Pickdirttexture(Generator, Texture.Pattern)
+				local Layertexture = Pickdirttexture(Generator, Texture.Pattern, Patterns)
 				local Layer = Decal:Clone()
 				Layer.Texture = Layertexture.Image
 				Layer.ZIndex = Layertexture.ZIndex
@@ -2045,6 +2048,19 @@ local function Applyliquid(Player: Player, Kind: string, Target: any)
 	end
 end
 
+local function Dryliquid(Player: Player, Target: any)
+	local Sessionobject = Sessions[Player]
+	if not Sessionobject then
+		return
+	end
+	for _, Entry in pairs(Coverage[Sessionobject]) do
+		if Entry.Source == Target and Stainkinds[Entry.Kind] then
+			Target:SetAttribute(Stainkinds[Entry.Kind].Liquid, false)
+			return
+		end
+	end
+end
+
 local function Createspots(Object: RestorationObject, Singleface: boolean, Seed: number, Version: number)
 	Coverage[Object] = {}
 	Warmmasks(Object)
@@ -2399,6 +2415,10 @@ function Restorationservice:Init()
 
 	Remotemanager:OnServerEvent(self.Name, "ApplyScratchPolish", function(Player, Target)
 		Applyliquid(Player, "Scratch", Target)
+	end)
+
+	Remotemanager:OnServerEvent(self.Name, "DryStain", function(Player, Target)
+		Dryliquid(Player, Target)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "CleanInk", function(Player, Target, Points)

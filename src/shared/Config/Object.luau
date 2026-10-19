@@ -242,6 +242,7 @@ return {
 			Rarity = "Epic",
 			Reputation = 50,
 			Sticker = true,
+			DirtPatterns = { "Splashes", "Clumps" },
 			Rotation = Vector3.new(0, 0, 0),
 		},
 		AntiqueSafe = {
