@@ -44,7 +44,7 @@ local Dirtburst = 3
 local Stainburst = 16
 local Coveragegridwidth = Cleaningconfig.CoverageGrid
 local Coveragecellcount = Coveragegridwidth * Coveragegridwidth
-local Brushradii = { CottonTip = 1 / 12, ToothBrush = 3 / 32 }
+local Brushradii = { CottonTip = 1 / 16, ToothBrush = 3 / 32 }
 local Maxcleanpoints = 32
 local Maxdirtstrokes = 8
 local Finishassist = Cleaningconfig.FinishAssist
@@ -1568,7 +1568,11 @@ local function Initializedirt(
 		end
 	end
 	local Speed = Cleaningconfig.CleaningSpeed
-	local Target = Speed.TargetCleaningDuration * Speed.RarityDuration[Object:GetAttribute("Rarity")] * Keptarea / Totalarea
+	local Target = Speed.TargetCleaningDuration
+		* Speed.RarityDuration[Object:GetAttribute("Rarity")]
+		* (Config.Object[Object.Name].CleaningDuration or 1)
+		* Keptarea
+		/ Totalarea
 	local Dirttarget = math.max(Target - (Spotseconds or 0), Target * Dirttargetfloor)
 	local Step = if Tutorialfaces
 		then Dirtstep(Keptentries, Footprints, Speed.TutorialCleaningDuration)

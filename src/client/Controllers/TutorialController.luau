@@ -70,6 +70,8 @@ local Flipdowntext = {
 local Finishtexts = { Clean = "All clean! Tap to finish.", Partial = "Tap to finish." }
 local Downfacing = -0.8
 local Upfacing = 0.8
+local Raisedelay = 8
+local Raisepitch = math.rad(-65)
 local Handimage = "rbxassetid://116068912861302"
 local Mouseimage = "rbxassetid://123373213717142"
 local Gamepadimage = "rbxassetid://133575975410772"
@@ -1006,6 +1008,16 @@ function Tutorialcontroller:Update()
 	local Computer = Core:GetController("ComputerController")
 	Computer:SetHighlighted(Target ~= nil and Target == Computer.computer)
 	local Position, Size, Behind = self:Resolve(Target)
+	if Step.RaiseCamera and Target and Inspection():IsShowingBack() and Facesup(Target :: Instance) then
+		self.raiseSince = self.raiseSince or os.clock()
+		if not self.raised and os.clock() - self.raiseSince >= Raisedelay then
+			self.raised = true
+			Inspection():RaiseCamera(Raisepitch)
+		end
+	else
+		self.raiseSince = nil
+		self.raised = false
+	end
 	local Kind = Inputkind()
 	local Text, Gesture, Keyimage, Handspot
 	if Behind and Facesdown(Target :: Instance) then
@@ -1189,6 +1201,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Bottom",
 			Turnhint = true,
+			RaiseCamera = true,
 			Tool = Brushtools,
 			Text = "Rub off the dirt!",
 			Gesture = "ToothBrush",

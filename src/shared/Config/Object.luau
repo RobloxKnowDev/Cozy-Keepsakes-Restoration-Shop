@@ -265,6 +265,7 @@ return {
 			Rarity = "Legendary",
 			Reputation = 110,
 			Sticker = true,
+			DirtPatterns = { "Splashes", "Clumps" },
 			Rotation = Vector3.new(0, -90, 0),
 		},
 		AntiqueTelescope = {
@@ -320,6 +321,8 @@ return {
 			Rarity = "Mythic",
 			Reputation = 240,
 			Sticker = false,
+			DirtPatterns = { "Splashes", "Clumps" },
+			CleaningDuration = 0.7,
 			Rotation = Vector3.new(0, 0, 0),
 		},
 		MeteoriteFragment = {

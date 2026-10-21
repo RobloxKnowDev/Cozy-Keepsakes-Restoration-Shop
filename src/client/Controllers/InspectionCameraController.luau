@@ -42,6 +42,10 @@ local Framingfactor = 0.95
 local Minimumdistance = 2.5
 local Cameraclearance = 0.5
 local Maxorbitpitch = math.rad(0)
+local Raisegoal: number? = nil
+local Raisestart = 0
+local Raiseelapsed = 0
+local Raiseduration = 1.5
 local Zoom = 0
 local Zoomgoal = 0
 local Zoomratio = 0.5
@@ -227,6 +231,15 @@ function Controller:FlipObject()
 	Showingback = not Showingback
 	Flipcount += 1
 	Objectrotationgoal = Originalobjectrotation * (Showingback and CFrame.Angles(math.pi, 0, 0) or CFrame.identity)
+end
+
+function Controller:RaiseCamera(Goal: number)
+	if Pitch <= Goal then
+		return
+	end
+	Raisegoal = Goal
+	Raisestart = Pitch
+	Raiseelapsed = 0
 end
 
 function Controller:IsDragging(): boolean
@@ -420,6 +433,7 @@ function Controller:Begin(Object: InspectionTarget)
 	local Look = (Mapcamera:WaitForChild("CamPart") :: BasePart).CFrame.LookVector
 	Yaw = math.atan2(-Look.X, -Look.Z)
 	Pitch = math.rad(-38)
+	Raisegoal = nil
 	Orbittravel = 0
 	Rotatetravel = 0
 	Flipcount = 0
@@ -492,6 +506,7 @@ local function Applystick(Deltatime: number)
 		return
 	end
 	Cameratransitionactive = false
+	Raisegoal = nil
 	local Yawdelta = Direction.X * Stickorbitspeed * Deltatime
 	local Pitchdelta = Direction.Y * Stickorbitspeed * Deltatime
 	Yaw -= Yawdelta
@@ -583,6 +598,7 @@ function Controller:Start()
 					Rotatetravel += math.abs(Delta.X * 0.003)
 				end
 			elseif Dragmode == "OrbitCamera" then
+				Raisegoal = nil
 				Yaw -= Delta.X * 0.008
 				Pitch = math.clamp(Pitch - Delta.Y * 0.008, math.rad(-82), Maxorbitpitch)
 				Orbittravel += math.abs(Delta.X * 0.008) + math.abs(Delta.Y * 0.008)
@@ -639,6 +655,14 @@ function Controller:Start()
 			return
 		end
 		Applystick(Deltatime)
+		if Raisegoal then
+			Raiseelapsed += Deltatime
+			local Progress = math.clamp(Raiseelapsed / Raiseduration, 0, 1)
+			Pitch = Raisestart + (Raisegoal - Raisestart) * Tweenservice:GetValue(Progress, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+			if Progress >= 1 then
+				Raisegoal = nil
+			end
+		end
 
 		local Alpha = 1 - math.exp(-18 * Deltatime)
 		if Objectrotationgoal then
