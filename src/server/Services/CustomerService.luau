@@ -68,6 +68,7 @@ type CustomerOffer = {
 	MaxReputation: number,
 	Mutation: string,
 	Emergency: boolean,
+	Starter: boolean,
 }
 type ShopStop = {
 	Shop: Instance,
@@ -124,6 +125,9 @@ local States: { [Player]: ShopState } = {}
 local Pendingskips: { [Player]: number } = {}
 local Offerbags: { [Player]: { [string]: { string } } } = {}
 local Commonstreaks: { [Player]: number } = {}
+local Starterpurchases: { [Player]: number } = {}
+local Startersteps: { [Player]: number } = {}
+local Laststarterpurchase = Customerconfig.StarterOffers[#Customerconfig.StarterOffers].Purchase
 local Passerbys: { [Folder]: Passerby } = {}
 local Passersby = 0
 local CustomerSerial = 0
@@ -566,7 +570,9 @@ local function Buildwardrobe(Player: Player)
 end
 
 local function Isquickvisit(State: ShopState): boolean
-	return State.Quickreturn or Core:GetService("TutorialService"):IsRunning(State.Player)
+	return State.Quickreturn
+		or Core:GetService("TutorialService"):IsRunning(State.Player)
+		or Starterpurchases[State.Player] < Customerconfig.QuickStarterPurchases
 end
 
 local function GetWaitInterval(State: ShopState): number
@@ -729,10 +735,19 @@ local function Rollrarity(Chances: { [string]: number }): string
 	error("CustomerService: no object available for offers")
 end
 
-local function ChooseObject(Player: Player, DiscountPercent: number): (string, number)
+local function ChooseObject(Player: Player, DiscountPercent: number): (string, number, any)
 	if Core:GetService("TutorialService"):IsActive(Player) then
 		Takefrombag(Player, Objectconfig.Offer.TutorialObject)
-		return Objectconfig.Offer.TutorialObject, Rollprice(Objectconfig.Offer.TutorialObject)
+		return Objectconfig.Offer.TutorialObject, Rollprice(Objectconfig.Offer.TutorialObject), nil
+	end
+	local Starter = Customerconfig.StarterOffers[Startersteps[Player]]
+	if Starter and Starterpurchases[Player] + 1 >= Starter.Purchase then
+		local Affordable = math.floor(Core:GetService("CashService"):GetCash(Player) * Customerconfig.StarterPriceShare)
+		local Price = math.min(Rollprice(Peekbag(Player, Starter.Rarity)), Affordable)
+		if Price >= Starter.Floor then
+			Commonstreaks[Player] = 0
+			return Drawfrombag(Player, Starter.Rarity), Price, Starter
+		end
 	end
 	local Reputation = Core:GetService("StatsService"):GetStats(Player).Reputation
 	local Chances = GetOfferChances(Reputation)
@@ -754,15 +769,15 @@ local function ChooseObject(Player: Player, DiscountPercent: number): (string, n
 		BasePrice = Rollprice(Peekbag(Player, Rarity))
 	end
 	Commonstreaks[Player] = if Rarity == "Common" then Commonstreaks[Player] + 1 else 0
-	return Drawfrombag(Player, Rarity), BasePrice
+	return Drawfrombag(Player, Rarity), BasePrice, nil
 end
 
 local function ChooseCustomerRequest(Player: Player): CustomerOffer
 	local DiscountPercent = GetDiscountPercent(Player)
-	local ObjectKey, BasePrice = ChooseObject(Player, DiscountPercent)
+	local ObjectKey, BasePrice, Starter = ChooseObject(Player, DiscountPercent)
 	local Definition = Objectconfig.Object[ObjectKey]
 	OfferSerial += 1
-	local Maximums = Core:GetService("RestorationService"):GenerateObjectMaximums(ObjectKey)
+	local Maximums = Core:GetService("RestorationService"):GenerateObjectMaximums(ObjectKey, if Starter then Starter.Mutation else nil)
 
 	return {
 		Id = OfferSerial,
@@ -775,6 +790,7 @@ local function ChooseCustomerRequest(Player: Player): CustomerOffer
 		MaxReputation = Maximums.MaxReputation,
 		Mutation = Maximums.Mutation,
 		Emergency = false,
+		Starter = Starter ~= nil,
 	}
 end
 
@@ -795,6 +811,7 @@ local function ChooseEmergencyRequest(Player: Player): CustomerOffer
 		MaxReputation = Maximums.MaxReputation,
 		Mutation = Maximums.Mutation,
 		Emergency = true,
+		Starter = false,
 	}
 end
 
@@ -984,6 +1001,9 @@ local function OpenShop(Player: Player)
 	}
 	Commonstreaks[Player] = Commonstreaks[Player] or 0
 	Offerbags[Player] = Offerbags[Player] or {}
+	local Newprofile = Core:GetService("DataService"):IsNewProfile(Player)
+	Starterpurchases[Player] = Starterpurchases[Player] or (if Newprofile then 0 else Laststarterpurchase)
+	Startersteps[Player] = Startersteps[Player] or (if Newprofile then 1 else #Customerconfig.StarterOffers + 1)
 	States[Player] = State
 	Setpendingskips(Player, Pendingskips[Player] or 0)
 	ReplicateCustomerCount(State)
@@ -1031,12 +1051,16 @@ function Customerservice:Init()
 			Pendingskips[Player] = if Count == Count and math.abs(Count) ~= math.huge then math.max(math.floor(Count), 0) else 0
 			Commonstreaks[Player] = math.max(math.floor(tonumber(Saved.CommonStreak) or 0), 0)
 			Offerbags[Player] = Loadbags(Saved.OfferBags or {})
+			Starterpurchases[Player] = math.max(math.floor(tonumber(Saved.StarterPurchases) or Laststarterpurchase), 0)
+			Startersteps[Player] = math.max(math.floor(tonumber(Saved.StarterStep) or #Customerconfig.StarterOffers + 1), 1)
 		end,
 		Save = function(Player)
 			return {
 				PendingSkips = Pendingskips[Player] or 0,
 				CommonStreak = Commonstreaks[Player] or 0,
 				OfferBags = Offerbags[Player] or {},
+				StarterPurchases = Starterpurchases[Player] or Laststarterpurchase,
+				StarterStep = Startersteps[Player] or #Customerconfig.StarterOffers + 1,
 			}
 		end,
 		Clear = function(Player)
@@ -1044,6 +1068,8 @@ function Customerservice:Init()
 			Pendingskips[Player] = nil
 			Commonstreaks[Player] = nil
 			Offerbags[Player] = nil
+			Starterpurchases[Player] = nil
+			Startersteps[Player] = nil
 		end,
 	})
 	for _, Player in ipairs(Players:GetPlayers()) do
@@ -1103,13 +1129,19 @@ function Customerservice:Init()
 					Reason = "EmergencyOfferPresented",
 				}
 			end
-			Core:GetService("InventoryService"):AddPurchasedItem(Player, Offer.ObjectKey, {
+			local Purchaseditem = Core:GetService("InventoryService"):AddPurchasedItem(Player, Offer.ObjectKey, {
 				MaxValue = Offer.MaxValue,
 				MaxReputation = Offer.MaxReputation,
 				Mutation = Offer.Mutation,
 			}, Offer.Price)
 			Core:GetService("TutorialService"):MarkObjectBought(Player)
-			Core:GetService("FunnelService"):LogAfterTutorial(Player, "FirstOffer")
+			Core:GetService("FunnelService"):RecordPurchase(Player, Objectconfig.Object[Offer.ObjectKey].Rarity)
+			if not Core:GetService("TutorialService"):IsActive(Player) then
+				Starterpurchases[Player] = math.min(Starterpurchases[Player] + 1, Laststarterpurchase)
+			end
+			if Offer.Starter then
+				Startersteps[Player] += 1
+			end
 			if not Offer.Emergency then
 				Core:GetService("DailyTaskService"):Record(Player, "Buy", {
 					ObjectKey = Offer.ObjectKey,
@@ -1122,6 +1154,8 @@ function Customerservice:Init()
 			Walkaway(State)
 			return {
 				Success = true,
+				ItemId = Purchaseditem.Id,
+				ObjectKey = Purchaseditem.ObjectKey,
 			}
 		end
 
@@ -1158,6 +1192,10 @@ end
 
 function Customerservice:RefreshCustomerLimit()
 	RefreshCustomerCounts()
+end
+
+function Customerservice:GetStarterPurchases(Player: Player): number
+	return Starterpurchases[Player]
 end
 
 function Customerservice:SkipCooldown(Player: Player): boolean

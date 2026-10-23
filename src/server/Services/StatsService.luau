@@ -93,9 +93,7 @@ end
 function Statsservice:AddItemsSold(Player: Player, Amount: number)
 	local Stats = self:EnsurePlayer(Player)
 	Stats.ItemsSold += Amount
-	if Stats.ItemsSold >= 10 then
-		Core:GetService("FunnelService"):LogEarly(Player, "TenItemsSold")
-	end
+	Core:GetService("FunnelService"):Refresh(Player)
 	Core:GetService("BadgeAwardService"):Check(Player)
 	self:PushStats(Player)
 end
@@ -115,9 +113,13 @@ end
 function Statsservice:SetReputation(Player: Player, Amount: number): number
 	local Stats = self:EnsurePlayer(Player)
 	Stats.Reputation = math.max(RoundCurrency(Amount), 0)
-	Core:GetService("FunnelService"):LogLuck(Player, Stats.Reputation)
+	Core:GetService("FunnelService"):Refresh(Player)
 	self:PushStats(Player)
 	return Stats.Reputation
+end
+
+function Statsservice:GetRankedReputation(Player: Player): number
+	return self:EnsurePlayer(Player).RankedReputation
 end
 
 function Statsservice:SetRankedReputation(Player: Player, Amount: number)

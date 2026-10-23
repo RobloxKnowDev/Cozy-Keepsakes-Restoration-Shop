@@ -10,7 +10,6 @@ local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
-local Upgradesconfig = require(Replicatedstorage.Shared.Config.Upgrades)
 local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
 local Stainlayout = require(Replicatedstorage.Shared.Utils.StainLayout)
 local Translation = require(Replicatedstorage.Shared.Utils.Translation)
@@ -21,7 +20,7 @@ local Tutorialcontroller = {
 }
 
 local Servicename = "TutorialService"
-local Stepversion = 2
+local Stepversion = 3
 local Categorytolerance = 0.97
 local Fronttolerance = 0.85
 local Framenamebykind = { Ink = "Ink", Scratch = "ScratchesFrame" }
@@ -62,11 +61,7 @@ local Tilttext = {
 	Gamepad = "It's on top! Push the right stick down!",
 }
 local Fliptext = { Touch = "Tap to flip it!", Mouse = "Tap to flip it!", Gamepad = "Press Y to flip it!" }
-local Flipdowntext = {
-	Touch = "Dirt underneath! Tap to flip it!",
-	Mouse = "Dirt underneath! Tap to flip it!",
-	Gamepad = "Dirt underneath! Press Y to flip it!",
-}
+local Lessoncheck = 0.5
 local Finishtexts = { Clean = "All clean! Tap to finish.", Partial = "Tap to finish." }
 local Downfacing = -0.8
 local Upfacing = 0.8
@@ -91,7 +86,7 @@ local Toolnames = {
 	HeatGun = "heat gun",
 }
 local Brushtools = { "ToothBrush", "CottonTip" }
-local Legacycheckpoints = { [1] = "Welcome", [3] = "Computer", [26] = "Computerintro", [30] = "Shelf", [34] = "Desk" }
+local Legacycheckpoints = { [1] = "Welcome", [3] = "Computer" }
 local Handsize = 96
 local Toolsize = 84
 local Keysize = 40
@@ -689,7 +684,9 @@ function Tutorialcontroller:Resumeindex(Saved: number, Version: number): number
 		end
 		return self.stepindex[Legacycheckpoints[Index]]
 	end
-	Index = math.min(Index, #self.steps)
+	if Index > #self.steps then
+		return Index
+	end
 	while Index > 1 and not self.steps[Index].Checkpoint do
 		Index -= 1
 	end
@@ -707,8 +704,8 @@ local function Inventoryrestored(): boolean
 end
 
 function Tutorialcontroller:Showstep(Index: number)
-	if (Index == self.stepindex.Computer or Index == self.stepindex.Inventory) and Inventoryrestored() then
-		Index = self.stepindex.Computerintro
+	if self.running and (Index == self.stepindex.Computer or Index == self.stepindex.Inventory) and Inventoryrestored() then
+		Index = #self.steps + 1
 	end
 	while self.steps[Index] and self.steps[Index].Skip and self.steps[Index].Skip() do
 		Index += 1
@@ -719,7 +716,9 @@ function Tutorialcontroller:Showstep(Index: number)
 		self:Finish()
 		return
 	end
-	Remotemanager:FireServer(Servicename, "SetStep", Index)
+	if self.running then
+		Remotemanager:FireServer(Servicename, "SetStep", Index)
+	end
 	self.bubbleLarge = Step.Large == true
 	self.text.Text = ""
 	self:Setkey(nil)
@@ -732,10 +731,14 @@ function Tutorialcontroller:Showstep(Index: number)
 end
 
 function Tutorialcontroller:Finish()
-	self.running = false
 	self:Sethand(nil)
 	self.gui.Enabled = false
 	Core:GetController("ComputerController"):SetHighlighted(false)
+	if self.lesson then
+		self:Endlesson()
+		return
+	end
+	self.running = false
 	Core:GetController("ComputerController"):SetSellLocked(false)
 	Core:GetController("RestorationController"):GetInterface():SetContinueLocked(false)
 	Remotemanager:FireServer(Servicename, "Complete")
@@ -748,6 +751,10 @@ end
 
 local function Inspection()
 	return Core:GetController("InspectionCameraController")
+end
+
+local function Cleaningstarted(): boolean
+	return Restoration():GetActiveObject() ~= nil
 end
 
 local function Toolbutton(Name: string): GuiObject?
@@ -942,16 +949,9 @@ local function Frontdone(): boolean
 	for _, Decal in ipairs(Facedecals(1)) do
 		Share += tonumber(Decal:GetAttribute("TutorialShare")) or 1
 	end
-	if Share < 1 and #Facedecals(2) == 0 then
-		return false
-	end
 	local Total = tonumber(Object:GetAttribute("Total_Dirt")) or 0
 	local Cleaned = tonumber(Object:GetAttribute("Cleaned_Dirt")) or 0
-	return Cleaned >= Total * Share * Fronttolerance
-end
-
-local function Bottomdone(): boolean
-	return Facedecal(2) == nil or Categorydone("Dirt")
+	return Cleaned >= Total * math.min(Share, 1) * Fronttolerance
 end
 
 local function Dirtfinished(): boolean
@@ -992,18 +992,87 @@ function Tutorialcontroller:Getswipespot(): Vector2?
 	return if Rightroom >= Leftroom then Right else Left
 end
 
-function Tutorialcontroller:Update()
-	if not self.running then
+function Tutorialcontroller:Dirthidden(): boolean
+	if os.clock() < self.hiddenCheck then
+		return self.hidden
+	end
+	self.hiddenCheck = os.clock() + Lessoncheck
+	self.hidden = false
+	local Object = Restoration():GetActiveObject()
+	if not Object then
+		return false
+	end
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("Decal") and Cleaningconfig.DirtDecals[Descendant.Name] and Descendant:GetAttribute("Cleaned") ~= true then
+			if not self:Isbehind(Descendant) then
+				self.hidden = false
+				return false
+			end
+			self.hidden = true
+		end
+	end
+	return self.hidden
+end
+
+function Tutorialcontroller:Watchlessons()
+	if os.clock() < self.lessonCheck then
 		return
 	end
-	if self.index >= self.stepindex.Computer and self.index <= self.stepindex.Card and Inventoryrestored() then
-		self:Showstep(self.stepindex.Computerintro)
+	self.lessonCheck = os.clock() + Lessoncheck
+	local Learned = Players.LocalPlayer:GetAttribute("Lessons")
+	if type(Learned) ~= "string" or not Restoration():GetActiveObject() or Core:GetController("CompletionController"):IsVisible() then
+		return
+	end
+	local Done = string.split(Learned, ",")
+	for _, Lesson in ipairs(self.lessons) do
+		if not table.find(Done, Lesson.Id) and not self.lessonsShown[Lesson.Id] and Lesson.Ready() then
+			self.lessonsShown[Lesson.Id] = true
+			self.lesson = Lesson
+			self.steps = Lesson.Steps
+			Remotemanager:FireServer(Servicename, "LessonStep", Lesson.Id, false)
+			self:Showstep(1)
+			return
+		end
+	end
+end
+
+function Tutorialcontroller:Endlesson()
+	local Lesson = self.lesson
+	self.lesson = nil
+	self.steps = self.tutorialsteps
+	if Lesson.Learned() then
+		Remotemanager:FireServer(Servicename, "LessonStep", Lesson.Id, true)
+	end
+end
+
+function Tutorialcontroller:Update()
+	if not self.running and not self.lesson then
+		self:Watchlessons()
+		return
+	end
+	if self.lesson and (not Restoration():GetActiveObject() or Core:GetController("CompletionController"):IsVisible()) then
+		self:Finish()
+		return
+	end
+	if self.running and self.index >= self.stepindex.Computer and self.index <= self.stepindex.Card and Inventoryrestored() then
+		self:Showstep(#self.steps + 1)
 	end
 	local Step = self.steps[self.index]
 	if not Step then
 		return
 	end
-	Restoration():GetInterface():SetContinueLocked(Step.AllowFinish ~= true)
+	if Step.Waiting and Step.Waiting() then
+		self.gui.Enabled = false
+		self:Sethand(nil)
+		if Step.Done() then
+			self:Showstep(self.index + 1)
+		end
+		return
+	end
+	self.gui.Enabled = true
+	if self.running then
+		Restoration():GetInterface():SetContinueLocked(Step.AllowFinish ~= true)
+	end
 	local Target = Gettarget(Step.Target)
 	local Computer = Core:GetController("ComputerController")
 	Computer:SetHighlighted(Target ~= nil and Target == Computer.computer)
@@ -1081,19 +1150,6 @@ function Tutorialcontroller:Update()
 	self:Showstep(self.index + 1)
 end
 
-local function Displayspacebought(): boolean
-	local State = Core:GetController("ComputerController").upgradeState.DisplaySpace
-	return State.Level > Upgradesconfig.DisplaySpace.DefaultLevel
-end
-
-local function Showdisplayspacecard()
-	local Scrolling = Core:GetController("ComputerController").upgradesScrollingFrame
-	local Card = Scrolling:WaitForChild("DisplaySpace") :: GuiObject
-	local Top = Card.AbsolutePosition.Y - Scrolling.AbsolutePosition.Y + Scrolling.CanvasPosition.Y
-	local Bottom = Top + Card.AbsoluteSize.Y - Scrolling.AbsoluteWindowSize.Y
-	Scrolling.CanvasPosition = Vector2.new(0, math.min(math.max(Scrolling.CanvasPosition.Y, Bottom), Top))
-end
-
 function Tutorialcontroller:Buildsteps()
 	self.steps = {
 		{
@@ -1115,14 +1171,20 @@ function Tutorialcontroller:Buildsteps()
 			Target = function()
 				return Core:GetController("CustomerController").buyButton
 			end,
+			Waiting = function()
+				return Core:GetController("CustomerController"):IsStartingItem() or Restoration():IsEditingObject()
+			end,
 			Done = function()
-				return #Core:GetController("ComputerController").inventoryItems > (self.boughtBaseline or 0)
+				return Cleaningstarted()
+					or not Core:GetController("CustomerController"):IsStartingItem()
+						and #Core:GetController("ComputerController").inventoryItems > (self.boughtBaseline or 0)
 			end,
 		},
 		{
 			Id = "Computer",
 			Text = { Touch = "Tap your computer!", Mouse = "Click your computer!", Gamepad = "Open your computer." },
 			Checkpoint = true,
+			Skip = Cleaningstarted,
 			Target = function()
 				return Core:GetController("ComputerController").computer
 			end,
@@ -1133,6 +1195,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Inventory",
 			Text = "Open your inventory.",
+			Skip = Cleaningstarted,
 			Target = function()
 				return Core:GetController("ComputerController").inventoryNavButton
 			end,
@@ -1143,6 +1206,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Card",
 			Text = "Tap your clock.",
+			Skip = Cleaningstarted,
 			Target = function()
 				local Computer = Core:GetController("ComputerController")
 				if not Computer:IsOpen() then return Computer.computer end
@@ -1157,6 +1221,7 @@ function Tutorialcontroller:Buildsteps()
 		{
 			Id = "Clean",
 			Text = "Now clean it!",
+			Skip = Cleaningstarted,
 			Target = function()
 				local Computer = Core:GetController("ComputerController")
 				if not Computer:IsOpen() then return Computer.computer end
@@ -1182,147 +1247,6 @@ function Tutorialcontroller:Buildsteps()
 				return Facedecal(1) or Categorydecal() or Restoration():GetActiveObject()
 			end,
 			Done = Frontdone,
-		},
-		{
-			Id = "Flip",
-			Text = function()
-				return if Facedecal(2) then Flipdowntext else Fliptext
-			end,
-			Skip = function()
-				return Inspection():GetFlipCount() >= 2 or Inspection():IsShowingBack()
-			end,
-			Target = function()
-				return Restoration():GetInterface().ReturnButton
-			end,
-			Done = function()
-				return Inspection():IsShowingBack()
-			end,
-		},
-		{
-			Id = "Bottom",
-			Turnhint = true,
-			RaiseCamera = true,
-			Tool = Brushtools,
-			Text = "Rub off the dirt!",
-			Gesture = "ToothBrush",
-			MaxSeconds = 60,
-			Skip = Bottomdone,
-			Target = function()
-				return Facedecal(2) or Categorydecal()
-			end,
-			Done = Bottomdone,
-		},
-		{
-			Id = "Unflip",
-			Text = { Touch = "Flip it back!", Mouse = "Flip it back!", Gamepad = "Press Y again!" },
-			Skip = function()
-				return not Inspection():IsShowingBack() and Inspection():GetFlipCount() >= 2
-			end,
-			Target = function()
-				return Restoration():GetInterface().ReturnButton
-			end,
-			Done = function()
-				return not Inspection():IsShowingBack()
-			end,
-		},
-		{
-			Id = "Sticker",
-			Tool = "Tweezers",
-			Turnhint = true,
-			Text = { Touch = "Pull the sticker off!", Mouse = "Hold click and pull the sticker off!", Gamepad = "Hold R2 and pull the sticker off!" },
-			Gesture = "Tweezers",
-			MaxSeconds = 90,
-			Skip = function()
-				return Categoryclear("Sticker")
-			end,
-			Target = function()
-				return Categoryspot("Sticker")
-			end,
-			Done = function()
-				return Categorydone("Sticker")
-			end,
-		},
-		{
-			Id = "Pour",
-			Turnhint = true,
-			Tool = "Solvent",
-			Text = { Touch = "Pour it on the ink!", Mouse = "Hold click to pour it on the ink!", Gamepad = "Hold R2 to pour it on the ink!" },
-			Gesture = "Solvent",
-			HoldSeconds = 2.5,
-			MaxSeconds = 90,
-			Skip = function()
-				return Categoryclear("Ink") or Hasliquid("Ink", "HasSolvent") or not Categoryclear("Sticker")
-			end,
-			Target = function()
-				return Categoryspot("Ink")
-			end,
-			Done = function()
-				return Hasliquid("Ink", "HasSolvent") or Categorydone("Ink")
-			end,
-		},
-		{
-			Id = "Ink",
-			Turnhint = true,
-			Tool = "CottonTip",
-			Text = "Rub the ink away!",
-			Gesture = "CottonTip",
-			MaxSeconds = 90,
-			Skip = function()
-				return Categoryclear("Ink") or not Hasliquid("Ink", "HasSolvent")
-			end,
-			Target = function()
-				return Categoryspot("Ink")
-			end,
-			Done = function()
-				return Categorydone("Ink")
-			end,
-		},
-		{
-			Id = "Polish",
-			Turnhint = true,
-			Tool = "Polish",
-			Text = { Touch = "Rub it on the scratch!", Mouse = "Hold click to rub it on the scratch!", Gamepad = "Hold R2 to rub it on the scratch!" },
-			Gesture = "Polish",
-			HoldSeconds = 2.5,
-			MaxSeconds = 90,
-			Skip = function()
-				return Categoryclear("Scratch") or Hasliquid("Scratch", "HasPolish")
-			end,
-			Target = function()
-				return Categoryspot("Scratch")
-			end,
-			Done = function()
-				return Hasliquid("Scratch", "HasPolish") or Categorydone("Scratch")
-			end,
-		},
-		{
-			Id = "Scratch",
-			Turnhint = true,
-			Tool = "CottonTip",
-			Text = "Rub the scratch away!",
-			Gesture = "CottonTip",
-			MaxSeconds = 90,
-			Skip = function()
-				return Categoryclear("Scratch") or not Hasliquid("Scratch", "HasPolish")
-			end,
-			Target = function()
-				return Categoryspot("Scratch")
-			end,
-			Done = function()
-				return Categorydone("Scratch")
-			end,
-		},
-		{
-			Id = "Dry",
-			Turnhint = true,
-			Tool = "HeatGun",
-			Text = { Touch = "Dry it all!", Mouse = "Hold click to dry it all!", Gamepad = "Hold R2 to dry it all!" },
-			Gesture = "HeatGun",
-			HoldSeconds = 1.5,
-			MaxSeconds = 45,
-			Skip = Liquidsdry,
-			Target = Liquidspot,
-			Done = Liquidsdry,
 		},
 		{
 			Id = "Last",
@@ -1361,115 +1285,168 @@ function Tutorialcontroller:Buildsteps()
 					and not Restoration():IsEditingObject()
 			end,
 		},
+	}
+	self.tutorialsteps = self.steps
+	local Dry = {
+		Id = "Dry",
+		Turnhint = true,
+		Tool = "HeatGun",
+		Text = { Touch = "Dry it all!", Mouse = "Hold click to dry it all!", Gamepad = "Hold R2 to dry it all!" },
+		Gesture = "HeatGun",
+		HoldSeconds = 1.5,
+		MaxSeconds = 45,
+		Skip = Liquidsdry,
+		Target = Liquidspot,
+		Done = Liquidsdry,
+	}
+	self.lessons = {
 		{
-			Id = "Computerintro",
-			Text = "This is your computer. Sell items and buy upgrades here!",
-			Checkpoint = true,
-			Target = function()
-				return Core:GetController("ComputerController").computer
+			Id = "Sticker",
+			Ready = function()
+				return not Categoryclear("Sticker")
 			end,
-			Done = function()
-				return Core:GetController("ComputerController"):IsOpen()
+			Learned = function()
+				return Categorydone("Sticker")
 			end,
+			Steps = {
+				{
+					Id = "Sticker",
+					Tool = "Tweezers",
+					Turnhint = true,
+					Text = { Touch = "Pull the sticker off!", Mouse = "Hold click and pull the sticker off!", Gamepad = "Hold R2 and pull the sticker off!" },
+					Gesture = "Tweezers",
+					MaxSeconds = 90,
+					Skip = function()
+						return Categoryclear("Sticker")
+					end,
+					Target = function()
+						return Categoryspot("Sticker")
+					end,
+					Done = function()
+						return Categorydone("Sticker")
+					end,
+				},
+			},
 		},
 		{
-			Id = "Upgrades",
-			Text = "Open your upgrades.",
-			Skip = Displayspacebought,
-			Target = function()
-				local Computer = Core:GetController("ComputerController")
-				if not Computer:IsOpen() then return Computer.computer end
-				return Computer.upgradesButton
+			Id = "Turn",
+			Ready = function()
+				return Categoryclear("Sticker") and self:Dirthidden()
 			end,
-			Done = function()
-				return Core:GetController("ComputerController").activePage == "Upgrades"
+			Learned = function()
+				return not self:Dirthidden()
 			end,
+			Steps = {
+				{
+					Id = "Turn",
+					Turnhint = true,
+					RaiseCamera = true,
+					Tool = Brushtools,
+					Text = "Clean every side!",
+					Gesture = "ToothBrush",
+					MaxSeconds = 30,
+					Target = function()
+						return Categorydecal() or Restoration():GetActiveObject()
+					end,
+					Done = function()
+						return not self:Dirthidden()
+					end,
+				},
+			},
 		},
 		{
-			Id = "Unlock",
-			Text = "Unlock your first shelf spot. It's free!",
-			Skip = Displayspacebought,
-			Target = function()
-				local Computer = Core:GetController("ComputerController")
-				if not Computer:IsOpen() then return Computer.computer end
-				if Computer.activePage ~= "Upgrades" then return Computer.upgradesButton end
-				Showdisplayspacecard()
-				return Computer.upgradeCards.DisplaySpace.CashButton
+			Id = "Ink",
+			Ready = function()
+				return Categoryclear("Sticker") and not Categoryclear("Ink")
 			end,
-			Done = Displayspacebought,
+			Learned = function()
+				return Categorydone("Ink")
+			end,
+			Steps = {
+				{
+					Id = "Pour",
+					Turnhint = true,
+					Tool = "Solvent",
+					Text = { Touch = "Pour it on the ink!", Mouse = "Hold click to pour it on the ink!", Gamepad = "Hold R2 to pour it on the ink!" },
+					Gesture = "Solvent",
+					HoldSeconds = 2.5,
+					MaxSeconds = 90,
+					Skip = function()
+						return Categoryclear("Ink") or Hasliquid("Ink", "HasSolvent")
+					end,
+					Target = function()
+						return Categoryspot("Ink")
+					end,
+					Done = function()
+						return Hasliquid("Ink", "HasSolvent") or Categorydone("Ink")
+					end,
+				},
+				{
+					Id = "Ink",
+					Turnhint = true,
+					Tool = "CottonTip",
+					Text = "Rub the ink away!",
+					Gesture = "CottonTip",
+					MaxSeconds = 90,
+					Skip = function()
+						return Categoryclear("Ink") or not Hasliquid("Ink", "HasSolvent")
+					end,
+					Target = function()
+						return Categoryspot("Ink")
+					end,
+					Done = function()
+						return Categorydone("Ink")
+					end,
+				},
+				Dry,
+			},
 		},
 		{
-			Id = "Arrow",
-			Text = "Tap the arrow to go back.",
-			Target = function()
-				return Core:GetController("ComputerController").closeButton
+			Id = "Scratch",
+			Ready = function()
+				return Categoryclear("Sticker") and not Categoryclear("Scratch")
 			end,
-			Done = function()
-				return not Core:GetController("ComputerController"):IsOpen()
+			Learned = function()
+				return Categorydone("Scratch")
 			end,
-		},
-		{
-			Id = "Shelf",
-			Text = "Open your shelf.",
-			Checkpoint = true,
-			Target = function()
-				return Core:GetController("ExpositionController").reputationButtonL
-			end,
-			Done = function()
-				return Core:GetController("ExpositionController"):IsOpen()
-			end,
-		},
-		{
-			Id = "Spot",
-			Text = "Pick an empty spot.",
-			Target = function()
-				return Core:GetController("ExpositionController").slotButtons[1].Button
-			end,
-			Done = function()
-				return Core:GetController("ExpositionController"):IsSelectionOpen()
-			end,
-		},
-		{
-			Id = "Put",
-			Text = "Put your clock on the shelf!",
-			Target = function()
-				local Exposition = Core:GetController("ExpositionController")
-				if Exposition.infoFrame.Visible then return Exposition.infoCloseButton end
-				local Card = Exposition.selectCards[1]
-				if not Card then return nil end
-				return if Card.Button.Visible then Card.Button else Card.EquipButton
-			end,
-			Done = function()
-				return not Core:GetController("ExpositionController"):IsSelectionOpen()
-			end,
-		},
-		{
-			Id = "Luck",
-			Text = "Items on the shelf give you Luck.\nMore Luck, better items!\nTap to continue.",
-			Large = true,
-			MinimumSeconds = 1.5,
-			WaitForTap = true,
-			Done = function()
-				return true
-			end,
-		},
-		{
-			Id = "Desk",
-			Text = "Go back to your desk.",
-			Checkpoint = true,
-			Target = function()
-				return Core:GetController("ExpositionController").reputationButtonR
-			end,
-			Done = function()
-				return not Core:GetController("ExpositionController"):IsOpen()
-			end,
-		},
-		{
-			Id = "Ready",
-			Text = "You are ready. Have fun!",
-			Done = function()
-				return self.tapped or os.clock() - self.stepStart >= 3
-			end,
+			Steps = {
+				{
+					Id = "Polish",
+					Turnhint = true,
+					Tool = "Polish",
+					Text = { Touch = "Rub it on the scratch!", Mouse = "Hold click to rub it on the scratch!", Gamepad = "Hold R2 to rub it on the scratch!" },
+					Gesture = "Polish",
+					HoldSeconds = 2.5,
+					MaxSeconds = 90,
+					Skip = function()
+						return Categoryclear("Scratch") or Hasliquid("Scratch", "HasPolish")
+					end,
+					Target = function()
+						return Categoryspot("Scratch")
+					end,
+					Done = function()
+						return Hasliquid("Scratch", "HasPolish") or Categorydone("Scratch")
+					end,
+				},
+				{
+					Id = "Scratch",
+					Turnhint = true,
+					Tool = "CottonTip",
+					Text = "Rub the scratch away!",
+					Gesture = "CottonTip",
+					MaxSeconds = 90,
+					Skip = function()
+						return Categoryclear("Scratch") or not Hasliquid("Scratch", "HasPolish")
+					end,
+					Target = function()
+						return Categoryspot("Scratch")
+					end,
+					Done = function()
+						return Categorydone("Scratch")
+					end,
+				},
+				Dry,
+			},
 		},
 	}
 	self.stepindex = {}
@@ -1481,20 +1458,30 @@ end
 function Tutorialcontroller:Init()
 	self:Buildgui()
 	self.running = false
+	self.lesson = nil
+	self.lessonsShown = {}
+	self.lessonCheck = 0
+	self.hiddenCheck = 0
+	self.hidden = false
 	self.index = 0
 	self.stepStart = 0
 end
 
 function Tutorialcontroller:Preparetexts()
 	local Texts = {}
-	for _, Value in ipairs({ Behindtext, Tilttext, Fliptext, Flipdowntext, Finishtexts }) do
+	for _, Value in ipairs({ Behindtext, Tilttext, Fliptext, Finishtexts }) do
 		Collecttexts(Texts, Value)
 	end
 	for _, Name in pairs(Toolnames) do
 		Collecttexts(Texts, "Take the " .. Name .. ".")
 	end
-	for _, Step in ipairs(self.steps) do
+	for _, Step in ipairs(self.tutorialsteps) do
 		Collecttexts(Texts, Step.Text)
+	end
+	for _, Lesson in ipairs(self.lessons) do
+		for _, Step in ipairs(Lesson.Steps) do
+			Collecttexts(Texts, Step.Text)
+		end
 	end
 	Translation.Prepare(Texts)
 end

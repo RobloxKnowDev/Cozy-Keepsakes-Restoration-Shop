@@ -88,6 +88,7 @@ function GroupRewardController:Open()
 	self.scaleTween = TweenService:Create(self.frameScale, OpenTweenInfo, { Scale = 1 })
 	self.positionTween:Play()
 	self.scaleTween:Play()
+	task.spawn(self.PressClaim, self)
 end
 
 function GroupRewardController:Close(Fast: boolean?)

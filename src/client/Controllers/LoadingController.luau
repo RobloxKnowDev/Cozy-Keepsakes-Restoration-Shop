@@ -88,6 +88,9 @@ function LoadingController:Start()
 		for _, Texture in ipairs(CleaningConfig.DirtTextures) do
 			AddImageId(Secondary, Texture.Image)
 		end
+		if CleaningConfig.Grime.Image ~= "" then
+			AddImageId(Secondary, CleaningConfig.Grime.Image)
+		end
 		table.insert(Secondary, ReplicatedStorage:WaitForChild("Asset"):WaitForChild("Tool"))
 		ContentProvider:PreloadAsync(Secondary)
 		Core:GetController("CleaningController"):WarmDirtTextures()

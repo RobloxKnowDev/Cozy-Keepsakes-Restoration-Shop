@@ -46,6 +46,10 @@ local PressScale = 0.96
 local SwingRotation = 5
 local ReadyText = "Time !"
 local CompleteText = "Complete !"
+local TomorrowText = "Come back tomorrow for a free {1}!"
+local TomorrowDelay = 2
+local ReminderDelay = 600
+local ReminderMinimumWait = 4 * 60 * 60
 
 local function CardMode(Card): string
 	if Card.Pressing then
@@ -269,6 +273,17 @@ function DailyRewardController:Close(Fast: boolean?)
 	end)
 end
 
+function DailyRewardController:ShowTomorrow()
+	local Reward = Config.Rewards[self.state.CurrentDay]
+	if not Reward then
+		return
+	end
+	local Gradient = if Reward.Type == "Item"
+		then Rarityconfig[Objectconfig.Object[Reward.ObjectKey].Rarity].Gradient
+		else ClaimGradient
+	Core:GetController("MessageController"):Show(TomorrowText, Gradient, Translation.Format(Reward.ValueText))
+end
+
 function DailyRewardController:OpenFromTutorial()
 	self.topbarIcon:select()
 end
@@ -304,6 +319,9 @@ function DailyRewardController:Claim()
 			local Definition = Objectconfig.Object[Config.Rewards[Result.Day].ObjectKey]
 			Core:GetController("MessageController"):Show("{1} added to your inventory", Rarityconfig[Definition.Rarity].Gradient, Translation.Format(Definition.Name))
 		end
+		task.delay(TomorrowDelay, function()
+			self:ShowTomorrow()
+		end)
 	end
 end
 
@@ -426,10 +444,22 @@ function DailyRewardController:Start()
 			Core:GetController("BoostController"):PlayGain(Granted, true)
 		end
 	end)
+	local Startedat = os.clock()
+	local Reminded = false
 	task.spawn(function()
 		while true do
 			task.wait(1)
 			self:Refresh()
+			if
+				not Reminded
+				and os.clock() - Startedat >= ReminderDelay
+				and self.state
+				and self.state.ClaimedDays > 0
+				and self.state.NextClaimAt - workspace:GetServerTimeNow() >= ReminderMinimumWait
+			then
+				Reminded = true
+				self:ShowTomorrow()
+			end
 		end
 	end)
 end

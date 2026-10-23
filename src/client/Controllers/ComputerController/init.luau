@@ -128,6 +128,10 @@ function ComputerController:SetSellLocked(Locked: boolean)
 	Inventory.RefreshControls(self)
 end
 
+function ComputerController:BeginItem(ItemId: number, ObjectKey: string): boolean
+	return Inventory.Begin(self, ItemId, ObjectKey)
+end
+
 function ComputerController:SyncHeader()
 	if self.cashText and self.hudCashText then
 		Translation.Raw(self.cashText, self.hudCashText.Text)

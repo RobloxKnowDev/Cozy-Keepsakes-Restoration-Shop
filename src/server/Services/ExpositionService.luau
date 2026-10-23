@@ -17,6 +17,7 @@ local Expositionservice = {
 		RemoveDisplayItem = "Function",
 		EquipBest = "Function",
 		DisplayItemsUpdated = "Event",
+		ItemsShelved = "Event",
 	},
 }
 
@@ -471,12 +472,13 @@ function Expositionservice:EquipBest(Player: Player)
 		if Candidate.Slot and not Keep then
 			table.insert(Removals, Candidate.Slot)
 		elseif not Candidate.Slot and Keep then
-			table.insert(Placements, Candidate.Item.Id)
+			table.insert(Placements, Candidate.Item)
 		end
 	end
 
 	local Changed = 0
 	local Grantedreputation = 0
+	local Placed = {}
 	for _, Slotindex in ipairs(Removals) do
 		local Result = self:RemoveDisplayItem(Player, Slotindex, true)
 		if Result.Success then
@@ -486,11 +488,12 @@ function Expositionservice:EquipBest(Player: Player)
 		end
 	end
 	table.sort(Freeslots)
-	for Index, Itemid in ipairs(Placements) do
-		local Result = self:PlaceDisplayItem(Player, Freeslots[Index], Itemid, true)
+	for Index, Item in ipairs(Placements) do
+		local Result = self:PlaceDisplayItem(Player, Freeslots[Index], Item.Id, true)
 		if Result.Success then
 			Changed += 1
 			Grantedreputation += Result.GrantedReputation
+			table.insert(Placed, Item.Name)
 		end
 	end
 	if Changed > 0 then
@@ -501,8 +504,35 @@ function Expositionservice:EquipBest(Player: Player)
 		Changed = Changed,
 		Kept = Kept,
 		GrantedReputation = Grantedreputation,
+		Placed = Placed,
 		DisplayItems = self:GetDisplayItems(Player),
 	}
+end
+
+function Expositionservice:AutoEquip(Player: Player)
+	local Result = self:EquipBest(Player)
+	if Result.Success and #Result.Placed > 0 then
+		Remotemanager:FireClient(self.Name, "ItemsShelved", Player, Result.Placed, Result.GrantedReputation)
+	end
+end
+
+function Expositionservice:GetShelvedItems(Player: Player): { any }
+	local Items = {}
+	for _, Placement in pairs(Getdisplay(Player).OccupiedSlots) do
+		if Placement.Player == Player then
+			table.insert(Items, Placement.Item)
+		end
+	end
+	return Items
+end
+
+function Expositionservice:Unshelve(Player: Player, Itemid: number): boolean
+	for Slotindex, Placement in pairs(Getdisplay(Player).OccupiedSlots) do
+		if Placement.Player == Player and Placement.Item.Id == Itemid then
+			return self:RemoveDisplayItem(Player, Slotindex, true).Success
+		end
+	end
+	return false
 end
 
 function Expositionservice:IsBusy(Player: Player): boolean
@@ -557,6 +587,13 @@ function Expositionservice:Init()
 			end
 			Refreshdisplayreputation(Player)
 			Commitdisplaychange(Getdisplay(Player), Player)
+			Core:GetService("InventoryService"):PushItems(Player)
+			task.spawn(function()
+				Core:GetService("DataService"):WaitForLoad(Player)
+				if Player.Parent then
+					self:AutoEquip(Player)
+				end
+			end)
 		end,
 		Save = function(Player)
 			local Snapshot = {}

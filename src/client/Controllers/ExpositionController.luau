@@ -107,9 +107,11 @@ end
 function Controller:ShowSlotButtons()
 	if self.slotsVisible then return end
 	self.slotsVisible = true
-	for _, Button in ipairs(self.shelfButtons) do
-		Button.Visible = true
-		self:PopButton(Button)
+	for _, Slot in ipairs(self.slotButtons) do
+		Slot.Button.Visible = not Slot.Unlocked
+		if Slot.Button.Visible then
+			self:PopButton(Slot.Button)
+		end
 	end
 	self:UpdateButtonAvailability()
 end
@@ -685,6 +687,22 @@ function Controller:EquipBest()
 	Core:GetController("MessageController"):Show(Message, ErrorMessageGradient)
 end
 
+function Controller:AnnounceShelved()
+	local Count = #self.shelvedNames
+	if Count == 0 or self.completionController:IsVisible() or Core:GetController("RestorationController"):IsEditingObject() then
+		return
+	end
+	local Subject = if Count == 1 then Translation.Format(self.shelvedNames[1]) else Count
+	local Message = if Count == 1 then "{1} is on your shelf!" else "{1} items are on your shelf!"
+	if self.shelvedReputation > 0 then
+		Message ..= " +{2} Luck"
+	end
+	Core:GetController("FeedbackController"):PlaySound("SlotItem", 0.15)
+	Core:GetController("MessageController"):Show(Message, ReputationMessageGradient, Subject, FormatReputation(self.shelvedReputation))
+	table.clear(self.shelvedNames)
+	self.shelvedReputation = 0
+end
+
 function Controller:BindButtonAnimation(Button: GuiButton)
 	Button.MouseEnter:Connect(function()
 		self.hoveredButtons[Button] = true
@@ -802,14 +820,11 @@ function Controller:ApplyUpgradeState(State)
 	local Level = math.clamp(math.floor(State.DisplaySpace.CurrentValue), 0, #self.slotButtons)
 	self.displaySpaceLevel = Level
 	for _, Slot in ipairs(self.slotButtons) do
-		local Wasunlocked = Slot.Unlocked
 		Slot.Unlocked = Slot.Index <= Level
 		local Canremove = Slot.Occupied and Slot.Owned
 		Slot.Icon.Visible = not Slot.Unlocked and not Canremove
 		Slot.Text.Visible = Slot.Unlocked or Canremove
-		if Slot.Unlocked and not Wasunlocked and Slot.Button.Visible then
-			self:PopButton(Slot.Button)
-		end
+		Slot.Button.Visible = self.slotsVisible and not Slot.Unlocked
 	end
 	if self.selectFrameOpen and self.selectedSlotIndex and self.selectedSlotIndex > Level then
 		self:CloseSelectionFrame(true)
@@ -867,6 +882,8 @@ function Controller:Init()
 	self.selectItems = {}
 	self.displayItemsBySlot = {}
 	self.displayItemsRevision = -1
+	self.shelvedNames = {}
+	self.shelvedReputation = 0
 	self.blockers = {}
 	self.blockerMode = nil
 	self.displaySpaceLevel = 0
@@ -906,7 +923,9 @@ function Controller:Init()
 		table.insert(self.slotButtons, Slot)
 		table.insert(self.shelfButtons, Button)
 	end
-	table.insert(self.shelfButtons, self.equipBestButton)
+	self.equipBestButton.Visible = false
+	self.equipBestButton.Active = false
+	self.equipBestButton.Interactable = false
 
 	for _, Button in ipairs(self.shelfButtons) do
 		Button.Visible = false
@@ -1042,6 +1061,12 @@ function Controller:Start()
 	Remotemanager:OnClientEvent("ExpositionService", "DisplayItemsUpdated", function(State)
 		self:ApplyDisplayItems(State)
 	end)
+	Remotemanager:OnClientEvent("ExpositionService", "ItemsShelved", function(Names, Reputation)
+		for _, Name in ipairs(Names) do
+			table.insert(self.shelvedNames, Name)
+		end
+		self.shelvedReputation += Reputation
+	end)
 	self:ApplySelectionItems(Remotemanager:InvokeServer("InventoryService", "GetRestoredItems"))
 	self:ApplyUpgradeState(Remotemanager:InvokeServer("UpgradeService", "GetUpgrades"))
 	self:ApplyDisplayItems(Remotemanager:InvokeServer("ExpositionService", "GetDisplayItems"))
@@ -1050,6 +1075,7 @@ function Controller:Start()
 	Runservice.RenderStepped:Connect(function()
 		self:SyncFrameBlockers()
 		self:UpdateButtonAvailability()
+		self:AnnounceShelved()
 	end)
 end
 

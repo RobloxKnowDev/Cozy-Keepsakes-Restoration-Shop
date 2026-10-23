@@ -183,17 +183,23 @@ end
 function Inventoryservice:GetRestoredItems(Player: Player): { RestoredItem }
 	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
 	if not Player.Parent then return {} end
-	local Items = self:EnsurePlayer(Player)
 	local Result = {}
-	for Index, Item in ipairs(Items) do
+	local function Add(Item: RestoredItem, Shelved: boolean)
 		local DisplayItem = CloneItem(Item)
 		DisplayItem.CurrentValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 		DisplayItem.NetProfit = math.round((DisplayItem.CurrentValue - DisplayItem.PurchasePrice) * 100) / 100
 		DisplayItem.Revealed = (tonumber(Item.RestorationPercent) or 0) / 100 >= Mutationconfig.RevealRatio
+		DisplayItem.OnShelf = Shelved
 		if not DisplayItem.Revealed then
 			DisplayItem.Mutation = nil
 		end
-		Result[Index] = DisplayItem
+		table.insert(Result, DisplayItem)
+	end
+	for _, Item in ipairs(self:EnsurePlayer(Player)) do
+		Add(Item, false)
+	end
+	for _, Item in ipairs(Core:GetService("ExpositionService"):GetShelvedItems(Player)) do
+		Add(Item, true)
 	end
 	return Result
 end
@@ -311,6 +317,7 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	end
 	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
 	local Items = self:EnsurePlayer(Player)
+	local Shelved = Core:GetService("ExpositionService"):Unshelve(Player, ItemId)
 	local Index = nil
 	for CurrentIndex, Item in ipairs(Items) do
 		if Item.Id == ItemId then
@@ -325,7 +332,6 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	local Item = table.remove(Items, Index)
 	local SaleValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
 	Core:GetService("CashService"):AddCash(Player, SaleValue)
-	Core:GetService("FunnelService"):LogAfterTutorial(Player, "FirstSale")
 	if Item.RestorationPercent >= Minimumsoldpercent then
 		Core:GetService("StatsService"):AddItemsSold(Player, 1)
 	end
@@ -333,6 +339,9 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 		RecordSale(Player, Item, SaleValue)
 	end
 	self:PushItems(Player)
+	if Shelved then
+		Core:GetService("ExpositionService"):AutoEquip(Player)
+	end
 	local SoldItem = CloneItem(Item)
 	SoldItem.CurrentValue = SaleValue
 	SoldItem.NetProfit = math.round((SaleValue - SoldItem.PurchasePrice) * 100) / 100

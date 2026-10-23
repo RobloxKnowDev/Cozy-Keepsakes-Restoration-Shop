@@ -3,12 +3,11 @@ local Monetization = require(script.Parent.Monetization)
 return {
 	DisplaySpace = {
 		DisplayName = "Display Space",
-		DefaultLevel = 0,
+		DefaultLevel = 1,
 		MaxLevel = 9,
 		DeveloperProductId = Monetization.UpgradeDeveloperProducts.DisplaySpace,
 		CashPriceLevel1 = 120,
 		PriceGrowth = 1.7,
-		TutorialFree = true,
 	},
 
 	CooldownReduction = {

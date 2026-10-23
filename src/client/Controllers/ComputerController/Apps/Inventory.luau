@@ -18,6 +18,7 @@ local UnknownText = "???"
 local CleanText = "Clean"
 local SellText = "Sell"
 local BusyText = "..."
+local ShelfText = "On shelf"
 local EmptyText = "Your inventory is empty!\nBuy items from customers."
 local ObjectWaitSeconds = 10
 local DetailsTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -46,7 +47,12 @@ end
 local function FillItemProgress(Frame: GuiObject, Item)
 	local FrameBar = Frame:WaitForChild("FrameBar")
 	local Percent = GetPercent(Item)
-	Translation.Raw(FrameBar:WaitForChild("PourcentageText"), string.format("%d%%", Percent))
+	local PercentText = FrameBar:WaitForChild("PourcentageText") :: TextLabel
+	if Item.OnShelf then
+		Translation.Set(PercentText, ShelfText)
+	else
+		Translation.Raw(PercentText, string.format("%d%%", Percent))
+	end
 	FrameBar:WaitForChild("Bar").Size = UDim2.fromScale(Percent / 100, 1)
 end
 
@@ -156,33 +162,36 @@ function Inventory.CloseItemInfo(Controller)
 	Inventory.RefreshControls(Controller)
 end
 
-function Inventory.Clean(Controller, Card)
-	local ActionText = Card.ActionButton:WaitForChild("Text") :: TextLabel
-	Controller.inventoryCleaning = true
-	ActionText.Text = BusyText
-	Inventory.RefreshControls(Controller)
-	local Success, Object, Started = pcall(function()
-		return RemoteManager:InvokeServer("RestorationService", "BeginItem", Card.Item.Id)
-	end)
-	if Success and Started and not Object then
-		Object = WaitRestorationObject(Card.Item.ObjectKey)
+function Inventory.Begin(Controller, ItemId: number, ObjectKey: string): boolean
+	local Object, Started = RemoteManager:InvokeServer("RestorationService", "BeginItem", ItemId)
+	if Started and not Object then
+		Object = WaitRestorationObject(ObjectKey)
 		if not Object then
 			RemoteManager:FireServer("RestorationService", "SessionEnded")
 		end
 	end
-	Controller.inventoryCleaning = false
-	ActionText.Text = CleanText
-	Inventory.RefreshControls(Controller)
-	if not Success then
-		error(Object, 0)
-	end
 	if not Started or not Object then
-		return
+		return false
 	end
 	Controller:Close()
 	task.defer(function()
 		Core:GetController("RestorationController"):Enter(Object)
 	end)
+	return true
+end
+
+function Inventory.Clean(Controller, Card)
+	local ActionText = Card.ActionButton:WaitForChild("Text") :: TextLabel
+	Controller.inventoryCleaning = true
+	ActionText.Text = BusyText
+	Inventory.RefreshControls(Controller)
+	local Success, Message = pcall(Inventory.Begin, Controller, Card.Item.Id, Card.Item.ObjectKey)
+	Controller.inventoryCleaning = false
+	ActionText.Text = CleanText
+	Inventory.RefreshControls(Controller)
+	if not Success then
+		error(Message, 0)
+	end
 end
 
 function Inventory.Sell(Controller, ItemId: number)

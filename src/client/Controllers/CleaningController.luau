@@ -2,6 +2,7 @@ local Assetservice = game:GetService("AssetService")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
 local Tweenservice = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Core = require(Replicatedstorage.Shared.Packages.Core)
@@ -113,6 +114,8 @@ local Pingmovement = 0.002
 local Dissolvekeep = { 0.45, 0.2, 0 }
 local Dissolveinterval = 0.06
 local Finishassist = Cleaningconfig.FinishAssist
+local Rubbing = Cleaningconfig.Rubbing
+local Rubpasses = 1
 local Staincanvassize = 512
 local Stainsupersample = 2
 
@@ -163,6 +166,13 @@ end
 
 local function Inputbrushscale(): number
 	return if Usinggamepad() then Gamepadbrushscale else 1
+end
+
+local function Rubfactor(Speed: number): number
+	if Speed <= Rubbing.NormalSpeed then
+		return Rubbing.StillFactor + (1 - Rubbing.StillFactor) * Speed / Rubbing.NormalSpeed
+	end
+	return 1 + (Rubbing.FastFactor - 1) * math.min((Speed - Rubbing.NormalSpeed) / (Rubbing.FastSpeed - Rubbing.NormalSpeed), 1)
 end
 
 local function Applyoverlay(Decal: Decal, Created: EditableImage)
@@ -504,6 +514,31 @@ local function Composestain(Stain: Stain, Source: Pixelsource?, Scale: number)
 	Settlesurface(Stain, true)
 end
 
+local function Hidenarrowcells(Decal: Decal, Level: Pixelsource): buffer
+	local Encoded = Decal:GetAttribute("NarrowCells") :: string?
+	if not Encoded then
+		return Level.Pixels
+	end
+	local Size = Level.Size
+	local Pixels = buffer.create(buffer.len(Level.Pixels))
+	buffer.copy(Pixels, 0, Level.Pixels)
+	for Digit = 1, #Encoded do
+		local Value = tonumber(string.sub(Encoded, Digit, Digit), 16) :: number
+		for Offset = 0, 3 do
+			if Value // 2 ^ Offset % 2 == 1 then
+				local Index = (Digit - 1) * 4 + Offset
+				local Column, Row = Index % Coveragegrid, Index // Coveragegrid
+				for Y = math.floor(Row * Size.Y / Coveragegrid), math.floor((Row + 1) * Size.Y / Coveragegrid) - 1 do
+					for X = math.floor(Column * Size.X / Coveragegrid), math.floor((Column + 1) * Size.X / Coveragegrid) - 1 do
+						buffer.writeu8(Pixels, (Y * Size.X + X) * 4 + 3, 0)
+					end
+				end
+			end
+		end
+	end
+	return Pixels
+end
+
 local function Preloaddecals(Decals: { Decal }, Stains: { Stain }, Onloaded: () -> ())
 	local Shrinks: { [Decal]: Vector2 } = {}
 	for _, Decal in ipairs(Decals) do
@@ -590,7 +625,7 @@ local function Preloaddecals(Decals: { Decal }, Stains: { Stain }, Onloaded: () 
 				if Decal.Parent then
 					local Success, Created = pcall(function()
 						local Overlay = Neweditable(Level.Size)
-						Overlay:WritePixelsBuffer(Vector2.zero, Level.Size, Level.Pixels)
+						Overlay:WritePixelsBuffer(Vector2.zero, Level.Size, Hidenarrowcells(Decal, Level))
 						return Overlay
 					end)
 					if Success then
@@ -727,7 +762,7 @@ local function Fadedecal(Decal: Decal, Localpoint: Vector2, Radius: Vector2)
 					local Alphaoffset = ((Y - Miny) * Regionwidth + (X - Minx)) * 4 + 3
 					local Alpha = buffer.readu8(Pixels, Alphaoffset)
 					if Alpha > 0 then
-						buffer.writeu8(Pixels, Alphaoffset, math.max(Alpha - Activedirtstep, 0))
+						buffer.writeu8(Pixels, Alphaoffset, math.max(Alpha - Activedirtstep * Rubpasses, 0))
 						Changed = true
 					end
 				end
@@ -938,6 +973,8 @@ function Cleaningcontroller:PreloadOverlays(Object: Model | BasePart)
 	Activeobject = Object
 	Activedirtstep = Object:GetAttribute("DirtStep") :: number
 	Activebrushradius = Object:GetAttribute("BrushRadius") :: number
+	Rubpasses = 1
+	self.rubCarry = 0
 	Object.Destroying:Connect(function()
 		Caster:Destroy()
 	end)
@@ -1032,8 +1069,28 @@ function Cleaningcontroller:QueuePing(Worldposition: Vector3)
 	end
 end
 
+function Cleaningcontroller:Rub(Worldposition: Vector3)
+	local Now = os.clock()
+	local Camera = Workspace.CurrentCamera
+	local Screenpoint = Camera:WorldToViewportPoint(Worldposition)
+	local Point = Vector2.new(Screenpoint.X, Screenpoint.Y)
+	local Elapsed = Now - self.rubMoment
+	if Elapsed > Rubbing.Gap then
+		self.rubSpeed = 0
+	elseif Elapsed > 0 then
+		local Scale = if Usinggamepad() then Rubbing.GamepadSpeedScale else 1
+		local Speed = math.min((Point - self.rubPoint).Magnitude / Camera.ViewportSize.Y / Elapsed * Scale, Rubbing.FastSpeed)
+		self.rubSpeed += (Speed - self.rubSpeed) * (1 - math.exp(-Elapsed / Rubbing.Smoothing))
+	end
+	self.rubPoint = Point
+	self.rubMoment = Now
+end
+
 function Cleaningcontroller:SendDirt(Toolname: string)
-	if os.clock() - self.lastRequest < Cleaninterval then return end
+	local Now = os.clock()
+	if Now - self.lastRequest < Cleaninterval then return end
+	local Factor = Rubfactor(self.rubSpeed)
+	if Now - self.lastDirt < Cleaninterval / math.min(Factor, 1) then return end
 	local Strokes = {}
 	while #Strokes < Maxdirtstrokes and #Pendingorder > 0 do
 		local Decal = table.remove(Pendingorder, 1) :: Decal
@@ -1047,9 +1104,13 @@ function Cleaningcontroller:SendDirt(Toolname: string)
 	end
 	if #Strokes == 0 and not self.pingPending then return end
 	self.pingPending = false
-	self.lastRequest = os.clock()
+	self.lastRequest = Now
+	self.lastDirt = Now
 	Fadetick = Fadetick % 65535 + 1
-	Remotemanager:FireServer("RestorationService", "CleanDirt", Toolname, Strokes, Usinggamepad())
+	Remotemanager:FireServer("RestorationService", "CleanDirt", Toolname, Strokes, Usinggamepad(), Rubpasses)
+	self.rubCarry += math.max(Factor, 1)
+	Rubpasses = math.floor(self.rubCarry)
+	self.rubCarry -= Rubpasses
 end
 
 function Cleaningcontroller:SendStain(): boolean
@@ -1090,6 +1151,11 @@ function Cleaningcontroller:Init()
 	self.stainTurn = false
 	self.pingPending = false
 	self.lastPingPosition = Vector3.zero
+	self.lastDirt = 0
+	self.rubSpeed = 0
+	self.rubPoint = Vector2.zero
+	self.rubMoment = 0
+	self.rubCarry = 0
 end
 
 function Cleaningcontroller:Start()
@@ -1105,6 +1171,9 @@ end
 function Cleaningcontroller:WarmDirtTextures()
 	for _, Texture in ipairs(Cleaningconfig.DirtTextures) do
 		Loadsource(Texture.Image)
+	end
+	if Cleaningconfig.Grime.Image ~= "" then
+		Loadsource(Cleaningconfig.Grime.Image)
 	end
 end
 
@@ -1311,6 +1380,7 @@ end
 
 function Cleaningcontroller:TryCleanDirt(Hit: Surfacecast.Hit, Toolname: string)
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
+	self:Rub(Hit.Position)
 	local Radiusscale = if Toolname == "CottonTip" then Cottonscale else Brushscale
 	if not self:EraseDirtOverlay(Hit.Instance, Hit.Position, Hit.DecalNormal, Radiusscale * Inputbrushscale()) then
 		self:QueuePing(Hit.Position)
@@ -1321,6 +1391,7 @@ end
 function Cleaningcontroller:TryCleanCotton(Hit: Surfacecast.Hit)
 	if Core:GetController("InspectionCameraController"):IsDragging() then return end
 	self.lastCotton = os.clock()
+	self:Rub(Hit.Position)
 	local Stained = self:EraseStains(Hit.Instance, Hit.Position, Hit.DecalNormal)
 	if not self:EraseDirtOverlay(Hit.Instance, Hit.Position, Hit.DecalNormal, Cottonscale * Inputbrushscale()) and not Stained then
 		self:QueuePing(Hit.Position)

@@ -26,6 +26,7 @@ local Fastframetweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quint, Enum.Easi
 local Buttontweeninfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local Estimationtweeninfo = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local ErrorMessageGradient = Rarityconfig.Mythic.Gradient
+local Cleandelay = 0.6
 local DisabledEstimateColor = Color3.fromRGB(115, 115, 115)
 local PointerRayOffsets = { Vector2.zero }
 local TouchRayOffsets = {
@@ -386,7 +387,20 @@ function Customercontroller:Respond(Decision: string)
 			tostring(Offer.ImageId or ""),
 			self.rarityGradient
 		)
+		self.startingItem = true
+		task.delay(Cleandelay, function()
+			local Computer = Core:GetController("ComputerController")
+			local Success, Message = pcall(Computer.BeginItem, Computer, Response.ItemId, Response.ObjectKey)
+			self.startingItem = false
+			if not Success then
+				error(Message, 0)
+			end
+		end)
 	end
+end
+
+function Customercontroller:IsStartingItem(): boolean
+	return self.startingItem
 end
 
 function Customercontroller:Init()
@@ -403,6 +417,7 @@ function Customercontroller:Init()
 	self.frameScale = EnsureScale(self.frame)
 	self.shownPosition = self.frame.Position
 	self.hiddenPosition = self.shownPosition + UDim2.fromOffset(0, 24)
+	self.startingItem = false
 
 	self.objectLabel = self.frame:WaitForChild("ObjectNameText") :: TextLabel
 	self.rarityText = self.frame:WaitForChild("RarityText") :: TextLabel

@@ -19,6 +19,7 @@ return {
 		{ Image = "rbxassetid://87402903792010", Pattern = "Clumps", ZIndex = 15 },
 		{ Image = "rbxassetid://79361514123085", Pattern = "Dust", ZIndex = 11 },
 	},
+	Grime = { Image = "rbxassetid://95843365704909", ZIndex = 10 },
 	ScratchTextures = {
 		{ Name = "Sc1", Image = "rbxassetid://136943980377010" },
 		{ Name = "Sc2", Image = "rbxassetid://136672328215757" },
@@ -40,12 +41,23 @@ return {
 		FaceCap = 0.8,
 	},
 	BrushMinimumRadius = 0.075,
+	MinDirtFaceSide = 1.5,
 	StainBrushScale = 0.6,
 	GamepadBrushScale = 1.5,
+	Rubbing = {
+		StillFactor = 0.3,
+		NormalSpeed = 0.3,
+		FastSpeed = 1.5,
+		FastFactor = 2,
+		Smoothing = 0.2,
+		Gap = 0.25,
+		GamepadSpeedScale = 2,
+	},
 	CleaningSpeed = {
 		BaseCleaningSpeed = 1,
 		TargetCleaningDuration = 85,
 		TutorialCleaningDuration = 8,
+		StarterRamp = { 0.3, 0.5, 0.7 },
 		MinCleaningMultiplier = 0.15,
 		MaxCleaningMultiplier = 4,
 		RarityDuration = {

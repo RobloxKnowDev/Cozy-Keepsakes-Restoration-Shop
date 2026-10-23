@@ -28,7 +28,7 @@ local Maximumsize = 4_000_000
 local Maximumdepth = 32
 local Shutdowndeadline = 27
 local Sectionorder =
-	{ "Cash", "Stats", "Upgrades", "Inventory", "Restoration", "Exposition", "Monetization", "Settings", "Leaderboard", "Codes", "DailyTasks", "Customer", "FreeReward" }
+	{ "Cash", "Stats", "Upgrades", "Inventory", "Restoration", "Exposition", "Monetization", "Settings", "Leaderboard", "Codes", "DailyTasks", "Customer", "FreeReward", "Funnel" }
 
 type Section = {
 	Load: (Player, any) -> (),

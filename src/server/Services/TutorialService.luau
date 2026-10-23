@@ -13,6 +13,7 @@ local Tutorialservice = {
 	Remotes = {
 		GetState = "Function",
 		SetStep = "Event",
+		LessonStep = "Event",
 		Complete = "Event",
 	},
 }
@@ -24,7 +25,7 @@ local Isstudio = RunService:IsStudio()
 local Loadattempts = 5
 local Saveattempts = 3
 local Maximumstep = 1000
-local Stepversion = 2
+local Stepversion = 3
 local Shutdowndeadline = 25
 local Completedbyplayer: { [Player]: boolean } = {}
 local Loadedbyplayer: { [Player]: boolean } = {}
@@ -262,6 +263,13 @@ function Tutorialservice:Init()
 		Stepbyplayer[Player] = Sanitized
 		Stepversionbyplayer[Player] = Stepversion
 		Core:GetService("FunnelService"):LogTutorial(Player, Sanitized)
+	end)
+
+	Remotemanager:OnServerEvent(self.Name, "LessonStep", function(Player, Id, Learned)
+		if type(Id) ~= "string" or type(Learned) ~= "boolean" or Completedbyplayer[Player] ~= true then
+			return
+		end
+		Core:GetService("FunnelService"):LogLesson(Player, if Learned then Id .. "Done" else Id)
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "Complete", function(Player)

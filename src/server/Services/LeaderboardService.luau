@@ -109,7 +109,7 @@ local function Resolvenames()
 		end)
 		if Success then
 			for _, Info in ipairs(Infos) do
-				Namesbyuserid[Info.Id] = Info.DisplayName
+				Namesbyuserid[Info.Id] = Info.Username
 				Verifiedbyuserid[Info.Id] = Info.HasVerifiedBadge == true
 			end
 		end

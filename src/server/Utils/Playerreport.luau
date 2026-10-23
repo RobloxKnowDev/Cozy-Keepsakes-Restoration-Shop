@@ -1217,7 +1217,6 @@ local function Upgradesview(Lines: { string }, Context: any)
 		local Definition = Upgradesconfig[Name]
 		local Price = if Maximum and Level >= Maximum
 			then "max level"
-			elseif Intutorial and Definition.TutorialFree and Level == Definition.DefaultLevel then "next free (tutorial)"
 			else "next " .. Money(math.round(Definition.CashPriceLevel1 * Definition.PriceGrowth ^ Level)) .. (if Intutorial then " after the tutorial" else "")
 		local Effect = Upgradeeffects[Name]
 		local Parts = { Upgradename(Name, Levels) }

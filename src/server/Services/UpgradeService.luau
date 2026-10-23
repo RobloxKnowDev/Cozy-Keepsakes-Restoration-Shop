@@ -101,6 +101,14 @@ function UpgradeService:GetValue(Player: Player, UpgradeName: string): number
 	return self:GetLevel(Player, UpgradeName)
 end
 
+function UpgradeService:GetBoughtLevels(Player: Player): number
+	local Total = 0
+	for UpgradeName, Definition in pairs(UpgradeConfig) do
+		Total += self:GetLevel(Player, UpgradeName) - Definition.DefaultLevel
+	end
+	return Total
+end
+
 function UpgradeService:GetCashPrice(Player: Player, UpgradeName: string): number?
 	local Definition = GetDefinition(UpgradeName)
 	if not Definition then
@@ -110,9 +118,6 @@ function UpgradeService:GetCashPrice(Player: Player, UpgradeName: string): numbe
 	local MaxLevel = GetMaxLevel(Player, UpgradeName, Definition)
 	if MaxLevel and Level >= MaxLevel then
 		return nil
-	end
-	if Definition.TutorialFree and Level == Definition.DefaultLevel and Core:GetService("TutorialService"):IsRunning(Player) then
-		return 0
 	end
 	local TargetLevel = Level + 1
 	local Growth = tonumber(Definition.PriceGrowth) or DefaultPriceGrowth
@@ -172,6 +177,8 @@ function UpgradeService:GrantLevel(Player: Player, UpgradeName: string): boolean
 		Core:GetService("CustomerService"):RefreshCustomerLimit()
 	elseif UpgradeName == "PurchaseDiscount" then
 		Core:GetService("CustomerService"):RefreshPendingOfferPrice(Player)
+	elseif UpgradeName == "DisplaySpace" then
+		Core:GetService("ExpositionService"):AutoEquip(Player)
 	end
 	return true
 end
@@ -195,7 +202,7 @@ function UpgradeService:PurchaseWithCash(Player: Player, UpgradeName: string)
 		Core:GetService("CashService"):AddCash(Player, Price, false)
 		return { Success = false, Reason = "UpgradeFailed" }
 	end
-	Core:GetService("FunnelService"):LogEarly(Player, "FirstUpgrade")
+	Core:GetService("FunnelService"):Refresh(Player)
 	return { Success = true, State = self:GetUpgradeState(Player, UpgradeName) }
 end
 
