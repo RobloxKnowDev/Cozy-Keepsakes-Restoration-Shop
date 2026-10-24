@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
+local Customerconfig = require(Replicatedstorage.Shared.Config.Customer)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
 local Facemapping = require(Replicatedstorage.Shared.Utils.FaceMapping)
 local Stainlayout = require(Replicatedstorage.Shared.Utils.StainLayout)
@@ -61,6 +62,11 @@ local Tilttext = {
 	Gamepad = "It's on top! Push the right stick down!",
 }
 local Fliptext = { Touch = "Tap to flip it!", Mouse = "Tap to flip it!", Gamepad = "Press Y to flip it!" }
+local Undertext = {
+	Touch = "Dirt underneath! Tap to flip it!",
+	Mouse = "Dirt underneath! Click to flip it!",
+	Gamepad = "Dirt underneath! Press Y to flip it!",
+}
 local Lessoncheck = 0.5
 local Finishtexts = { Clean = "All clean! Tap to finish.", Partial = "Tap to finish." }
 local Downfacing = -0.8
@@ -728,6 +734,7 @@ function Tutorialcontroller:Showstep(Index: number)
 	self.stepStart = os.clock()
 	self.doneSince = nil
 	self.tapped = false
+	self.toolEquipped = false
 end
 
 function Tutorialcontroller:Finish()
@@ -843,6 +850,38 @@ local function Categorydecal(): Decal?
 	return nil
 end
 
+local function Underdecal(): Decal?
+	local Object = Restoration():GetActiveObject()
+	if not Object then
+		return nil
+	end
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if
+			Descendant:IsA("Decal")
+			and Cleaningconfig.DirtDecals[Descendant.Name]
+			and Descendant:GetAttribute("Cleaned") ~= true
+			and Facesdown(Descendant)
+		then
+			return Descendant
+		end
+	end
+	return nil
+end
+
+local function Restoring(): boolean
+	return Restoration():GetActiveObject() ~= nil and not Core:GetController("CompletionController"):IsVisible()
+end
+
+local function Customerwaiting(): boolean
+	local Customer = Core:GetController("CustomerController")
+	for _, Name in ipairs({ "DailyRewardController", "DonationController", "ExpositionController", "GroupRewardController", "LeaderboardController", "SettingController" }) do
+		if Core:GetController(Name):IsOpen() then
+			return false
+		end
+	end
+	return Customer:CanInteract() and Customer:GetInteractionCustomer() ~= nil
+end
+
 local function Categoryspot(Kind: string): Instance?
 	local Object = Restoration():GetActiveObject()
 	if not Object then
@@ -879,35 +918,36 @@ local function Liquidfolder(Name: string): Instance?
 	return if Spots then Spots:FindFirstChild(Name) else nil
 end
 
-local function Liquidcount(Name: string): number
-	local Folder = Liquidfolder(Name)
-	return if Folder then #Folder:GetChildren() else 0
-end
-
 local function Categoryclear(Kind: string): boolean
 	return Categorymissing(Kind) or Categorydone(Kind)
 end
 
-local function Liquidsdry(): boolean
-	return Liquidcount("SolventLiquid") + Liquidcount("PolishLiquid") == 0
-end
-
-local function Liquidspot(): Instance?
-	local Hidden = nil
-	for _, Name in ipairs({ "SolventLiquid", "PolishLiquid" }) do
-		local Folder = Liquidfolder(Name)
-		if Folder then
-			for _, Drop in ipairs(Folder:GetChildren()) do
-				if Drop:IsA("BasePart") then
-					if not Isbehindobject(Drop) then
-						return Drop
-					end
-					Hidden = Hidden or Drop
-				end
+local function Stainliquids(Name: string): { BasePart }
+	local Drops = {}
+	local Folder = Liquidfolder(Name)
+	if Folder then
+		for _, Drop in ipairs(Folder:GetChildren()) do
+			local Target = Drop:FindFirstChild("StainTarget") :: ObjectValue?
+			if Drop:IsA("BasePart") and Target and Target.Value then
+				table.insert(Drops, Drop)
 			end
 		end
 	end
-	return Hidden or Restoration():GetActiveObject()
+	return Drops
+end
+
+local function Staindry(Name: string): boolean
+	return #Stainliquids(Name) == 0
+end
+
+local function Stainliquidspot(Name: string): Instance?
+	local Drops = Stainliquids(Name)
+	for _, Drop in ipairs(Drops) do
+		if not Isbehindobject(Drop) then
+			return Drop
+		end
+	end
+	return Drops[1] or Restoration():GetActiveObject()
 end
 
 local function Facedecals(Face: number): { Decal }
@@ -1020,16 +1060,18 @@ function Tutorialcontroller:Watchlessons()
 	end
 	self.lessonCheck = os.clock() + Lessoncheck
 	local Learned = Players.LocalPlayer:GetAttribute("Lessons")
-	if type(Learned) ~= "string" or not Restoration():GetActiveObject() or Core:GetController("CompletionController"):IsVisible() then
+	if type(Learned) ~= "string" then
 		return
 	end
 	local Done = string.split(Learned, ",")
 	for _, Lesson in ipairs(self.lessons) do
-		if not table.find(Done, Lesson.Id) and not self.lessonsShown[Lesson.Id] and Lesson.Ready() then
-			self.lessonsShown[Lesson.Id] = true
+		if not table.find(Done, Lesson.Id) and not self.lessonsShown[Lesson.Id] and Lesson.Active() and Lesson.Ready() then
+			if not Lesson.Repeat then
+				self.lessonsShown[Lesson.Id] = true
+				Remotemanager:FireServer(Servicename, "LessonStep", Lesson.Id, false)
+			end
 			self.lesson = Lesson
 			self.steps = Lesson.Steps
-			Remotemanager:FireServer(Servicename, "LessonStep", Lesson.Id, false)
 			self:Showstep(1)
 			return
 		end
@@ -1050,7 +1092,7 @@ function Tutorialcontroller:Update()
 		self:Watchlessons()
 		return
 	end
-	if self.lesson and (not Restoration():GetActiveObject() or Core:GetController("CompletionController"):IsVisible()) then
+	if self.lesson and not self.lesson.Active() then
 		self:Finish()
 		return
 	end
@@ -1070,6 +1112,12 @@ function Tutorialcontroller:Update()
 		return
 	end
 	self.gui.Enabled = true
+	if Step.Tool and not self.toolEquipped and Restoration():GetActiveObject() then
+		self.toolEquipped = true
+		if not Toolselected(Step.Tool) then
+			Restoration():SelectTool(Firsttool(Step.Tool))
+		end
+	end
 	if self.running then
 		Restoration():GetInterface():SetContinueLocked(Step.AllowFinish ~= true)
 	end
@@ -1091,7 +1139,7 @@ function Tutorialcontroller:Update()
 	local Text, Gesture, Keyimage, Handspot
 	if Behind and Facesdown(Target :: Instance) then
 		Position, Size = self:Resolve(Restoration():GetInterface().ReturnButton)
-		Text = Textfor(Fliptext)
+		Text = Textfor(Step.Fliptext or Fliptext)
 	elseif Behind and Step.Turnhint then
 		local Tilt = Facesup(Target :: Instance)
 		Text = if Tilt then Tilttext[Kind] else Behindtext[Kind]
@@ -1287,21 +1335,77 @@ function Tutorialcontroller:Buildsteps()
 		},
 	}
 	self.tutorialsteps = self.steps
-	local Dry = {
-		Id = "Dry",
-		Turnhint = true,
-		Tool = "HeatGun",
-		Text = { Touch = "Dry it all!", Mouse = "Hold click to dry it all!", Gamepad = "Hold R2 to dry it all!" },
-		Gesture = "HeatGun",
-		HoldSeconds = 1.5,
-		MaxSeconds = 45,
-		Skip = Liquidsdry,
-		Target = Liquidspot,
-		Done = Liquidsdry,
-	}
+	local function Drystep(Liquid: string)
+		return {
+			Id = "Dry",
+			Turnhint = true,
+			Tool = "HeatGun",
+			Text = { Touch = "Dry the stain!", Mouse = "Hold click to dry the stain!", Gamepad = "Hold R2 to dry the stain!" },
+			Gesture = "HeatGun",
+			MaxSeconds = 45,
+			Skip = function()
+				return Staindry(Liquid)
+			end,
+			Target = function()
+				return Stainliquidspot(Liquid)
+			end,
+			Done = function()
+				return Staindry(Liquid)
+			end,
+		}
+	end
 	self.lessons = {
 		{
+			Id = "Customer",
+			Repeat = true,
+			Active = Customerwaiting,
+			Ready = function()
+				local Purchases = Players.LocalPlayer:GetAttribute("StarterPurchases") or Customerconfig.GuidedStarterPurchases
+				return Purchases < Customerconfig.GuidedStarterPurchases
+			end,
+			Learned = function()
+				return false
+			end,
+			Steps = {
+				{
+					Id = "Customer",
+					Text = { Touch = "Tap the customer!", Mouse = "Click the customer!", Gamepad = "Talk to the customer!" },
+					Target = function()
+						return Core:GetController("CustomerController"):GetInteractionCustomer()
+					end,
+					Done = function()
+						return Core:GetController("CustomerController"):IsVisible()
+					end,
+				},
+			},
+		},
+		{
+			Id = "Flip",
+			Active = Restoring,
+			Ready = function()
+				return Underdecal() ~= nil and self:Dirthidden()
+			end,
+			Learned = function()
+				return not self:Dirthidden()
+			end,
+			Steps = {
+				{
+					Id = "Flip",
+					Fliptext = Undertext,
+					Text = "Rub off the dirt!",
+					MaxSeconds = 30,
+					Target = function()
+						return Underdecal() or Categorydecal() or Restoration():GetActiveObject()
+					end,
+					Done = function()
+						return not self:Dirthidden()
+					end,
+				},
+			},
+		},
+		{
 			Id = "Sticker",
+			Active = Restoring,
 			Ready = function()
 				return not Categoryclear("Sticker")
 			end,
@@ -1330,8 +1434,9 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Turn",
+			Active = Restoring,
 			Ready = function()
-				return Categoryclear("Sticker") and self:Dirthidden()
+				return Categoryclear("Sticker") and Restoration():GetActiveObject():GetAttribute("FrontDirt") ~= true and self:Dirthidden()
 			end,
 			Learned = function()
 				return not self:Dirthidden()
@@ -1356,6 +1461,7 @@ function Tutorialcontroller:Buildsteps()
 		},
 		{
 			Id = "Ink",
+			Active = Restoring,
 			Ready = function()
 				return Categoryclear("Sticker") and not Categoryclear("Ink")
 			end,
@@ -1398,11 +1504,12 @@ function Tutorialcontroller:Buildsteps()
 						return Categorydone("Ink")
 					end,
 				},
-				Dry,
+				Drystep("SolventLiquid"),
 			},
 		},
 		{
 			Id = "Scratch",
+			Active = Restoring,
 			Ready = function()
 				return Categoryclear("Sticker") and not Categoryclear("Scratch")
 			end,
@@ -1445,7 +1552,7 @@ function Tutorialcontroller:Buildsteps()
 						return Categorydone("Scratch")
 					end,
 				},
-				Dry,
+				Drystep("PolishLiquid"),
 			},
 		},
 	}
@@ -1469,7 +1576,7 @@ end
 
 function Tutorialcontroller:Preparetexts()
 	local Texts = {}
-	for _, Value in ipairs({ Behindtext, Tilttext, Fliptext, Finishtexts }) do
+	for _, Value in ipairs({ Behindtext, Tilttext, Fliptext, Undertext, Finishtexts }) do
 		Collecttexts(Texts, Value)
 	end
 	for _, Name in pairs(Toolnames) do

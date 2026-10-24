@@ -6,6 +6,7 @@ local Serverstorage = game:GetService("ServerStorage")
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Config = require(Replicatedstorage.Shared.Config.Object)
+local Lessonsconfig = require(Replicatedstorage.Shared.Config.Lessons)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Mutationvfx = require(Replicatedstorage.Shared.Utils.MutationVfx)
 local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
@@ -60,7 +61,9 @@ local Dirtpatternversion = 7
 local Narrowfaceversion = 8
 local Tutorialminimumcells = 64
 local Tutorialfacenames = { Config.Offer.TutorialDirtFace }
-local Lessonkinds = { "Sticker", "Ink", "Scratch" }
+local Lessonkinds = Lessonsconfig.StainKinds
+local Frontviewpitch = math.rad(38)
+local Frontfacingdot = 0.35
 local Stickerfacingdot = 0.5
 local Stickerinsideversion = 6
 local Premarkframebudget = 0.005
@@ -1109,6 +1112,7 @@ local Peeling: { [Player]: BasePart } = {}
 local Activeobjects: { [Player]: RestorationObject } = {}
 local Pendingcleanall: { [Player]: number } = {}
 local Lessons: { [Player]: { [string]: boolean } } = {}
+local Practice: { [Player]: number } = {}
 local Randomgenerator = Random.new()
 
 local function Roundtwodecimals(Value: number): number
@@ -1285,6 +1289,7 @@ local function Captureprogress(Object: RestorationObject): { [string]: any }
 	Progress.DirtSeed = Object:GetAttribute("DirtSeed")
 	Progress.DirtVersion = Object:GetAttribute("DirtVersion")
 	Progress.Kinds = Object:GetAttribute("StainKinds")
+	Progress.Front = Object:GetAttribute("FrontDirt") == true
 	local Stains = {}
 	for Key, Texture in pairs(Stainkeys(Object)) do
 		Stains[Key] = 1 - (Texture:GetAttribute("Remaining") :: number)
@@ -1577,6 +1582,28 @@ local function Picktutorialdecal(
 	return Picked
 end
 
+local function Pickfrontdecals(
+	Object: RestorationObject,
+	Decals: { Decal },
+	Getcaster: () -> (any, boolean),
+	Version: number,
+	Narrowmasks: { [Decal]: buffer }
+): { [Decal]: CoverageEntry }
+	local Facing = Object:GetPivot() * Getobjectrotation(Object.Name):Inverse() * CFrame.Angles(0, math.rad(-Workbenchturndegrees), 0)
+	local Tocamera = Facing.LookVector * math.cos(Frontviewpitch) + Vector3.yAxis * math.sin(Frontviewpitch)
+	local Picked = {}
+	for _, Decal in ipairs(Decals) do
+		local Normal = (Decal.Parent :: BasePart).CFrame:VectorToWorldSpace(Vector3.FromNormalId(Decal.Face))
+		if Normal:Dot(Tocamera) >= Frontfacingdot then
+			local Entry = Builddirtentry(Decal, Narrowmasks[Decal])
+			if Premarkunreachable(Entry, Object, Getcaster, Decal, Knowncells(Object.Name, Version, Decal)) and Requiredcells(Entry) >= Tutorialminimumcells then
+				Picked[Decal] = Entry
+			end
+		end
+	end
+	return Picked
+end
+
 local function Initializedirt(
 	Object: RestorationObject,
 	Singleface: boolean,
@@ -1584,7 +1611,8 @@ local function Initializedirt(
 	Version: number,
 	Getcaster: () -> (any, boolean),
 	Spotseconds: number?,
-	Sticker: BasePart?
+	Sticker: BasePart?,
+	Front: boolean
 ): number
 	local Generator = Random.new(Seed)
 	local Styled = Version >= 2 and not Singleface
@@ -1655,6 +1683,8 @@ local function Initializedirt(
 		end
 		Tutorialfaces = next(Tutorialentries) ~= nil
 	end
+	local Frontentries = if Front and not Singleface then Pickfrontdecals(Object, Decals, Getcaster, Version, Narrowmasks) else {}
+	local Picked = if Tutorialfaces then Tutorialentries elseif next(Frontentries) ~= nil then Frontentries else nil
 	local Keptcount = if #Decals == 0 then 0 elseif Singleface then 1 else Generator:NextInteger(1, #Decals)
 	local Kept = 0
 	local Layers = 0
@@ -1668,17 +1698,17 @@ local function Initializedirt(
 	end
 	local Mindirtshare = if Singleface or Version < Mindirtshareversion then 0 else Cleaningconfig.MinDirtShare
 	for _, Decal in ipairs(Decals) do
-		local Wanted = Kept < Keptcount or Keptarea < Totalarea * Mindirtshare
+		local Wanted = if Picked then Picked[Decal] ~= nil else Kept < Keptcount or Keptarea < Totalarea * Mindirtshare
 		local Texture = if Styled and Wanted then Pickdirttexture(Generator, nil, Patterns) else nil
 		if Texture then
 			Decal.Texture = Texture.Image
 			Decal.ZIndex = Texture.ZIndex
 		end
-		local Entry = if Tutorialfaces
-			then Tutorialentries[Decal]
+		local Entry = if Picked
+			then Picked[Decal]
 			elseif Wanted then Builddirtentry(Decal, Narrowmasks[Decal])
 			else nil
-		if Entry and (Tutorialfaces or Premarkunreachable(Entry, Object, Getcaster, Decal, Knowncells(Object.Name, Version, Decal))) then
+		if Entry and (Picked ~= nil or Premarkunreachable(Entry, Object, Getcaster, Decal, Knowncells(Object.Name, Version, Decal))) then
 			local Radius = Facemapping.GetBrushRadius((Decal.Parent :: BasePart).Size, Decal.Face.Name, Brushradii.ToothBrush, Brushradius)
 			Kept += 1
 			Keptarea += Facearea(Decal)
@@ -1747,6 +1777,7 @@ local function Initializedirt(
 		Decal:SetAttribute("TutorialFace", Face)
 		Decal:SetAttribute("TutorialShare", Tutorialentries[Decal].Units / Totaldirt)
 	end
+	Object:SetAttribute("FrontDirt", Picked == Frontentries)
 	Object:SetAttribute("DirtSeed", Seed)
 	Object:SetAttribute("DirtVersion", Version)
 	Object:SetAttribute("DirtStep", Step)
@@ -2149,9 +2180,41 @@ local function Baselessons(Player: Player)
 		return
 	end
 	if Lessons[Player] == nil then
-		Lessons[Player] = if Dataservice:IsNewProfile(Player) then {} else { Sticker = true, Ink = true, Scratch = true, Turn = true }
+		local Learned = {}
+		if not Dataservice:IsNewProfile(Player) then
+			for _, Lesson in ipairs(Lessonsconfig.Order) do
+				Learned[Lesson.Name] = true
+			end
+			for _, Hint in ipairs(Lessonsconfig.Hints) do
+				Learned[Hint] = true
+			end
+		end
+		Lessons[Player] = Learned
 	end
 	Publishlessons(Player)
+end
+
+local function Lessonstage(Player: Player): number
+	local Learned = Lessons[Player]
+	return if Learned then Lessonsconfig.GetStage(Learned) else #Lessonsconfig.Order + 1
+end
+
+local function Lessonfeatures(Player: Player): { [string]: boolean }
+	local Features = {}
+	for Index = 1, math.min(Lessonstage(Player), #Lessonsconfig.Order) do
+		Features[Lessonsconfig.Order[Index].Name] = true
+	end
+	return Features
+end
+
+local function Lessondone(Object: RestorationObject, Name: string): boolean
+	if Name == "Dirt" then
+		return Getcompletionratio(Object) >= Finishassist.Start
+	elseif Name == "Turn" then
+		return Getcompletionratio(Object) >= Finishassist.Start and Object:GetAttribute("FrontDirt") ~= true
+	end
+	local Total = tonumber(Object:GetAttribute("Total_" .. Name)) or 0
+	return Total > 0 and (tonumber(Object:GetAttribute("Cleaned_" .. Name)) or 0) >= Total
 end
 
 local function Learnlessons(Player: Player, Object: RestorationObject)
@@ -2159,22 +2222,28 @@ local function Learnlessons(Player: Player, Object: RestorationObject)
 	if not Learned or Core:GetService("TutorialService"):IsRunning(Player) then
 		return
 	end
-	Learned.Turn = true
-	for _, Kind in ipairs(Lessonkinds) do
-		if (tonumber(Object:GetAttribute("Total_" .. Kind)) or 0) > 0 then
-			Learned[Kind] = true
-		end
+	local Lesson = Lessonsconfig.Order[Lessonsconfig.GetStage(Learned)]
+	if not Lesson or not Lessondone(Object, Lesson.Name) then
+		return
 	end
+	Practice[Player] = (Practice[Player] or 0) + 1
+	if Practice[Player] < Lesson.Objects then
+		return
+	end
+	Practice[Player] = 0
+	Learned[Lesson.Name] = true
 	Publishlessons(Player)
+	if Lesson.Name == "Dirt" then
+		Core:GetService("FunnelService"):LogLesson(Player, "Practice")
+	end
 end
 
 local function Allowedkinds(Player: Player): { string }
-	local Learned = Lessons[Player]
+	local Features = Lessonfeatures(Player)
 	local Allowed = {}
 	for _, Kind in ipairs(Lessonkinds) do
-		table.insert(Allowed, Kind)
-		if Learned and not Learned[Kind] then
-			break
+		if Features[Kind] then
+			table.insert(Allowed, Kind)
 		end
 	end
 	return Allowed
@@ -2283,7 +2352,7 @@ local function Dryliquid(Player: Player, Target: any)
 	end
 end
 
-local function Createspots(Object: RestorationObject, Singleface: boolean, Seed: number, Version: number, Kinds: { string })
+local function Createspots(Object: RestorationObject, Singleface: boolean, Seed: number, Version: number, Kinds: { string }, Front: boolean)
 	Coverage[Object] = {}
 	Warmmasks(Object)
 	local Old = Object:FindFirstChild("RestorationSpots")
@@ -2321,7 +2390,7 @@ local function Createspots(Object: RestorationObject, Singleface: boolean, Seed:
 		for _, Layout in ipairs(Stains) do
 			Spotseconds += Speed.SpotSeconds[Stainframes[Layout.Frame.Name]]
 		end
-		Totaldirt = Initializedirt(Object, Singleface, Seed, Version, Getcaster, Spotseconds, Sticker)
+		Totaldirt = Initializedirt(Object, Singleface, Seed, Version, Getcaster, Spotseconds, Sticker, Front)
 		Totalink, Totalscratches = Initializestains(Object, Stains, Version, Getcaster)
 	end)
 	if Releasecaster() then
@@ -2381,9 +2450,10 @@ function Restorationservice:PrepareObject(
 	local Seed = if Progress and Progress.DirtSeed then Progress.DirtSeed else Randomgenerator:NextInteger(1, 2147483646)
 	local Version = if Progress and Progress.DirtSeed then Progress.DirtVersion or 1 else Dirtversion
 	local Kinds = if Istutorial then {} elseif Progress and Progress.DirtSeed then Savedkinds(Progress) else Allowedkinds(Owner)
+	local Front = if Istutorial then false elseif Progress and Progress.DirtSeed then Progress.Front == true else not Lessonfeatures(Owner).Turn
 	Object:SetAttribute("StainKinds", table.concat(Kinds, ","))
 	local Success, Failure = pcall(function()
-		Createspots(Object, Istutorial, Seed, Version, Kinds)
+		Createspots(Object, Istutorial, Seed, Version, Kinds, Front)
 		Precleanobject(Object, (tonumber(Percent) or 0) / 100, Progress)
 	end)
 	if not Success then
@@ -2399,6 +2469,15 @@ function Restorationservice:GrantObject(Player: Player, Objectname: string): boo
 	if Config.Object[Objectname] == nil then return false end
 	Core:GetService("InventoryService"):AddPurchasedItem(Player, Objectname, Generateobjectmaximums(Objectname), 0)
 	return true
+end
+
+function Restorationservice:LearnHint(Player: Player, Hint: string)
+	local Learned = Lessons[Player]
+	if not Learned or not table.find(Lessonsconfig.Hints, Hint) or Learned[Hint] then
+		return
+	end
+	Learned[Hint] = true
+	Publishlessons(Player)
 end
 
 function Restorationservice:HasActiveSession(Player: Player): boolean
@@ -2455,16 +2534,28 @@ function Restorationservice:Init()
 			Setpendingcleanall(Player, if Count == Count and math.abs(Count) ~= math.huge then math.max(math.floor(Count), 0) else 0)
 			if type(Saved.Lessons) == "table" then
 				local Learned = {}
-				for _, Kind in ipairs({ "Sticker", "Ink", "Scratch", "Turn" }) do
-					Learned[Kind] = Saved.Lessons[Kind] == true
+				for _, Lesson in ipairs(Lessonsconfig.Order) do
+					Learned[Lesson.Name] = Saved.Lessons[Lesson.Name] == true
+				end
+				for _, Hint in ipairs(Lessonsconfig.Hints) do
+					Learned[Hint] = Saved.Lessons[Hint] == true
+				end
+				if Saved.Lessons.Dirt == nil then
+					Learned.Dirt = Learned.Turn
 				end
 				Lessons[Player] = Learned
 			end
+			local Practiced = tonumber(Saved.Practice) or 0
+			Practice[Player] = if Practiced == Practiced and math.abs(Practiced) ~= math.huge then math.max(math.floor(Practiced), 0) else 0
 		end,
 		Save = function(Player)
-			return { PendingCleanAll = Pendingcleanall[Player] or 0, Lessons = Lessons[Player] }
+			return { PendingCleanAll = Pendingcleanall[Player] or 0, Lessons = Lessons[Player], Practice = Practice[Player] or 0 }
 		end,
 		Clear = function(Player)
+			local Sessionobject = Sessions[Player]
+			if Sessionobject and Sessionobject.Parent and not Sessionobject:GetAttribute("CompletingRestoration") then
+				Core:GetService("FunnelService"):EndItem(Player, Sessionobject, Restorationpercent(Getcompletionratio(Sessionobject)), true)
+			end
 			local Spot = Peeling[Player]
 			if Spot and Spot.Parent then
 				Spot:SetAttribute("PeelingBy", nil)
@@ -2477,6 +2568,7 @@ function Restorationservice:Init()
 			Stallevents[Player] = nil
 			Pendingcleanall[Player] = nil
 			Lessons[Player] = nil
+			Practice[Player] = nil
 			Releaseactiveobject(Player)
 		end,
 	})
@@ -2500,6 +2592,7 @@ function Restorationservice:Init()
 		end
 		if Object:GetAttribute("CompletingRestoration") then return nil end
 		Sessions[Player] = Object
+		Core:GetService("FunnelService"):StartItem(Player, Object, Lessonsconfig.GetStageName(Lessonstage(Player)))
 		return Object
 	end)
 
@@ -2530,6 +2623,7 @@ function Restorationservice:Init()
 		Object:SetAttribute("PurchasePrice", Item.PurchasePrice)
 		Object:SetAttribute("StartPercent", Item.RestorationPercent)
 		Sessions[Player] = Object
+		Core:GetService("FunnelService"):StartItem(Player, Object, Lessonsconfig.GetStageName(Lessonstage(Player)))
 		Inventoryservice:PushItems(Player)
 		return Object, true
 	end)
@@ -2583,6 +2677,7 @@ function Restorationservice:Init()
 		}
 
 		Sessionobject:SetAttribute("SaleValue", Salevalue)
+		Core:GetService("FunnelService"):EndItem(Player, Sessionobject, Itemdata.RestorationPercent, false)
 		Learnlessons(Player, Sessionobject)
 
 		local Spot = Peeling[Player]

@@ -270,6 +270,9 @@ function Tutorialservice:Init()
 			return
 		end
 		Core:GetService("FunnelService"):LogLesson(Player, if Learned then Id .. "Done" else Id)
+		if Learned then
+			Core:GetService("RestorationService"):LearnHint(Player, Id)
+		end
 	end)
 
 	Remotemanager:OnServerEvent(self.Name, "Complete", function(Player)

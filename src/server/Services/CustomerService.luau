@@ -142,6 +142,11 @@ local function Setpendingskips(Player: Player, Count: number)
 	Player:SetAttribute("PendingSkips", Count)
 end
 
+local function Setstarterpurchases(Player: Player, Count: number)
+	Starterpurchases[Player] = Count
+	Player:SetAttribute("StarterPurchases", Count)
+end
+
 local function GetMaxCustomersPerDay(Player: Player): number
 	return math.max(math.floor(Core:GetService("UpgradeService"):GetValue(Player, "DailyCustomers")), 0)
 end
@@ -1002,7 +1007,7 @@ local function OpenShop(Player: Player)
 	Commonstreaks[Player] = Commonstreaks[Player] or 0
 	Offerbags[Player] = Offerbags[Player] or {}
 	local Newprofile = Core:GetService("DataService"):IsNewProfile(Player)
-	Starterpurchases[Player] = Starterpurchases[Player] or (if Newprofile then 0 else Laststarterpurchase)
+	Setstarterpurchases(Player, Starterpurchases[Player] or (if Newprofile then 0 else Laststarterpurchase))
 	Startersteps[Player] = Startersteps[Player] or (if Newprofile then 1 else #Customerconfig.StarterOffers + 1)
 	States[Player] = State
 	Setpendingskips(Player, Pendingskips[Player] or 0)
@@ -1137,7 +1142,7 @@ function Customerservice:Init()
 			Core:GetService("TutorialService"):MarkObjectBought(Player)
 			Core:GetService("FunnelService"):RecordPurchase(Player, Objectconfig.Object[Offer.ObjectKey].Rarity)
 			if not Core:GetService("TutorialService"):IsActive(Player) then
-				Starterpurchases[Player] = math.min(Starterpurchases[Player] + 1, Laststarterpurchase)
+				Setstarterpurchases(Player, math.min(Starterpurchases[Player] + 1, Laststarterpurchase))
 			end
 			if Offer.Starter then
 				Startersteps[Player] += 1

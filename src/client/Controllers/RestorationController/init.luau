@@ -9,6 +9,7 @@ local Userinputservice = game:GetService("UserInputService")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
+local Lessonsconfig = require(Replicatedstorage.Shared.Config.Lessons)
 local Monetizationconfig = require(Replicatedstorage.Shared.Config.Monetization)
 local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
@@ -106,6 +107,27 @@ local function Showcompletion()
 		Completion:Hide()
 		Core:GetController("ExpositionController"):CompleteRestoration()
 	end)
+end
+
+local function Availabletools(Object: Model | BasePart): { [string]: boolean }
+	local Learned = Player:GetAttribute("Lessons")
+	local Done = {}
+	if type(Learned) == "string" then
+		for _, Name in ipairs(string.split(Learned, ",")) do
+			Done[Name] = true
+		end
+	end
+	local Stage = if type(Learned) == "string" then Lessonsconfig.GetStage(Done) else #Lessonsconfig.Order + 1
+	local Kinds = string.split(Object:GetAttribute("StainKinds"), ",")
+	local Available = {}
+	for Index, Lesson in ipairs(Lessonsconfig.Order) do
+		if Index <= Stage or table.find(Kinds, Lesson.Name) then
+			for _, Name in ipairs(Lesson.Tools) do
+				Available[Name] = true
+			end
+		end
+	end
+	return Available
 end
 
 local function Updateprogress(InteractionPosition: Vector2?)
@@ -232,9 +254,11 @@ function Controller:Enter(Prepared: (Model | BasePart)?)
 	Interface.Gui.Enabled = true
 	Core:GetController("ComputerController"):SetHudVisible(false)
 	Interface:ShowForRestoration()
+	local Available = Availabletools(Object)
+	Interface:SetAvailable(Available)
 	Userinputservice.MouseBehavior = Enum.MouseBehavior.Default
 	Updateprogress()
-	Runtime:Select("Transform")
+	Runtime:Select(if Available.Transform then "Transform" else "ToothBrush")
 end
 
 function Controller:ResumePendingEnter()

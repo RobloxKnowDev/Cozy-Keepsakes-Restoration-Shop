@@ -14,7 +14,8 @@ local Customer = {
 		{ Purchase = 5, Rarity = "Epic", Floor = 300 },
 	},
 	StarterPriceShare = 0.8,
-	QuickStarterPurchases = 3,
+	QuickStarterPurchases = 5,
+	GuidedStarterPurchases = 3,
 }
 
 function Customer.GetInterval(Level: number): number

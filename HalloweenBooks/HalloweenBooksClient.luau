@@ -1,3 +1,4 @@
+local Marketplaceservice = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
@@ -28,10 +29,13 @@ local Npctop = Remotes:GetAttribute("NpcTop") :: Vector3
 local Npccenter = Remotes:GetAttribute("NpcCenter") :: Vector3
 local Zonecframe = Remotes:GetAttribute("ZoneCFrame") :: CFrame
 local Zonesize = Remotes:GetAttribute("ZoneSize") :: Vector3
+local Teleportcframe = Remotes:GetAttribute("TeleportCFrame") :: CFrame
 local Eventui = Playergui:WaitForChild("EventUi") :: ScreenGui
 local Eventframe = Eventui:WaitForChild("Frame") :: Frame
 local Eventtext = Eventframe:WaitForChild("Text") :: TextLabel
 local Eventicon = Eventframe:WaitForChild("ImageLabel") :: ImageLabel
+local Skipbutton = Eventui:WaitForChild("SkipButton") :: GuiButton
+local Tpbutton = Eventui:WaitForChild("TPButton") :: GuiButton
 Eventui.ResetOnSpawn = false
 
 local Orange = Color3.fromRGB(255, 140, 26)
@@ -58,6 +62,7 @@ local Beamwidth = 1.6
 local Beamarrowspacing = 3
 local Beamspeed = 2
 local Beamheight = -1
+local Teleportheight = 3
 local Poptween = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local Markertween = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 local Glowtween = TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
@@ -321,6 +326,13 @@ local function Applyprogress(Progress, Animate: boolean)
 		Showcount()
 		return
 	end
+	if Progress.Books >= Progress.Required and Progress.Books - Displayed > 1 then
+		Displayed = Progress.Books
+		Showcount()
+		Eventpop.Scale = 1.25
+		Tweenservice:Create(Eventpop, Poptween, { Scale = 1 }):Play()
+		return
+	end
 	if Progress.Books > Displayed then
 		task.delay(Countfallback, function()
 			if Displayed < State.Books then
@@ -357,8 +369,17 @@ local function Updatebeam()
 	if Root and Startattachment.Parent ~= Root then
 		Startattachment.Parent = Root
 	end
-	local Intro = Root ~= nil and not State.Met and State.Books == 0 and Inzone(Root.Position)
-	Marker.Parent = if Guiding or Intro then Workspace else nil
+	local Inside = Root ~= nil and Inzone(Root.Position)
+	local Intro = not State.Met and State.Books == 0
+	Marker.Parent = if Inside and (Guiding or Intro) then Workspace else nil
+end
+
+local function Updatebuttons()
+	local Character = Player.Character
+	local Root = if Character then Character:FindFirstChild("HumanoidRootPart") :: BasePart? else nil
+	local Inside = Root ~= nil and Inzone(Root.Position)
+	Skipbutton.Visible = Inside and State.Books < State.Required
+	Tpbutton.Visible = not Inside
 end
 
 local function Orbitbook(Template: Model): Model
@@ -483,6 +504,17 @@ end
 
 task.spawn(Setupwizard)
 
+Skipbutton.Activated:Connect(function()
+	Marketplaceservice:PromptProductPurchase(Player, Remotes:GetAttribute("SkipProductId"))
+end)
+
+Tpbutton.Activated:Connect(function()
+	local Character = Player.Character
+	if Character and Character:FindFirstChild("HumanoidRootPart") then
+		Character:PivotTo(Teleportcframe * CFrame.new(0, Teleportheight, 0))
+	end
+end)
+
 Progressevent.OnClientEvent:Connect(function(Progress)
 	Received = true
 	Applyprogress(Progress, true)
@@ -502,6 +534,7 @@ end)
 Runservice.RenderStepped:Connect(function()
 	Updatebooks(os.clock())
 	Updatebeam()
+	Updatebuttons()
 end)
 
 local Initial = Getprogress:InvokeServer()

@@ -123,10 +123,18 @@ function Interface:Trigger(Button: GuiButton)
 	self.Activate(Button)
 end
 
+function Interface:SetAvailable(Available: { [string]: boolean })
+	for Name, Button in pairs(self.Buttons) do
+		Button.Visible = Available[Name] == true
+	end
+end
+
 function Interface:GetToolOrder(): { string }
 	local Names = {}
-	for Name in pairs(self.Buttons) do
-		table.insert(Names, Name)
+	for Name, Button in pairs(self.Buttons) do
+		if Button.Visible then
+			table.insert(Names, Name)
+		end
 	end
 	table.sort(Names, function(Left, Right)
 		local Leftbutton, Rightbutton = self.Buttons[Left], self.Buttons[Right]

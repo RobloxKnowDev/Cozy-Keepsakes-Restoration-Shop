@@ -3,11 +3,13 @@ local Datastoreservice = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
+local Serverstorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
 local Config = {
 	BooksRequired = 40,
 	BadgeId = 0, --id badge bg
+	SkipProductId = 0,
 	BooksInZone = 6,
 	RespawnDelay = 5,
 	PickupRadius = 5,
@@ -46,6 +48,7 @@ local Datas: { [Player]: PlayerData } = {}
 local Books: { [Model]: Vector3 } = {}
 local Eventmap = Workspace:WaitForChild("EventMap")
 local Zone = Eventmap:WaitForChild("SpawnZone") :: BasePart
+local Spawnlocation = Eventmap:WaitForChild("SpawnLocation") :: BasePart
 local Npc = Eventmap:WaitForChild("Wizard") :: Model
 assert(Npc.PrimaryPart, "[Halloween] EventMap.Wizard needs a PrimaryPart")
 for _, Part in ipairs(Npc:GetDescendants()) do
@@ -74,6 +77,8 @@ Remotes:SetAttribute("NpcTop", Boxcframe.Position + Vector3.new(0, Boxsize.Y / 2
 Remotes:SetAttribute("NpcCenter", Boxcframe.Position)
 Remotes:SetAttribute("ZoneCFrame", Zone.CFrame)
 Remotes:SetAttribute("ZoneSize", Zone.Size)
+Remotes:SetAttribute("TeleportCFrame", Spawnlocation.CFrame * CFrame.new(0, Spawnlocation.Size.Y / 2, 0))
+Remotes:SetAttribute("SkipProductId", Config.SkipProductId)
 
 local Models = Replicatedstorage:WaitForChild("Assets"):WaitForChild("Book"):GetChildren()
 local Bookreach = 0
@@ -286,16 +291,9 @@ local function Load(Player: Player)
 		Met = Stored.Met == true,
 		Dirty = false,
 	}
-	if Datas[Player].Books >= Config.BooksRequired then
-		Awardbadge(Player)
-	end
 end
 
-local function Save(Userid: number, Data: PlayerData)
-	if not Data.Dirty then
-		return
-	end
-	Data.Dirty = false
+local function Write(Userid: number, Data: PlayerData): boolean
 	local Success, Failure = pcall(function()
 		Store:UpdateAsync(Key(Userid), function(Stored)
 			local Current = if type(Stored) == "table" then Stored else {}
@@ -307,8 +305,18 @@ local function Save(Userid: number, Data: PlayerData)
 		end)
 	end)
 	if not Success then
-		Data.Dirty = true
 		warn("[Halloween] could not save " .. Userid .. ": " .. tostring(Failure))
+	end
+	return Success
+end
+
+local function Save(Userid: number, Data: PlayerData)
+	if not Data.Dirty then
+		return
+	end
+	Data.Dirty = false
+	if not Write(Userid, Data) then
+		Data.Dirty = true
 	end
 end
 
@@ -316,9 +324,6 @@ local function Collect(Player: Player, Data: PlayerData, Book: Model)
 	Books[Book] = nil
 	Data.Books += 1
 	Data.Dirty = true
-	if Data.Books == Config.BooksRequired then
-		task.spawn(Awardbadge, Player)
-	end
 	Collectedevent:FireAllClients(Book, Player)
 	Progressevent:FireClient(Player, Progress(Data))
 	task.delay(Config.CollectDuration + 0.3, function()
@@ -338,10 +343,12 @@ Prompt.Triggered:Connect(function(Player)
 		Progressevent:FireClient(Player, Progress(Data))
 	end
 	if Data.Claimed then
+		task.spawn(Awardbadge, Player)
 		Dialogueevent:FireClient(Player, Config.Texts.Claimed)
 	elseif Data.Books >= Config.BooksRequired then
 		Data.Claimed = true
 		Data.Dirty = true
+		task.spawn(Awardbadge, Player)
 		Givehouse(Player)
 		Dialogueevent:FireClient(Player, Config.Texts.Reward)
 		Progressevent:FireClient(Player, Progress(Data))
@@ -358,6 +365,29 @@ Getprogress.OnServerInvoke = function(Player)
 	local Data = Datas[Player]
 	return if Data then Progress(Data) else nil
 end
+
+local Skipreceipt = Instance.new("BindableFunction")
+Skipreceipt.Name = tostring(Config.SkipProductId)
+Skipreceipt.OnInvoke = function(Receipt)
+	local Player = Players:GetPlayerByUserId(Receipt.PlayerId)
+	while Player and Player.Parent and not Datas[Player] do
+		task.wait()
+	end
+	local Data = if Player then Datas[Player] else nil
+	if not Player or not Data then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	Data.Books = Config.BooksRequired
+	if not Write(Player.UserId, Data) then
+		Data.Dirty = true
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	Progressevent:FireClient(Player, Progress(Data))
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+task.spawn(function()
+	Skipreceipt.Parent = Serverstorage:WaitForChild("ReceiptHandlers")
+end)
 
 Players.PlayerAdded:Connect(Load)
 for _, Player in ipairs(Players:GetPlayers()) do

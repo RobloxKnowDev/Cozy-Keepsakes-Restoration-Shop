@@ -12,7 +12,9 @@ return {
 		{ Id = "Nice", Name = "Finished clock" },
 		{ Id = "TutorialComplete", Name = "Tutorial done" },
 	},
+	MeasuredItems = 10,
 	Lessons = {
+		{ Id = "Practice", Name = "Cleaned practice item" },
 		{ Id = "Sticker", Name = "Sticker lesson" },
 		{ Id = "StickerDone", Name = "Removed sticker" },
 		{ Id = "Turn", Name = "Turn lesson" },

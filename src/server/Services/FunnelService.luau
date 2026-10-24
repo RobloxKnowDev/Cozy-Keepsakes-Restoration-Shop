@@ -20,8 +20,16 @@ type FunnelState = {
 	Steps: { [string]: number },
 }
 
+type ItemState = {
+	Object: Instance,
+	Start: number,
+	Lesson: string,
+	Number: number,
+}
+
 local Loggedbyplayer: { [Player]: { [number]: boolean } } = {}
 local Statebyplayer: { [Player]: FunnelState } = {}
+local Itembyplayer: { [Player]: ItemState } = {}
 
 local function Ensurestate(Player: Player): FunnelState
 	local State = Statebyplayer[Player]
@@ -143,6 +151,44 @@ function Funnelservice:RecordCleaned(Player: Player)
 	self:Refresh(Player)
 end
 
+function Funnelservice:StartItem(Player: Player, Object: Instance, Lesson: string)
+	local Current = Itembyplayer[Player]
+	if Current and Current.Object == Object then
+		return
+	end
+	local State = Ensurestate(Player)
+	if not Isplaying(Player, State) or State.Cleaned >= Funnelconfig.MeasuredItems then
+		Itembyplayer[Player] = nil
+		return
+	end
+	Itembyplayer[Player] = {
+		Object = Object,
+		Start = os.clock(),
+		Lesson = Lesson,
+		Number = State.Cleaned + 1,
+	}
+end
+
+function Funnelservice:EndItem(Player: Player, Object: Instance, Percent: number, Quit: boolean)
+	local Item = Itembyplayer[Player]
+	if not Item or Item.Object ~= Object then
+		return
+	end
+	Itembyplayer[Player] = nil
+	local Fields = {
+		[Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = Item.Lesson,
+		[Enum.AnalyticsCustomFieldKeys.CustomField02.Name] = "Object " .. Item.Number,
+		[Enum.AnalyticsCustomFieldKeys.CustomField03.Name] = if Quit then "Quit" elseif Percent >= 100 then "Full" else "Partial",
+	}
+	local Seconds = math.round(os.clock() - Item.Start)
+	Send(Player, "ItemSeconds", function()
+		Analyticsservice:LogCustomEvent(Player, "ItemSeconds", Seconds, Fields)
+	end)
+	Send(Player, "ItemPercent", function()
+		Analyticsservice:LogCustomEvent(Player, "ItemPercent", Percent, Fields)
+	end)
+end
+
 function Funnelservice:Init()
 	Core:GetService("DataService"):Register("Funnel", {
 		Load = function(Player, Saved)
@@ -168,6 +214,7 @@ function Funnelservice:Init()
 		Clear = function(Player)
 			Statebyplayer[Player] = nil
 			Loggedbyplayer[Player] = nil
+			Itembyplayer[Player] = nil
 		end,
 	})
 	Players.PlayerAdded:Connect(function(Player)
