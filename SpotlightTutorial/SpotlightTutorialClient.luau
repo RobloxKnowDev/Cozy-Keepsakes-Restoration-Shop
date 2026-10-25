@@ -1,19 +1,10 @@
+local Gamepadservice = game:GetService("GamepadService")
+local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
 local Runservice = game:GetService("RunService")
 local Tweenservice = game:GetService("TweenService")
-
-local Steps = {
-	{ Path = { "GameUi", "MenuTemplate", "PlayButton" }, Text = "Press Play to start!" },
-	{ Path = { "GameUi", "CategoriesTemplate", "AppartmentsButton" }, Text = "Open the apartments!" },
-	{
-		Path = { "GameUi", "AppartmentsTemplates", "AppartmentsFrame", "ScrollingFrame", "BLittle Penthouse", "Button" },
-		Text = "Pick the Little Penthouse!",
-	},
-	{ Path = { "GameUi", "AppartmentsTemplates", "LittlePenthouseVisual", "BuyButton" }, Text = "Buy it!" },
-	{ Path = { "GameUi", "SlotsSaveFrame", "Save1Frame", "LoadButton" }, Text = "Load your apartment!" },
-	{ Path = { "FurnituresGui", "ButtonsFrame", "FurnitureOpenButton" }, Text = "Open the furniture menu to decorate!" },
-}
+local Userinputservice = game:GetService("UserInputService")
 
 local Darkness = 0.35
 local Padding = 8
@@ -22,7 +13,8 @@ local Textheight = 70
 local Textgap = 14
 local Edgemargin = 12
 local Far = 10000
-local Squarecolor = Color3.fromRGB(255, 214, 92)
+local Littlepenthouseprefix = "Little Penthouse"
+local Squarecolor = Color3.new(1, 1, 1)
 local Textfont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
 local Pulsetween = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 
@@ -36,6 +28,133 @@ if Getcompleted:InvokeServer() then
 	return
 end
 
+local Ownedhouses: Instance? = nil
+local Ownedhousesresolution = task.defer(function()
+	Ownedhouses = Player:WaitForChild("OwnedHouses")
+end)
+
+local function Ownslittlepenthouse(): boolean
+	if not Ownedhouses then
+		return false
+	end
+	for _, House in ipairs(Ownedhouses:GetChildren()) do
+		if string.sub(House.Name, 1, #Littlepenthouseprefix) == Littlepenthouseprefix then
+			return true
+		end
+	end
+	return false
+end
+
+type Step = {
+	GuiName: string,
+	TargetProvider: () -> GuiButton,
+	Target: GuiButton?,
+	Resolution: thread?,
+	Ancestryconnection: RBXScriptConnection?,
+	Text: string,
+	TextProvider: (() -> string)?,
+	AllowCamera: boolean?,
+}
+
+local Steps: { Step } = {
+	{
+		GuiName = "GameUi",
+		TargetProvider = function()
+			local Gameui = Playergui:WaitForChild("GameUi")
+			local Menutemplate = Gameui:WaitForChild("MenuTemplate")
+			return Menutemplate:WaitForChild("PlayButton") :: GuiButton
+		end,
+		Text = "Press Play to start!",
+	},
+	{
+		GuiName = "GameUi",
+		TargetProvider = function()
+			local Gameui = Playergui:WaitForChild("GameUi")
+			local Categoriestemplate = Gameui:WaitForChild("CategoriesTemplate")
+			return Categoriestemplate:WaitForChild("AppartmentsButton") :: GuiButton
+		end,
+		Text = "Open the apartments!",
+	},
+	{
+		GuiName = "GameUi",
+		TargetProvider = function()
+			local Gameui = Playergui:WaitForChild("GameUi")
+			local Appartmentstemplates = Gameui:WaitForChild("AppartmentsTemplates")
+			local Appartmentsframe = Appartmentstemplates:WaitForChild("AppartmentsFrame")
+			local Scrollingframe = Appartmentsframe:WaitForChild("ScrollingFrame")
+			local Littlepenthousecard = Scrollingframe:WaitForChild("BLittle Penthouse")
+			return Littlepenthousecard:WaitForChild("Button") :: GuiButton
+		end,
+		Text = "Pick the Little Penthouse!",
+	},
+	{
+		GuiName = "GameUi",
+		TargetProvider = function()
+			local Gameui = Playergui:WaitForChild("GameUi")
+			local Appartmentstemplates = Gameui:WaitForChild("AppartmentsTemplates")
+			local Littlepenthousevisual = Appartmentstemplates:WaitForChild("LittlePenthouseVisual")
+			return Littlepenthousevisual:WaitForChild("BuyButton") :: GuiButton
+		end,
+		Text = "Buy the Little Penthouse!",
+		TextProvider = function()
+			return if Ownslittlepenthouse() then "Spawn the Little Penthouse!" else "Buy the Little Penthouse!"
+		end,
+	},
+	{
+		GuiName = "GameUi",
+		TargetProvider = function()
+			local Gameui = Playergui:WaitForChild("GameUi")
+			local Slotssaveframe = Gameui:WaitForChild("SlotsSaveFrame")
+			local Save1frame = Slotssaveframe:WaitForChild("Save1Frame")
+			return Save1frame:WaitForChild("LoadButton") :: GuiButton
+		end,
+		Text = "Load your apartment!",
+	},
+	{
+		GuiName = "FurnituresGui",
+		TargetProvider = function()
+			local Furnituresgui = Playergui:WaitForChild("FurnituresGui")
+			local Buttonsframe = Furnituresgui:WaitForChild("ButtonsFrame")
+			return Buttonsframe:WaitForChild("FurnitureOpenButton") :: GuiButton
+		end,
+		Text = "Open the furniture menu to decorate!",
+		AllowCamera = true,
+	},
+}
+
+local function Resolvetarget(Step: Step)
+	if Step.Resolution then
+		task.cancel(Step.Resolution)
+	end
+	if Step.Ancestryconnection then
+		Step.Ancestryconnection:Disconnect()
+		Step.Ancestryconnection = nil
+	end
+	Step.Target = nil
+	Step.Resolution = task.defer(function()
+		local Target = Step.TargetProvider()
+		Step.Target = Target
+		Step.Resolution = nil
+		Step.Ancestryconnection = Target.AncestryChanged:Connect(function()
+			if not Target:IsDescendantOf(Playergui) then
+				Resolvetarget(Step)
+			end
+		end)
+	end)
+end
+
+local Removedconnection = Playergui.ChildRemoved:Connect(function(Child)
+	for _, Step in ipairs(Steps) do
+		if Child.Name == Step.GuiName then
+			Resolvetarget(Step)
+		end
+	end
+end)
+
+for _, Step in ipairs(Steps) do
+	Resolvetarget(Step)
+end
+
 local function Create(Class: string, Properties: { [string]: any }, Parent: Instance?): any
 	local Object = Instance.new(Class)
 	for Name, Value in pairs(Properties) do
@@ -46,7 +165,7 @@ local function Create(Class: string, Properties: { [string]: any }, Parent: Inst
 end
 
 local Gui = Create("ScreenGui", {
-	Name = "TutorialUi",
+	Name = "SpotlightTutorialUi",
 	ResetOnSpawn = false,
 	ScreenInsets = Enum.ScreenInsets.None,
 	ClipToDeviceSafeArea = false,
@@ -58,6 +177,7 @@ local Spotlight = Create("Frame", {
 	BackgroundTransparency = 1,
 	Size = UDim2.fromScale(1, 1),
 	Active = false,
+	Selectable = false,
 	Visible = false,
 }, Gui)
 
@@ -67,6 +187,7 @@ local function Shade(): Frame
 		BackgroundTransparency = Darkness,
 		BorderSizePixel = 0,
 		Active = true,
+		Selectable = false,
 	}, Spotlight)
 end
 
@@ -75,6 +196,7 @@ local Top, Bottom, Left, Right = Shade(), Shade(), Shade(), Shade()
 local Square = Create("Frame", {
 	BackgroundTransparency = 1,
 	Active = false,
+	Selectable = false,
 	ZIndex = 2,
 }, Spotlight)
 Create("UICorner", { CornerRadius = UDim.new(0, 6) }, Square)
@@ -89,46 +211,37 @@ local Label = Create("TextLabel", {
 	TextScaled = true,
 	TextWrapped = true,
 	Active = false,
+	Selectable = false,
 	ZIndex = 2,
 }, Spotlight)
 Create("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 2.5 }, Label)
 Create("UITextSizeConstraint", { MaxTextSize = 32 }, Label)
 
-local Skipbutton = Create("TextButton", {
-	AnchorPoint = Vector2.new(1, 1),
-	Position = UDim2.new(1, -20, 1, -20),
-	Size = UDim2.fromOffset(170, 44),
-	BackgroundColor3 = Color3.fromRGB(30, 30, 30),
-	BackgroundTransparency = 0.2,
-	FontFace = Textfont,
-	Text = "Skip tutorial",
-	TextColor3 = Color3.new(1, 1, 1),
-	TextSize = 22,
-	ZIndex = 3,
-}, Gui)
-Create("UICorner", { CornerRadius = UDim.new(0, 10) }, Skipbutton)
-
-local Skipped = false
-Skipbutton.Activated:Connect(function()
-	Skipped = true
-end)
-
-local function Findtarget(Path: { string }): GuiButton
-	local Current: Instance = Playergui
-	for _, Name in ipairs(Path) do
-		Current = Current:WaitForChild(Name)
-	end
-	return Current :: GuiButton
-end
-
 local function Isshown(Target: GuiObject): boolean
+	local Targetposition = Target.AbsolutePosition
+	local Targetsize = Target.AbsoluteSize
+	local Targetcenter = Targetposition + Targetsize / 2
+	local Guiposition = Gui.AbsolutePosition
+	local Guimaximum = Guiposition + Gui.AbsoluteSize
+	if
+		Targetsize.X <= 0
+		or Targetsize.Y <= 0
+		or Targetcenter.X < Guiposition.X
+		or Targetcenter.Y < Guiposition.Y
+		or Targetcenter.X > Guimaximum.X
+		or Targetcenter.Y > Guimaximum.Y
+	then
+		return false
+	end
 	local Current: Instance? = Target
 	while Current ~= Playergui do
 		if Current == nil then
 			return false
 		end
-		if Current:IsA("GuiObject") and not Current.Visible then
-			return false
+		if Current:IsA("GuiObject") then
+			if not Current.Visible then
+				return false
+			end
 		end
 		if Current:IsA("LayerCollector") and not Current.Enabled then
 			return false
@@ -139,8 +252,10 @@ local function Isshown(Target: GuiObject): boolean
 end
 
 local function Place(Target: GuiObject)
-	local Corner = Target.AbsolutePosition - Gui.AbsolutePosition - Vector2.new(Padding, Padding)
-	local Size = Target.AbsoluteSize + Vector2.new(Padding * 2, Padding * 2)
+	local Minimum = Target.AbsolutePosition - Gui.AbsolutePosition - Vector2.new(Padding, Padding)
+	local Maximum = Minimum + Target.AbsoluteSize + Vector2.new(Padding * 2, Padding * 2)
+	local Corner = Vector2.new(math.floor(Minimum.X), math.floor(Minimum.Y))
+	local Size = Vector2.new(math.ceil(Maximum.X), math.ceil(Maximum.Y)) - Corner
 	local Screen = Gui.AbsoluteSize
 	Top.Position = UDim2.fromOffset(-Far, -Far)
 	Top.Size = UDim2.fromOffset(Screen.X + Far * 2, Far + Corner.Y)
@@ -153,38 +268,232 @@ local function Place(Target: GuiObject)
 	Square.Position = UDim2.fromOffset(Corner.X, Corner.Y)
 	Square.Size = UDim2.fromOffset(Size.X, Size.Y)
 	local Below = Corner.Y + Size.Y + Textgap + Textheight <= Screen.Y - Edgemargin
-	local X = math.clamp(Corner.X + Size.X / 2 - Textwidth / 2, Edgemargin, math.max(Screen.X - Textwidth - Edgemargin, Edgemargin))
-	local Y = if Below then Corner.Y + Size.Y + Textgap else Corner.Y - Textgap - Textheight
+	local Width = math.min(Textwidth, math.max(Screen.X - Edgemargin * 2, 0))
+	local X = math.clamp(
+		Corner.X + Size.X / 2 - Width / 2,
+		Edgemargin,
+		math.max(Screen.X - Width - Edgemargin, Edgemargin)
+	)
+	local Preferredy = if Below then Corner.Y + Size.Y + Textgap else Corner.Y - Textgap - Textheight
+	local Y = math.clamp(Preferredy, Edgemargin, math.max(Screen.Y - Textheight - Edgemargin, Edgemargin))
+	Label.Size = UDim2.fromOffset(Width, Textheight)
 	Label.Position = UDim2.fromOffset(X, Y)
 end
 
-local function Runstep(Step)
-	Label.Text = Step.Text
-	while true do
-		local Target = Findtarget(Step.Path)
-		local Clicked = false
-		local Connection = Target.Activated:Connect(function()
-			Clicked = true
-		end)
-		while not Clicked and not Skipped and Target:IsDescendantOf(Playergui) do
-			local Shown = Isshown(Target)
-			Spotlight.Visible = Shown
-			if Shown then
-				Place(Target)
-			end
-			Runservice.RenderStepped:Wait()
-		end
-		Connection:Disconnect()
-		if Clicked or Skipped then
-			return
+local function Enablecamera(Target: GuiButton)
+	local Buttonstates: { [GuiButton]: { Interactable: boolean, Active: boolean } } = {}
+	local Currenttarget = Target
+
+	local function Disablebutton(Object: Instance)
+		if Object:IsA("GuiButton") and Object ~= Currenttarget and Buttonstates[Object] == nil then
+			Buttonstates[Object] = {
+				Interactable = Object.Interactable,
+				Active = Object.Active,
+			}
+			Object.Interactable = false
+			Object.Active = false
 		end
 	end
+
+	Top.Active = false
+	Bottom.Active = false
+	Left.Active = false
+	Right.Active = false
+
+	for _, Object in ipairs(Playergui:GetDescendants()) do
+		Disablebutton(Object)
+	end
+
+	local Addedconnection = Playergui.DescendantAdded:Connect(Disablebutton)
+
+	local function Settarget(Newtarget: GuiButton)
+		if Newtarget == Currenttarget then
+			return
+		end
+		local Previoustarget = Currenttarget
+		Currenttarget = Newtarget
+		local State = Buttonstates[Newtarget]
+		if State then
+			Newtarget.Interactable = State.Interactable
+			Newtarget.Active = State.Active
+			Buttonstates[Newtarget] = nil
+		end
+		Disablebutton(Previoustarget)
+	end
+
+	local function Restore()
+		Addedconnection:Disconnect()
+		for Button, State in pairs(Buttonstates) do
+			if Button.Parent then
+				Button.Interactable = State.Interactable
+				Button.Active = State.Active
+			end
+		end
+		Top.Active = true
+		Bottom.Active = true
+		Left.Active = true
+		Right.Active = true
+	end
+
+	return Settarget, Restore
 end
 
+local function Enablegamepad(Target: GuiButton, Allowcamera: boolean)
+	local Active = Target.Active
+	local Selectable = Target.Selectable
+	local Navigationenabled = Guiservice.GuiNavigationEnabled
+	local Cursorenabled = Gamepadservice.GamepadCursorEnabled
+	local Usinggamepad = false
+	local Focused = false
+
+	local function Restoreinput()
+		if not Usinggamepad then
+			return
+		end
+		if Guiservice.SelectedObject == Target then
+			Guiservice.SelectedObject = nil
+		end
+		Guiservice.GuiNavigationEnabled = Navigationenabled
+		local Restorecursor = Cursorenabled and Userinputservice.PreferredInput == Enum.PreferredInput.Gamepad
+		if Gamepadservice.GamepadCursorEnabled ~= Restorecursor then
+			if Restorecursor then
+				Gamepadservice:EnableGamepadCursor(nil)
+			else
+				Gamepadservice:DisableGamepadCursor()
+			end
+		end
+		Target.Active = Active
+		Target.Selectable = Selectable
+		Usinggamepad = false
+		Focused = false
+	end
+
+	local function Update(Shown: boolean)
+		if Userinputservice.PreferredInput ~= Enum.PreferredInput.Gamepad then
+			Restoreinput()
+			return
+		end
+		if Guiservice.MenuIsOpen or not Shown or not Target.Interactable then
+			Restoreinput()
+			return
+		end
+		if not Usinggamepad then
+			Active = Target.Active
+			Selectable = Target.Selectable
+			Navigationenabled = Guiservice.GuiNavigationEnabled
+			Cursorenabled = Gamepadservice.GamepadCursorEnabled
+		end
+		Target.Active = true
+		Target.Selectable = true
+		Usinggamepad = true
+		if Allowcamera then
+			Gamepadservice:DisableGamepadCursor()
+			Guiservice.GuiNavigationEnabled = true
+			if Guiservice.SelectedObject ~= Target then
+				Guiservice.SelectedObject = Target
+			end
+		elseif not Focused or not Gamepadservice.GamepadCursorEnabled then
+			Guiservice.SelectedObject = nil
+			Gamepadservice:EnableGamepadCursor(Target)
+		end
+		Focused = true
+	end
+
+	return Update, Restoreinput
+end
+
+local function Runstep(Step: Step, Index: number)
+	local Finished = false
+	local Activated = false
+	local Textprovider = Step.TextProvider
+	local Allowcamera = Step.AllowCamera == true
+	local Currenttarget = nil
+	local Lasttarget = nil
+	local Activatedconnection = nil
+	local Updategamepad = nil
+	local Restoregamepad = nil
+	local Restorecamera = nil
+
+	local function Releaseinput()
+		if Restoregamepad then
+			Restoregamepad()
+		end
+		if Restorecamera then
+			Restorecamera()
+			Restorecamera = nil
+		end
+	end
+
+	Spotlight.Visible = false
+	Label.Text = if Textprovider then Textprovider() else Step.Text
+	while not Finished do
+		local Target = Step.Target
+		if Target then
+			Lasttarget = Target
+		end
+		if Target ~= Currenttarget then
+			Releaseinput()
+			if Activatedconnection then
+				Activatedconnection:Disconnect()
+				Activatedconnection = nil
+			end
+			Updategamepad, Restoregamepad = nil, nil
+			Currenttarget = Target
+			if Target then
+				Updategamepad, Restoregamepad = Enablegamepad(Target, Allowcamera)
+				Activatedconnection = Target.Activated:Connect(function()
+					Activated = true
+					if Index == #Steps then
+						Finished = true
+					end
+				end)
+			end
+		end
+		local Nextstep = Steps[Index + 1]
+		local Nexttarget = if Nextstep then Nextstep.Target else nil
+		if Nexttarget and Isshown(Nexttarget) and (Activated or (Lasttarget and not Isshown(Lasttarget))) then
+			break
+		end
+		if Textprovider then
+			Label.Text = Textprovider()
+		end
+		local Shown = Target ~= nil and Isshown(Target) and Target.Interactable
+		if Shown and Target then
+			if Allowcamera and not Restorecamera then
+				local _, Restore = Enablecamera(Target)
+				Restorecamera = Restore
+			end
+			Place(Target)
+		else
+			Releaseinput()
+		end
+		Spotlight.Visible = Shown
+		if Updategamepad then
+			Updategamepad(Shown)
+		end
+		Runservice.RenderStepped:Wait()
+	end
+	Releaseinput()
+	if Activatedconnection then
+		Activatedconnection:Disconnect()
+	end
+	Spotlight.Visible = false
+end
+
+for Index, Step in ipairs(Steps) do
+	Runstep(Step, Index)
+end
+
+Removedconnection:Disconnect()
+if coroutine.status(Ownedhousesresolution) ~= "dead" then
+	task.cancel(Ownedhousesresolution)
+end
 for _, Step in ipairs(Steps) do
-	Runstep(Step)
-	if Skipped then
-		break
+	if Step.Resolution then
+		task.cancel(Step.Resolution)
+	end
+	if Step.Ancestryconnection then
+		Step.Ancestryconnection:Disconnect()
 	end
 end
 
