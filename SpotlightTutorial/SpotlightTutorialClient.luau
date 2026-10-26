@@ -1,4 +1,3 @@
-local Gamepadservice = game:GetService("GamepadService")
 local Guiservice = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
@@ -8,12 +7,12 @@ local Userinputservice = game:GetService("UserInputService")
 
 local Darkness = 0.35
 local Padding = 8
+local Widepadding = 28
 local Textwidth = 420
 local Textheight = 70
 local Textgap = 14
 local Edgemargin = 12
 local Far = 10000
-local Littlepenthouseprefix = "Little Penthouse"
 local Squarecolor = Color3.new(1, 1, 1)
 local Textfont = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.ExtraBold)
 local Pulsetween = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
@@ -28,23 +27,6 @@ if Getcompleted:InvokeServer() then
 	return
 end
 
-local Ownedhouses: Instance? = nil
-local Ownedhousesresolution = task.defer(function()
-	Ownedhouses = Player:WaitForChild("OwnedHouses")
-end)
-
-local function Ownslittlepenthouse(): boolean
-	if not Ownedhouses then
-		return false
-	end
-	for _, House in ipairs(Ownedhouses:GetChildren()) do
-		if string.sub(House.Name, 1, #Littlepenthouseprefix) == Littlepenthouseprefix then
-			return true
-		end
-	end
-	return false
-end
-
 type Step = {
 	GuiName: string,
 	TargetProvider: () -> GuiButton,
@@ -52,7 +34,7 @@ type Step = {
 	Resolution: thread?,
 	Ancestryconnection: RBXScriptConnection?,
 	Text: string,
-	TextProvider: (() -> string)?,
+	Padding: number?,
 	AllowCamera: boolean?,
 }
 
@@ -86,6 +68,7 @@ local Steps: { Step } = {
 			return Littlepenthousecard:WaitForChild("Button") :: GuiButton
 		end,
 		Text = "Pick the Little Penthouse!",
+		Padding = Widepadding,
 	},
 	{
 		GuiName = "GameUi",
@@ -96,9 +79,7 @@ local Steps: { Step } = {
 			return Littlepenthousevisual:WaitForChild("BuyButton") :: GuiButton
 		end,
 		Text = "Buy the Little Penthouse!",
-		TextProvider = function()
-			return if Ownslittlepenthouse() then "Spawn the Little Penthouse!" else "Buy the Little Penthouse!"
-		end,
+		Padding = Widepadding,
 	},
 	{
 		GuiName = "GameUi",
@@ -109,6 +90,7 @@ local Steps: { Step } = {
 			return Save1frame:WaitForChild("LoadButton") :: GuiButton
 		end,
 		Text = "Load your apartment!",
+		Padding = Widepadding,
 	},
 	{
 		GuiName = "FurnituresGui",
@@ -251,9 +233,9 @@ local function Isshown(Target: GuiObject): boolean
 	return true
 end
 
-local function Place(Target: GuiObject)
-	local Minimum = Target.AbsolutePosition - Gui.AbsolutePosition - Vector2.new(Padding, Padding)
-	local Maximum = Minimum + Target.AbsoluteSize + Vector2.new(Padding * 2, Padding * 2)
+local function Place(Target: GuiObject, Space: number)
+	local Minimum = Target.AbsolutePosition - Gui.AbsolutePosition - Vector2.new(Space, Space)
+	local Maximum = Minimum + Target.AbsoluteSize + Vector2.new(Space * 2, Space * 2)
 	local Corner = Vector2.new(math.floor(Minimum.X), math.floor(Minimum.Y))
 	local Size = Vector2.new(math.ceil(Maximum.X), math.ceil(Maximum.Y)) - Corner
 	local Screen = Gui.AbsoluteSize
@@ -282,10 +264,9 @@ end
 
 local function Enablecamera(Target: GuiButton)
 	local Buttonstates: { [GuiButton]: { Interactable: boolean, Active: boolean } } = {}
-	local Currenttarget = Target
 
 	local function Disablebutton(Object: Instance)
-		if Object:IsA("GuiButton") and Object ~= Currenttarget and Buttonstates[Object] == nil then
+		if Object:IsA("GuiButton") and Object ~= Target and Buttonstates[Object] == nil then
 			Buttonstates[Object] = {
 				Interactable = Object.Interactable,
 				Active = Object.Active,
@@ -306,21 +287,6 @@ local function Enablecamera(Target: GuiButton)
 
 	local Addedconnection = Playergui.DescendantAdded:Connect(Disablebutton)
 
-	local function Settarget(Newtarget: GuiButton)
-		if Newtarget == Currenttarget then
-			return
-		end
-		local Previoustarget = Currenttarget
-		Currenttarget = Newtarget
-		local State = Buttonstates[Newtarget]
-		if State then
-			Newtarget.Interactable = State.Interactable
-			Newtarget.Active = State.Active
-			Buttonstates[Newtarget] = nil
-		end
-		Disablebutton(Previoustarget)
-	end
-
 	local function Restore()
 		Addedconnection:Disconnect()
 		for Button, State in pairs(Buttonstates) do
@@ -335,16 +301,14 @@ local function Enablecamera(Target: GuiButton)
 		Right.Active = true
 	end
 
-	return Settarget, Restore
+	return Restore
 end
 
-local function Enablegamepad(Target: GuiButton, Allowcamera: boolean)
+local function Enablegamepad(Target: GuiButton)
 	local Active = Target.Active
 	local Selectable = Target.Selectable
 	local Navigationenabled = Guiservice.GuiNavigationEnabled
-	local Cursorenabled = Gamepadservice.GamepadCursorEnabled
 	local Usinggamepad = false
-	local Focused = false
 
 	local function Restoreinput()
 		if not Usinggamepad then
@@ -354,18 +318,9 @@ local function Enablegamepad(Target: GuiButton, Allowcamera: boolean)
 			Guiservice.SelectedObject = nil
 		end
 		Guiservice.GuiNavigationEnabled = Navigationenabled
-		local Restorecursor = Cursorenabled and Userinputservice.PreferredInput == Enum.PreferredInput.Gamepad
-		if Gamepadservice.GamepadCursorEnabled ~= Restorecursor then
-			if Restorecursor then
-				Gamepadservice:EnableGamepadCursor(nil)
-			else
-				Gamepadservice:DisableGamepadCursor()
-			end
-		end
 		Target.Active = Active
 		Target.Selectable = Selectable
 		Usinggamepad = false
-		Focused = false
 	end
 
 	local function Update(Shown: boolean)
@@ -377,26 +332,17 @@ local function Enablegamepad(Target: GuiButton, Allowcamera: boolean)
 			Restoreinput()
 			return
 		end
-		if not Usinggamepad then
-			Active = Target.Active
-			Selectable = Target.Selectable
-			Navigationenabled = Guiservice.GuiNavigationEnabled
-			Cursorenabled = Gamepadservice.GamepadCursorEnabled
+		if Usinggamepad then
+			return
 		end
+		Active = Target.Active
+		Selectable = Target.Selectable
+		Navigationenabled = Guiservice.GuiNavigationEnabled
 		Target.Active = true
 		Target.Selectable = true
+		Guiservice.GuiNavigationEnabled = true
+		Guiservice.SelectedObject = Target
 		Usinggamepad = true
-		if Allowcamera then
-			Gamepadservice:DisableGamepadCursor()
-			Guiservice.GuiNavigationEnabled = true
-			if Guiservice.SelectedObject ~= Target then
-				Guiservice.SelectedObject = Target
-			end
-		elseif not Focused or not Gamepadservice.GamepadCursorEnabled then
-			Guiservice.SelectedObject = nil
-			Gamepadservice:EnableGamepadCursor(Target)
-		end
-		Focused = true
 	end
 
 	return Update, Restoreinput
@@ -405,14 +351,29 @@ end
 local function Runstep(Step: Step, Index: number)
 	local Finished = false
 	local Activated = false
-	local Textprovider = Step.TextProvider
 	local Allowcamera = Step.AllowCamera == true
 	local Currenttarget = nil
 	local Lasttarget = nil
 	local Activatedconnection = nil
+	local Clickconnection = nil
 	local Updategamepad = nil
 	local Restoregamepad = nil
 	local Restorecamera = nil
+
+	local function Pressed()
+		Activated = true
+		if Index == #Steps then
+			Finished = true
+		end
+	end
+
+	local function Disconnectpress()
+		if Activatedconnection then
+			Activatedconnection:Disconnect()
+			Clickconnection:Disconnect()
+			Activatedconnection, Clickconnection = nil, nil
+		end
+	end
 
 	local function Releaseinput()
 		if Restoregamepad then
@@ -425,7 +386,7 @@ local function Runstep(Step: Step, Index: number)
 	end
 
 	Spotlight.Visible = false
-	Label.Text = if Textprovider then Textprovider() else Step.Text
+	Label.Text = Step.Text
 	while not Finished do
 		local Target = Step.Target
 		if Target then
@@ -433,20 +394,13 @@ local function Runstep(Step: Step, Index: number)
 		end
 		if Target ~= Currenttarget then
 			Releaseinput()
-			if Activatedconnection then
-				Activatedconnection:Disconnect()
-				Activatedconnection = nil
-			end
+			Disconnectpress()
 			Updategamepad, Restoregamepad = nil, nil
 			Currenttarget = Target
 			if Target then
-				Updategamepad, Restoregamepad = Enablegamepad(Target, Allowcamera)
-				Activatedconnection = Target.Activated:Connect(function()
-					Activated = true
-					if Index == #Steps then
-						Finished = true
-					end
-				end)
+				Updategamepad, Restoregamepad = Enablegamepad(Target)
+				Activatedconnection = Target.Activated:Connect(Pressed)
+				Clickconnection = Target.MouseButton1Click:Connect(Pressed)
 			end
 		end
 		local Nextstep = Steps[Index + 1]
@@ -454,16 +408,12 @@ local function Runstep(Step: Step, Index: number)
 		if Nexttarget and Isshown(Nexttarget) and (Activated or (Lasttarget and not Isshown(Lasttarget))) then
 			break
 		end
-		if Textprovider then
-			Label.Text = Textprovider()
-		end
 		local Shown = Target ~= nil and Isshown(Target) and Target.Interactable
 		if Shown and Target then
 			if Allowcamera and not Restorecamera then
-				local _, Restore = Enablecamera(Target)
-				Restorecamera = Restore
+				Restorecamera = Enablecamera(Target)
 			end
-			Place(Target)
+			Place(Target, Step.Padding or Padding)
 		else
 			Releaseinput()
 		end
@@ -474,9 +424,7 @@ local function Runstep(Step: Step, Index: number)
 		Runservice.RenderStepped:Wait()
 	end
 	Releaseinput()
-	if Activatedconnection then
-		Activatedconnection:Disconnect()
-	end
+	Disconnectpress()
 	Spotlight.Visible = false
 end
 
@@ -485,9 +433,6 @@ for Index, Step in ipairs(Steps) do
 end
 
 Removedconnection:Disconnect()
-if coroutine.status(Ownedhousesresolution) ~= "dead" then
-	task.cancel(Ownedhousesresolution)
-end
 for _, Step in ipairs(Steps) do
 	if Step.Resolution then
 		task.cancel(Step.Resolution)

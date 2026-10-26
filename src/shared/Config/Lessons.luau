@@ -7,7 +7,7 @@ local Lessons = {
 		{ Name = "Scratch", Objects = 1, Tools = { "Polish" } },
 	},
 	StainKinds = { "Sticker", "Ink", "Scratch" },
-	Hints = { "Flip" },
+	Hints = { "Flip", "Sell" },
 }
 
 function Lessons.GetStage(Learned: { [string]: boolean }): number

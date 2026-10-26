@@ -67,6 +67,16 @@ local Undertext = {
 	Mouse = "Dirt underneath! Click to flip it!",
 	Gamepad = "Dirt underneath! Press Y to flip it!",
 }
+local Selltexts = {
+	Offer = "Not enough money! Close this to sell an item.",
+	Computer = { Touch = "Tap your computer to sell items!", Mouse = "Click your computer to sell items!", Gamepad = "Open your computer to sell items!" },
+	Inventory = "Open your inventory.",
+	Info = "Close this first.",
+	Card = "Tap an item to sell it.",
+	Sell = "Sell it for cash!",
+}
+local Windows = { "DailyRewardController", "DonationController", "ExpositionController", "GroupRewardController", "LeaderboardController", "SettingController" }
+local Flipleftover = 0.15
 local Lessoncheck = 0.5
 local Finishtexts = { Clean = "All clean! Tap to finish.", Partial = "Tap to finish." }
 local Downfacing = -0.8
@@ -850,36 +860,76 @@ local function Categorydecal(): Decal?
 	return nil
 end
 
-local function Underdecal(): Decal?
-	local Object = Restoration():GetActiveObject()
-	if not Object then
-		return nil
-	end
-	for _, Descendant in ipairs(Object:GetDescendants()) do
-		if
-			Descendant:IsA("Decal")
-			and Cleaningconfig.DirtDecals[Descendant.Name]
-			and Descendant:GetAttribute("Cleaned") ~= true
-			and Facesdown(Descendant)
-		then
-			return Descendant
-		end
-	end
-	return nil
-end
-
 local function Restoring(): boolean
 	return Restoration():GetActiveObject() ~= nil and not Core:GetController("CompletionController"):IsVisible()
 end
 
-local function Customerwaiting(): boolean
-	local Customer = Core:GetController("CustomerController")
-	for _, Name in ipairs({ "DailyRewardController", "DonationController", "ExpositionController", "GroupRewardController", "LeaderboardController", "SettingController" }) do
+local function Windowopen(): boolean
+	for _, Name in ipairs(Windows) do
 		if Core:GetController(Name):IsOpen() then
-			return false
+			return true
 		end
 	end
-	return Customer:CanInteract() and Customer:GetInteractionCustomer() ~= nil
+	return false
+end
+
+local function Customerwaiting(): boolean
+	local Customer = Core:GetController("CustomerController")
+	return not Windowopen() and Customer:CanInteract() and Customer:GetInteractionCustomer() ~= nil
+end
+
+local function Haslearned(Id: string): boolean
+	local Learned = Players.LocalPlayer:GetAttribute("Lessons")
+	return type(Learned) == "string" and table.find(string.split(Learned, ","), Id) ~= nil
+end
+
+local function Saleitem()
+	local Fallback = nil
+	for _, Item in ipairs(Core:GetController("ComputerController").inventoryItems) do
+		if (tonumber(Item.RestorationPercent) or 0) >= 100 then
+			if not Item.OnShelf then
+				return Item
+			end
+			Fallback = Fallback or Item
+		end
+	end
+	return Fallback
+end
+
+local function Salevalue(): number
+	local Total = 0
+	for _, Item in ipairs(Core:GetController("ComputerController").inventoryItems) do
+		if (tonumber(Item.RestorationPercent) or 0) >= 100 then
+			Total += tonumber(Item.CurrentValue) or 0
+		end
+	end
+	return Total
+end
+
+local function Sellguide(): (Instance, any)
+	local Computer = Core:GetController("ComputerController")
+	local Customer = Core:GetController("CustomerController")
+	if Customer:IsVisible() then
+		return Customer.closeButton, Selltexts.Offer
+	end
+	if not Computer:IsOpen() then
+		return Computer.computer, Selltexts.Computer
+	end
+	if Computer.activePage ~= "Inventory" then
+		return Computer.inventoryNavButton, Selltexts.Inventory
+	end
+	if Computer.inventoryInfoFrame.Visible then
+		return Computer.inventoryInfoCloseButton, Selltexts.Info
+	end
+	local Item = Saleitem()
+	local Card = if Item then Computer.inventoryCardsById[Item.Id] else nil
+	if not Card then
+		return Computer.inventoryScrollingFrame, Selltexts.Card
+	end
+	if Card.ButtonOpen.Visible then
+		return Card.ActionButton, Selltexts.Sell
+	end
+	return Card.Button, Selltexts.Card
 end
 
 local function Categoryspot(Kind: string): Instance?
@@ -1004,6 +1054,42 @@ local function Allclean(): boolean
 	local Object = Restoration():GetActiveObject()
 	return Object ~= nil
 		and (tonumber(Object:GetAttribute("CleanedSpots")) or 0) >= (tonumber(Object:GetAttribute("TotalSpots")) or 0)
+end
+
+local function Dirtleft(Decal: Decal): number
+	return if Decal:GetAttribute("Cleaned") == true then 0 else Decal:GetAttribute("Remaining") or 1
+end
+
+local function Underdirt(): Decal?
+	local Object = Restoration():GetActiveObject()
+	if not Object then
+		return nil
+	end
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("Decal") and Cleaningconfig.DirtDecals[Descendant.Name] and Facesdown(Descendant) and Dirtleft(Descendant) > Flipleftover then
+			return Descendant
+		end
+	end
+	return nil
+end
+
+local function Onlyunder(): boolean
+	local Object = Restoration():GetActiveObject()
+	if not Object or not (Categoryclear("Sticker") and Categoryclear("Ink") and Categoryclear("Scratch")) then
+		return false
+	end
+	local Under = false
+	for _, Descendant in ipairs(Object:GetDescendants()) do
+		if Descendant:IsA("Decal") and Cleaningconfig.DirtDecals[Descendant.Name] then
+			local Heavy = Dirtleft(Descendant) > Flipleftover
+			if Facesdown(Descendant) then
+				Under = Under or Heavy
+			elseif Heavy then
+				return false
+			end
+		end
+	end
+	return Under
 end
 
 function Tutorialcontroller:Getswipespot(): Vector2?
@@ -1380,25 +1466,93 @@ function Tutorialcontroller:Buildsteps()
 			},
 		},
 		{
-			Id = "Flip",
-			Active = Restoring,
+			Id = "Sell",
+			Repeat = true,
+			Active = function()
+				return not Windowopen()
+					and not Restoration():IsEditingObject()
+					and Core:GetController("CustomerController").pendingOffer ~= nil
+			end,
 			Ready = function()
-				return Underdecal() ~= nil and self:Dirthidden()
+				local Customer = Core:GetController("CustomerController")
+				local Price = Customer.pendingOffer.Price
+				local Cash = Core:GetController("CashController"):GetCash()
+				return Customer:IsVisible() and Price > Cash and Saleitem() ~= nil and Cash + Salevalue() >= Price
 			end,
 			Learned = function()
-				return not self:Dirthidden()
+				return Haslearned("Sell")
+			end,
+			Steps = {
+				{
+					Id = "Sell",
+					Text = function()
+						local _, Text = Sellguide()
+						return Text
+					end,
+					Target = function()
+						return (Sellguide())
+					end,
+					Done = function()
+						return Haslearned("Sell")
+							and Core:GetController("CashController"):GetCash() >= Core:GetController("CustomerController").pendingOffer.Price
+					end,
+				},
+				{
+					Id = "Back",
+					Text = "Now go back to your customer!",
+					Skip = function()
+						return not Core:GetController("ComputerController"):IsOpen()
+					end,
+					Target = function()
+						return Core:GetController("ComputerController").closeButton
+					end,
+					Done = function()
+						return not Core:GetController("ComputerController"):IsOpen()
+					end,
+				},
+				{
+					Id = "Customer",
+					Text = { Touch = "Tap the customer!", Mouse = "Click the customer!", Gamepad = "Talk to the customer!" },
+					Skip = function()
+						return Core:GetController("CustomerController"):IsVisible()
+					end,
+					Target = function()
+						return Core:GetController("CustomerController"):GetInteractionCustomer()
+					end,
+					Done = function()
+						return Core:GetController("CustomerController"):IsVisible()
+					end,
+				},
+				{
+					Id = "Buy",
+					Text = "Now buy it!",
+					Target = function()
+						return Core:GetController("CustomerController").buyButton
+					end,
+					Done = function()
+						return not Core:GetController("CustomerController"):IsVisible()
+					end,
+				},
+			},
+		},
+		{
+			Id = "Flip",
+			Repeat = true,
+			Active = Restoring,
+			Ready = Onlyunder,
+			Learned = function()
+				return Underdirt() == nil
 			end,
 			Steps = {
 				{
 					Id = "Flip",
 					Fliptext = Undertext,
 					Text = "Rub off the dirt!",
-					MaxSeconds = 30,
 					Target = function()
-						return Underdecal() or Categorydecal() or Restoration():GetActiveObject()
+						return Underdirt() or Categorydecal() or Restoration():GetActiveObject()
 					end,
 					Done = function()
-						return not self:Dirthidden()
+						return Underdirt() == nil
 					end,
 				},
 			},
@@ -1577,6 +1731,9 @@ end
 function Tutorialcontroller:Preparetexts()
 	local Texts = {}
 	for _, Value in ipairs({ Behindtext, Tilttext, Fliptext, Undertext, Finishtexts }) do
+		Collecttexts(Texts, Value)
+	end
+	for _, Value in pairs(Selltexts) do
 		Collecttexts(Texts, Value)
 	end
 	for _, Name in pairs(Toolnames) do

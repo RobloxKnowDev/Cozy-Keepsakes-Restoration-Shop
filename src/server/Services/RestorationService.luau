@@ -1,6 +1,7 @@
 local Assetservice = game:GetService("AssetService")
 local Players = game:GetService("Players")
 local Replicatedstorage = game:GetService("ReplicatedStorage")
+local Runservice = game:GetService("RunService")
 local Serverstorage = game:GetService("ServerStorage")
 
 local Core = require(Replicatedstorage.Shared.Packages.Core)
@@ -51,7 +52,7 @@ local Maxdirtstrokes = 8
 local Maxrubpasses = math.ceil(Cleaningconfig.Rubbing.FastFactor)
 local Finishassist = Cleaningconfig.FinishAssist
 local Pingstart = math.min(Finishassist.Start, Finishassist.StallStart)
-local Dirtversion = 9
+local Dirtversion = 10
 local Grimeversion = 9
 local Scratchversion = 5
 local Meshcastversion = 3
@@ -59,6 +60,10 @@ local Mindirtshareversion = 4
 local Tutorialfacesversion = 6
 local Dirtpatternversion = 7
 local Narrowfaceversion = 8
+local Layeredfaceversion = 10
+local Exposuretilts = { math.rad(35), math.rad(65) }
+local Exposureazimuths = 6
+local Exposuretolerance = 0.25
 local Tutorialminimumcells = 64
 local Tutorialfacenames = { Config.Offer.TutorialDirtFace }
 local Lessonkinds = Lessonsconfig.StainKinds
@@ -496,19 +501,75 @@ local function Distancefield(Sources: { boolean }, Bordered: boolean, Cell: Vect
 	return Field
 end
 
-local Narrowcache: { [buffer]: buffer } = {}
+local function Exposed(Caster: any, Part: BasePart, Point: Vector3, Normal: Vector3, Distance: number, Tolerance: number): boolean
+	local Side = Normal:Cross(if math.abs(Normal.Y) < 0.9 then Vector3.yAxis else Vector3.xAxis).Unit
+	local Other = Normal:Cross(Side)
+	local Directions = { Normal }
+	for _, Tilt in ipairs(Exposuretilts) do
+		for Step = 0, Exposureazimuths - 1 do
+			local Angle = Step * 2 * math.pi / Exposureazimuths
+			table.insert(Directions, Normal * math.cos(Tilt) + (Side * math.cos(Angle) + Other * math.sin(Angle)) * math.sin(Tilt))
+		end
+	end
+	for _, Direction in ipairs(Directions) do
+		local Hit = Caster:Cast(Point + Direction * Distance, -Direction * (Distance + Tolerance))
+		if Hit and Hit.Instance == Part and (Hit.Position - Point).Magnitude <= Tolerance then
+			return true
+		end
+	end
+	return false
+end
+
+local function Layeredcells(Object: RestorationObject, Getcaster: () -> (any, boolean), Decal: Decal, Reach: buffer, Brushradius: number): { boolean }
+	local Part = Decal.Parent :: BasePart
+	local Facename = Decal.Face.Name
+	local Worldnormal = Part.CFrame:VectorToWorldSpace(Vector3.FromNormalId(Decal.Face))
+	local Objectsize = if Object:IsA("Model") then Object:GetExtentsSize() else Object.Size
+	local Distance = Objectsize.Magnitude + 1
+	local Length = Distance + Part.Size.Magnitude
+	local Tolerance = Brushradius * Exposuretolerance
+	local Caster = Getcaster()
+	local Layered = table.create(Coveragecellcount, false)
+	local Started = os.clock()
+	for Index = 1, Coveragecellcount do
+		if buffer.readu8(Reach, Index - 1) == 1 then
+			local Localpoint = Facemapping.GetDecalLocalPoint(
+				Part.Size,
+				Facename,
+				((Index - 1) % Coveragegridwidth + 0.5) / Coveragegridwidth,
+				((Index - 1) // Coveragegridwidth + 0.5) / Coveragegridwidth
+			)
+			local Top = Caster:CastPart(Part, Part.CFrame:PointToWorldSpace(Localpoint) + Worldnormal * Distance, -Worldnormal * Length)
+			local Under = if Top then Caster:CastPart(Part, Top.Position - Worldnormal * Brushradius, -Worldnormal * Length) else nil
+			Layered[Index] = Under ~= nil
+				and Facemapping.ShowsDecal(Decal, Under.DecalNormal)
+				and Exposed(Caster, Part, Under.Position, Under.DecalNormal, Distance, Tolerance)
+			if os.clock() - Started > Premarkframebudget then
+				task.wait()
+				Started = os.clock()
+			end
+		end
+	end
+	return Layered
+end
+
+local Narrowcache: { [string]: buffer } = {}
 
 local function Narrowcells(Object: RestorationObject, Getcaster: () -> (any, boolean), Decal: Decal, Version: number, Brushradius: number): buffer
 	local Known = Knowncells(Object.Name, Version, Decal)
-	local Cached = Narrowcache[Known]
+	local Key = Object.Name .. "|" .. math.min(Version, Layeredfaceversion) .. "|" .. (Decal:GetAttribute("DirtSlot") :: number)
+	local Cached = Narrowcache[Key]
 	if Cached then
 		return Cached
 	end
 	local Reach = Resolvereach(Object, Getcaster, Decal, Known)
+	local Layered = if Version >= Layeredfaceversion
+		then Layeredcells(Object, Getcaster, Decal, Reach, Brushradius)
+		else table.create(Coveragecellcount, false)
 	local Cell = Facemapping.GetDecalSize((Decal.Parent :: BasePart).Size, Decal.Face.Name) / Coveragegridwidth
 	local Unseen = table.create(Coveragecellcount, false)
 	for Index = 1, Coveragecellcount do
-		Unseen[Index] = buffer.readu8(Reach, Index - 1) ~= 1
+		Unseen[Index] = buffer.readu8(Reach, Index - 1) ~= 1 or Layered[Index]
 	end
 	local Limit = (Brushradius * Cleaningconfig.MinDirtFaceSide / 2) ^ 2
 	local Edge = Distancefield(Unseen, true, Cell)
@@ -519,14 +580,37 @@ local function Narrowcells(Object: RestorationObject, Getcaster: () -> (any, boo
 	local Near = Distancefield(Centres, false, Cell)
 	local Narrow = buffer.create(Coveragecellcount)
 	for Index = 1, Coveragecellcount do
-		if not Unseen[Index] then
+		if Layered[Index] then
+			buffer.writeu8(Narrow, Index - 1, 1)
+		elseif not Unseen[Index] then
 			buffer.writeu8(Narrow, Index - 1, if Near[Index] <= Limit then 2 else 1)
 		end
 	end
 	if Reach == Known then
-		Narrowcache[Known] = Narrow
+		Narrowcache[Key] = Narrow
 	end
 	return Narrow
+end
+
+local function Reportlayered(Objectkey: string, Decal: Decal, Before: buffer, After: buffer)
+	local Dirty, Lost = 0, 0
+	for Index = 0, Coveragecellcount - 1 do
+		if buffer.readu8(Before, Index) == 2 then
+			Dirty += 1
+			if buffer.readu8(After, Index) ~= 2 then
+				Lost += 1
+			end
+		end
+	end
+	if Lost > 0 then
+		print(string.format(
+			"RestorationService: %s %s %s loses %d%% of its dirt where two surfaces overlap",
+			Objectkey,
+			(Decal.Parent :: BasePart).Name,
+			Decal.Face.Name,
+			math.round(Lost / Dirty * 100)
+		))
+	end
 end
 
 local function Hascell(Narrow: buffer, Value: number): boolean
@@ -1042,12 +1126,18 @@ local function Warmtemplate(Objectkey: string)
 		local Sticker = Findsticker(Object)
 		local Layouts = Collectstains(Object, Sticker)
 		Object.Parent = Warmworld
+		local Objectsize = if Object:IsA("Model") then Object:GetExtentsSize() else Object.Size
+		local Brushradius = Cleaningconfig.BrushMinimumRadius * Objectsize.Magnitude / 2
 		for _, Decal in ipairs(Object:GetDescendants()) do
 			if Decal:IsA("Decal") and Dirtdecalnames[Decal.Name] then
 				local Known = Knowncells(Objectkey, Dirtversion, Decal)
 				if Resolvereach(Object, Getcaster, Decal, Known) ~= Known then
 					Coldtemplates[Objectkey] = true
 					return
+				end
+				local Narrow = Narrowcells(Object, Getcaster, Decal, Dirtversion, Brushradius)
+				if Runservice:IsStudio() then
+					Reportlayered(Objectkey, Decal, Narrowcells(Object, Getcaster, Decal, Layeredfaceversion - 1, Brushradius), Narrow)
 				end
 			end
 		end
@@ -1955,6 +2045,10 @@ end
 
 local function Settledirt(Player: Player, Target: Decal, Entry: CoverageEntry, Toolname: string): number
 	local Credited = Snapentry(Entry, Finishassist.SnapRatio)
+	Target:SetAttribute(
+		"Remaining",
+		math.round((Coveragecellcount * Entry.Passes - Entry.Hits) / (Coveragecellcount * Entry.Passes - Entry.Free) * 100) / 100
+	)
 	if Iscovered(Entry) and Target:GetAttribute("Cleaned") ~= true then
 		Markdirtcleaned(Player, Target, Toolname)
 	end
@@ -2190,6 +2284,9 @@ local function Baselessons(Player: Player)
 			end
 		end
 		Lessons[Player] = Learned
+	end
+	if Core:GetService("StatsService"):GetStats(Player).ItemsSold > 0 then
+		Lessons[Player].Sell = true
 	end
 	Publishlessons(Player)
 end

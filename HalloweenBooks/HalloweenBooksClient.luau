@@ -31,11 +31,12 @@ local Zonecframe = Remotes:GetAttribute("ZoneCFrame") :: CFrame
 local Zonesize = Remotes:GetAttribute("ZoneSize") :: Vector3
 local Teleportcframe = Remotes:GetAttribute("TeleportCFrame") :: CFrame
 local Eventui = Playergui:WaitForChild("EventUi") :: ScreenGui
-local Eventframe = Eventui:WaitForChild("Frame") :: Frame
+local Eventmain = Eventui:WaitForChild("Main") :: Frame
+local Eventframe = Eventmain:WaitForChild("Frame") :: Frame
 local Eventtext = Eventframe:WaitForChild("Text") :: TextLabel
 local Eventicon = Eventframe:WaitForChild("ImageLabel") :: ImageLabel
-local Skipbutton = Eventui:WaitForChild("SkipButton") :: GuiButton
-local Tpbutton = Eventui:WaitForChild("TPButton") :: GuiButton
+local Skipbutton = Eventmain:WaitForChild("SkipButton") :: GuiButton
+local Tpbutton = Eventmain:WaitForChild("TPButton") :: GuiButton
 Eventui.ResetOnSpawn = false
 
 local Orange = Color3.fromRGB(255, 140, 26)
@@ -378,6 +379,7 @@ local function Updatebuttons()
 	local Character = Player.Character
 	local Root = if Character then Character:FindFirstChild("HumanoidRootPart") :: BasePart? else nil
 	local Inside = Root ~= nil and Inzone(Root.Position)
+	Eventframe.Visible = Inside
 	Skipbutton.Visible = Inside and State.Books < State.Required
 	Tpbutton.Visible = not Inside
 end
