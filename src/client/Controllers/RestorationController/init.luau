@@ -93,9 +93,9 @@ local function Showcompletion()
 	Runtime:Destroy()
 	Core:GetController("InspectionCameraController"):PrepareCompletion()
 	Interface:HideForCompletion()
-	Completion:Show(Activeobject, function()
+	Completion:Show(Activeobject, function(Sell: boolean?)
 		Core:GetController("StickerController"):ClearLoose()
-		Remotemanager:InvokeServer("RestorationService", "CompleteRestoration")
+		local Restored = Remotemanager:InvokeServer("RestorationService", "CompleteRestoration", Sell == true)
 		Remotemanager:FireServer("RestorationService", "SessionEnded")
 		local Cameracontroller = Core:GetController("InspectionCameraController")
 		Cameracontroller:End()
@@ -106,6 +106,9 @@ local function Showcompletion()
 		Core:GetController("ComputerController"):SetHudVisible(true)
 		Completion:Hide()
 		Core:GetController("ExpositionController"):CompleteRestoration()
+		if Sell == true and Restored then
+			Core:GetController("FeedbackController"):Sale(Restored.Name, Restored.CurrentValue)
+		end
 	end)
 end
 

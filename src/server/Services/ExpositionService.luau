@@ -509,6 +509,33 @@ function Expositionservice:EquipBest(Player: Player)
 	}
 end
 
+function Expositionservice:WouldShelve(Player: Player, Reputation: number): boolean
+	if Reputation <= 0 then
+		return false
+	end
+	local Display = Getdisplay(Player)
+	local Displayspace = math.clamp(math.floor(Core:GetService("UpgradeService"):GetValue(Player, "DisplaySpace")), 0, 9)
+	local Slotcount = 0
+	local Better = 0
+	for Slotindex = 1, Displayspace do
+		local Placement = Display.OccupiedSlots[Slotindex]
+		if not Placement then
+			Slotcount += 1
+		elseif Placement.Player == Player then
+			Slotcount += 1
+			if (tonumber(Placement.Item.Reputation) or 0) >= Reputation then
+				Better += 1
+			end
+		end
+	end
+	for _, Item in ipairs(Core:GetService("InventoryService"):EnsurePlayer(Player)) do
+		if (tonumber(Item.Reputation) or 0) > Reputation then
+			Better += 1
+		end
+	end
+	return Better < Slotcount
+end
+
 function Expositionservice:AutoEquip(Player: Player)
 	local Result = self:EquipBest(Player)
 	if Result.Success and #Result.Placed > 0 then

@@ -34,6 +34,7 @@ local Restorationservice = {
 		LeftoversCleared = "Event",
 		CleanScratch = "Event",
 		CompleteRestoration = "Function",
+		GetCompletionSale = "Function",
 		CompletePeel = "Event",
 		CancelPeel = "Event",
 		SessionEnded = "Event",
@@ -2542,8 +2543,8 @@ function Restorationservice:PrepareObject(
 	Object:SetAttribute("RestorationObject", true)
 	Object:SetAttribute("AwardedUserId", Owner.UserId)
 	local Istutorial = Core:GetService("TutorialService"):IsActive(Owner)
-	local Purchases = Core:GetService("CustomerService"):GetStarterPurchases(Owner)
-	Object:SetAttribute("CleaningRamp", Cleaningconfig.CleaningSpeed.StarterRamp[Purchases] or 1)
+	local Lesson = Lessonsconfig.Order[Lessonstage(Owner)]
+	Object:SetAttribute("CleaningRamp", if Lesson then Lesson.Ramp else 1)
 	local Seed = if Progress and Progress.DirtSeed then Progress.DirtSeed else Randomgenerator:NextInteger(1, 2147483646)
 	local Version = if Progress and Progress.DirtSeed then Progress.DirtVersion or 1 else Dirtversion
 	local Kinds = if Istutorial then {} elseif Progress and Progress.DirtSeed then Savedkinds(Progress) else Allowedkinds(Owner)
@@ -2739,7 +2740,21 @@ function Restorationservice:Init()
 		return true
 	end)
 
-	Remotemanager:OnServerInvoke(self.Name, "CompleteRestoration", function(Player)
+	Remotemanager:OnServerInvoke(self.Name, "GetCompletionSale", function(Player)
+		local Sessionobject = Sessions[Player]
+		if not Sessionobject or not Sessionobject.Parent or Core:GetService("TutorialService"):IsActive(Player) then
+			return nil
+		end
+		local Completionratio = Getcompletionratio(Sessionobject)
+		local Reputation = Roundtwodecimals((tonumber(Sessionobject:GetAttribute("MaxReputation")) or 0) * Completionratio)
+		if Core:GetService("ExpositionService"):WouldShelve(Player, Reputation) then
+			return nil
+		end
+		local Maxvalue = tonumber(Sessionobject:GetAttribute("MaxValue")) or tonumber(Sessionobject:GetAttribute("MaxPrice")) or 0
+		return Core:GetService("InventoryService"):GetSalePrice(Player, Roundtwodecimals(Maxvalue * Completionratio))
+	end)
+
+	Remotemanager:OnServerInvoke(self.Name, "CompleteRestoration", function(Player, Sell)
 		local Sessionobject = Sessions[Player]
 		if not Sessionobject or not Sessionobject.Parent then
 			return nil
@@ -2816,6 +2831,9 @@ function Restorationservice:Init()
 		end
 		if Completionratio >= 0.5 and Player.Parent then
 			Inventoryservice:UnlockIndexEntry(Player, Objectkey, Itemdata.Mutation)
+		end
+		if Sell == true then
+			Restoreditem = Inventoryservice:SellRestoredItem(Player, Restoreditem.Id)
 		end
 		Core:GetService("ExpositionService"):AutoEquip(Player)
 		Core:GetService("CustomerService"):PresentOffer(Player)

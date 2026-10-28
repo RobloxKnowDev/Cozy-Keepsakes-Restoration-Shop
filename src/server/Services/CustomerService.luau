@@ -1199,10 +1199,6 @@ function Customerservice:RefreshCustomerLimit()
 	RefreshCustomerCounts()
 end
 
-function Customerservice:GetStarterPurchases(Player: Player): number
-	return Starterpurchases[Player]
-end
-
 function Customerservice:SkipCooldown(Player: Player): boolean
 	local State = States[Player]
 	if not State or not Skipwait(State) then

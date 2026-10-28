@@ -311,11 +311,14 @@ function Inventoryservice:UnlockIndexEntry(Player: Player, ObjectKey: string, Mu
 	return true
 end
 
+function Inventoryservice:GetSalePrice(Player: Player, Value: number): number
+	return ApplySaleMultiplier(Value, Core:GetService("MonetizationService"):GetSaleMultiplier(Player))
+end
+
 function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	if Core:GetService("TutorialService"):IsActive(Player) then
 		return nil
 	end
-	local Multiplier = Core:GetService("MonetizationService"):GetSaleMultiplier(Player)
 	local Items = self:EnsurePlayer(Player)
 	local Shelved = Core:GetService("ExpositionService"):Unshelve(Player, ItemId)
 	local Index = nil
@@ -330,7 +333,7 @@ function Inventoryservice:SellRestoredItem(Player: Player, ItemId: number)
 	end
 
 	local Item = table.remove(Items, Index)
-	local SaleValue = ApplySaleMultiplier(Item.CurrentValue, Multiplier)
+	local SaleValue = self:GetSalePrice(Player, Item.CurrentValue)
 	Core:GetService("CashService"):AddCash(Player, SaleValue)
 	Core:GetService("RestorationService"):LearnHint(Player, "Sell")
 	if Item.RestorationPercent >= Minimumsoldpercent then

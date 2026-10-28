@@ -11,8 +11,10 @@ local Mutationconfig = require(Replicatedstorage.Shared.Config.Mutation)
 local Cleaningconfig = require(Replicatedstorage.Shared.Config.Cleaning)
 local Uigradient = require(Replicatedstorage.Shared.Utils.UiGradient)
 local Rarityconfig = require(Replicatedstorage.Shared.Config.Rarity)
+local Remotemanager = require(Replicatedstorage.Shared.Packages.RemoteManager)
 
 local UnknownText = "???"
+local SellText = "Sell {1}"
 local CheerFadeInSeconds = 0.7
 local CrossfadeSeconds = 1.4
 local CrossfadeTweenInfo = TweenInfo.new(CrossfadeSeconds, Enum.EasingStyle.Linear)
@@ -145,6 +147,10 @@ function Completioncontroller:Init()
 	self.preview = self.frame:WaitForChild("ObjectPreview")
 	self.viewport = if self.preview:IsA("ViewportFrame") then self.preview else nil
 	self.nextButton = self.frame:WaitForChild("NextButton") :: GuiButton
+	self.sellButton = self.frame:WaitForChild("SellButton") :: GuiButton
+	self.sellText = self.sellButton:WaitForChild("Text")
+	self.sellButton.Visible = false
+	Translation.Prepare({ SellText })
 	local Statsframe = self.frame:WaitForChild("StatsFrame")
 	local Mutationframe = Statsframe:WaitForChild("MutationFrame")
 	self.objectNameText = self.frame:WaitForChild("ObjectNameText")
@@ -337,6 +343,8 @@ function Completioncontroller:PlayAppearanceAnimation()
 	end
 	Buttonscale.Scale = 0
 	self.nextButton.Visible = false
+	self.sellScale.Scale = 0
+	self.sellButton.Visible = false
 	self.rotation = math.rad(-18)
 	self.pitch = 0
 end
@@ -465,7 +473,17 @@ function Completioncontroller:PlayProgressAnimation()
 				)
 				:Play()
 		end
+		self:RevealSell()
 	end)
+end
+
+function Completioncontroller:RevealSell()
+	if not self.saleValue or not self.nextButton.Visible or self.sellButton.Visible or self.closing then
+		return
+	end
+	Translation.Set(self.sellText, SellText, Formatcurrency(self.saleValue))
+	self.sellButton.Visible = true
+	Tweenservice:Create(self.sellScale, TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 end
 
 function Completioncontroller:PlayExitAnimation(Onfinished: () -> ())
@@ -556,11 +574,20 @@ function Completioncontroller:AnimateObjectArrival()
 	end)
 end
 
-function Completioncontroller:Show(Object: RestorationObject, Oncontinue: () -> ())
+function Completioncontroller:Show(Object: RestorationObject, Oncontinue: (Sell: boolean?) -> ())
 	self:Hide()
 	self:EnsurePreviewObjects()
 	self.closing = false
 	self.onContinue = Oncontinue
+	self.saleValue = nil
+	local Celebrationid = self.celebrationId
+	task.spawn(function()
+		local Value = Remotemanager:InvokeServer("RestorationService", "GetCompletionSale")
+		if self.celebrationId == Celebrationid and Value and Value > 0 then
+			self.saleValue = Value
+			self:RevealSell()
+		end
+	end)
 	self:ApplyProgressStats(Object)
 	for _, Name in ipairs({ "CleanedSpots", "Mutation" }) do
 		table.insert(self.statsConnections, Object:GetAttributeChangedSignal(Name):Connect(function()
@@ -697,6 +724,40 @@ function Completioncontroller:Update(Deltatime: number)
 	end
 end
 
+function Completioncontroller:BindButton(Button: GuiButton, Sell: boolean): UIScale
+	Core:GetController("GamepadController"):OnActivated(Button, function()
+		local Oncontinue = self.onContinue
+		if Oncontinue and not self.closing then
+			self:PlayExitAnimation(function()
+				Oncontinue(Sell)
+			end)
+		end
+	end)
+	local Buttonscale = Button:FindFirstChildOfClass("UIScale") or Instance.new("UIScale")
+	Buttonscale.Parent = Button
+	Button.MouseEnter:Connect(function()
+		if not self.closing then
+			Tweenservice:Create(Buttonscale, TweenInfo.new(0.16, Enum.EasingStyle.Quad), { Scale = 1.08 }):Play()
+		end
+	end)
+	Button.MouseLeave:Connect(function()
+		if not self.closing then
+			Tweenservice:Create(Buttonscale, TweenInfo.new(0.16, Enum.EasingStyle.Quad), { Scale = 1 }):Play()
+		end
+	end)
+	Button.MouseButton1Down:Connect(function()
+		if not self.closing then
+			Tweenservice:Create(Buttonscale, TweenInfo.new(0.08, Enum.EasingStyle.Quad), { Scale = 0.94 }):Play()
+		end
+	end)
+	Button.MouseButton1Up:Connect(function()
+		if not self.closing then
+			Tweenservice:Create(Buttonscale, TweenInfo.new(0.1, Enum.EasingStyle.Quad), { Scale = 1.08 }):Play()
+		end
+	end)
+	return Buttonscale
+end
+
 function Completioncontroller:Start()
 	Core:GetController("GamepadController"):RegisterMenu({
 		Priority = 40,
@@ -708,34 +769,8 @@ function Completioncontroller:Start()
 			if Oncontinue then self:PlayExitAnimation(Oncontinue) end
 		end,
 	})
-	Core:GetController("GamepadController"):OnActivated(self.nextButton, function()
-		local Oncontinue = self.onContinue
-		if Oncontinue and not self.closing then
-			self:PlayExitAnimation(Oncontinue)
-		end
-	end)
-	local Buttonscale = self.nextButton:FindFirstChildOfClass("UIScale") or Instance.new("UIScale")
-	Buttonscale.Parent = self.nextButton
-	self.nextButton.MouseEnter:Connect(function()
-		if not self.closing then
-			Tweenservice:Create(Buttonscale, TweenInfo.new(0.16, Enum.EasingStyle.Quad), { Scale = 1.08 }):Play()
-		end
-	end)
-	self.nextButton.MouseLeave:Connect(function()
-		if not self.closing then
-			Tweenservice:Create(Buttonscale, TweenInfo.new(0.16, Enum.EasingStyle.Quad), { Scale = 1 }):Play()
-		end
-	end)
-	self.nextButton.MouseButton1Down:Connect(function()
-		if not self.closing then
-			Tweenservice:Create(Buttonscale, TweenInfo.new(0.08, Enum.EasingStyle.Quad), { Scale = 0.94 }):Play()
-		end
-	end)
-	self.nextButton.MouseButton1Up:Connect(function()
-		if not self.closing then
-			Tweenservice:Create(Buttonscale, TweenInfo.new(0.1, Enum.EasingStyle.Quad), { Scale = 1.08 }):Play()
-		end
-	end)
+	self:BindButton(self.nextButton, false)
+	self.sellScale = self:BindButton(self.sellButton, true)
 	Userinputservice.InputBegan:Connect(function(Input)
 		self:InputBegan(Input)
 	end)

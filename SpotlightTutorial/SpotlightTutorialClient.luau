@@ -266,7 +266,7 @@ local function Enablecamera(Target: GuiButton)
 	local Buttonstates: { [GuiButton]: { Interactable: boolean, Active: boolean } } = {}
 
 	local function Disablebutton(Object: Instance)
-		if Object:IsA("GuiButton") and Object ~= Target and Buttonstates[Object] == nil then
+		if Object:IsA("GuiButton") and Object ~= Target and not Object:IsDescendantOf(Target) and Buttonstates[Object] == nil then
 			Buttonstates[Object] = {
 				Interactable = Object.Interactable,
 				Active = Object.Active,
@@ -385,6 +385,16 @@ local function Runstep(Step: Step, Index: number)
 		end
 	end
 
+	local Inputconnection = Userinputservice.InputBegan:Connect(function(Input)
+		local Inputtype = Input.UserInputType
+		if Inputtype ~= Enum.UserInputType.MouseButton1 and Inputtype ~= Enum.UserInputType.Touch then
+			return
+		end
+		if Spotlight.Visible and table.find(Playergui:GetGuiObjectsAtPosition(Input.Position.X, Input.Position.Y), Currenttarget) then
+			Pressed()
+		end
+	end)
+
 	Spotlight.Visible = false
 	Label.Text = Step.Text
 	while not Finished do
@@ -423,6 +433,7 @@ local function Runstep(Step: Step, Index: number)
 		end
 		Runservice.RenderStepped:Wait()
 	end
+	Inputconnection:Disconnect()
 	Releaseinput()
 	Disconnectpress()
 	Spotlight.Visible = false

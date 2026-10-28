@@ -6,6 +6,7 @@ local TweenService = game:GetService("TweenService")
 
 local Core = require(ReplicatedStorage.Shared.Packages.Core)
 local Config = require(ReplicatedStorage.Shared.Config.FreeReward)
+local Lessonsconfig = require(ReplicatedStorage.Shared.Config.Lessons)
 local Rarityconfig = require(ReplicatedStorage.Shared.Config.Rarity)
 local RemoteManager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
 local Icon = require(ReplicatedStorage.Shared:WaitForChild("Utils"):WaitForChild("Icon"))
@@ -58,6 +59,9 @@ function GroupRewardController:CanPopup(): boolean
 	return Player:GetAttribute("FreeRewardClaimed") == false
 		and not self:IsClaimed()
 		and not self:IsOpen()
+		and not Core:GetController("EventController").prompting
+		and Lessonsconfig.LearnedAll(Player:GetAttribute("Lessons"))
+		and not Core:GetController("CustomerController"):IsStartingItem()
 		and not Core:GetController("TutorialController").running
 		and Core:GetController("GamepadController"):IsIdle()
 		and Core:GetController("InspectionCameraController"):IsIntroCameraReady()
