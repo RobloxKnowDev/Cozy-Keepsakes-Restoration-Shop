@@ -1001,7 +1001,7 @@ local function OpenShop(Player: Player)
 		NextCustomerAt = 0,
 		ArrivedToday = 0,
 		NeedsInstantCustomer = true,
-		Directcustomer = Intutorial,
+		Directcustomer = Intutorial or Core:GetService("DayNightService"):IsBusinessHours(Player),
 		Quickreturn = false,
 	}
 	Commonstreaks[Player] = Commonstreaks[Player] or 0

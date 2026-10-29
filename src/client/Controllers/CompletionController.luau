@@ -150,6 +150,7 @@ function Completioncontroller:Init()
 	self.sellButton = self.frame:WaitForChild("SellButton") :: GuiButton
 	self.sellText = self.sellButton:WaitForChild("Text")
 	self.sellButton.Visible = false
+	self.finished = 0
 	Translation.Prepare({ SellText })
 	local Statsframe = self.frame:WaitForChild("StatsFrame")
 	local Mutationframe = Statsframe:WaitForChild("MutationFrame")
@@ -320,6 +321,7 @@ function Completioncontroller:PlayAppearanceAnimation()
 		self:AnimateObjectArrival()
 		self:StartConfetti()
 		self:PlayProgressAnimation()
+		self:RevealNext()
 		task.delay(0.1, function()
 			if not self.frame.Visible or self.closing then
 				return
@@ -456,25 +458,21 @@ function Completioncontroller:PlayProgressAnimation()
 			end
 		end)
 	end
+end
 
-	local Buttondelay = Startdelay + math.max(#Rows - 1, 0) * Rowdelay + 0.42
-	task.delay(Buttondelay, function()
-		if self.celebrationId ~= Celebrationid or not self.frame.Visible or self.closing then
-			return
-		end
-		self.nextButton.Visible = true
-		local Buttonscale = self.nextButton:FindFirstChildOfClass("UIScale")
-		if Buttonscale then
-			Tweenservice
-				:Create(
-					Buttonscale,
-					TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-					{ Scale = 1 }
-				)
-				:Play()
-		end
-		self:RevealSell()
-	end)
+function Completioncontroller:RevealNext()
+	self.nextButton.Visible = true
+	local Buttonscale = self.nextButton:FindFirstChildOfClass("UIScale")
+	if Buttonscale then
+		Tweenservice
+			:Create(
+				Buttonscale,
+				TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+				{ Scale = 1 }
+			)
+			:Play()
+	end
+	self:RevealSell()
 end
 
 function Completioncontroller:RevealSell()
@@ -577,6 +575,7 @@ end
 function Completioncontroller:Show(Object: RestorationObject, Oncontinue: (Sell: boolean?) -> ())
 	self:Hide()
 	self:EnsurePreviewObjects()
+	self.finished += 1
 	self.closing = false
 	self.onContinue = Oncontinue
 	self.saleValue = nil

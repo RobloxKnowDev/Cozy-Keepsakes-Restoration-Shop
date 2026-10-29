@@ -284,8 +284,21 @@ function DailyRewardController:ShowTomorrow()
 	Core:GetController("MessageController"):Show(TomorrowText, Gradient, Translation.Format(Reward.ValueText))
 end
 
-function DailyRewardController:OpenFromTutorial()
-	self.topbarIcon:select()
+function DailyRewardController:OpenAfterItems()
+	self.openAfter = Core:GetController("CompletionController").finished + Config.OpenAfterItems
+end
+
+function DailyRewardController:CanPopup(): boolean
+	return self.openAfter ~= nil
+		and Core:GetController("CompletionController").finished >= self.openAfter
+		and self:IsRewardAvailable()
+		and self:CanOpen()
+		and not Core:GetController("GroupRewardController"):IsOpen()
+		and not Core:GetController("EventController").prompting
+		and not Core:GetController("CustomerController"):IsVisible()
+		and not Core:GetController("CustomerController"):IsStartingItem()
+		and Core:GetController("GamepadController"):IsIdle()
+		and Core:GetController("InspectionCameraController"):IsIntroCameraReady()
 end
 
 function DailyRewardController:CloseForSwitch()
@@ -450,6 +463,10 @@ function DailyRewardController:Start()
 		while true do
 			task.wait(1)
 			self:Refresh()
+			if self:CanPopup() then
+				self.openAfter = nil
+				self.topbarIcon:select()
+			end
 			if
 				not Reminded
 				and os.clock() - Startedat >= ReminderDelay

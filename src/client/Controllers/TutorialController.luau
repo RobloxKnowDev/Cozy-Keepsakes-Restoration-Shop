@@ -759,7 +759,7 @@ function Tutorialcontroller:Finish()
 	Core:GetController("ComputerController"):SetSellLocked(false)
 	Core:GetController("RestorationController"):GetInterface():SetContinueLocked(false)
 	Remotemanager:FireServer(Servicename, "Complete")
-	Core:GetController("DailyRewardController"):OpenFromTutorial()
+	Core:GetController("DailyRewardController"):OpenAfterItems()
 end
 
 local function Restoration()

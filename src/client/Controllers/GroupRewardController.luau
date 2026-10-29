@@ -61,6 +61,7 @@ function GroupRewardController:CanPopup(): boolean
 		and not self:IsOpen()
 		and not Core:GetController("EventController").prompting
 		and Lessonsconfig.LearnedAll(Player:GetAttribute("Lessons"))
+		and Core:GetController("CompletionController").finished >= Config.PopupAfterItems
 		and not Core:GetController("CustomerController"):IsStartingItem()
 		and not Core:GetController("TutorialController").running
 		and Core:GetController("GamepadController"):IsIdle()

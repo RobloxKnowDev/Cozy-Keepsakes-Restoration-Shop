@@ -5,4 +5,5 @@ return {
 	CheckSeconds = 3,
 	FirstPopupSeconds = 60,
 	PopupSeconds = 420,
+	PopupAfterItems = 3,
 }
