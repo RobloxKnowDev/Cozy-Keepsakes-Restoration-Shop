@@ -45,7 +45,22 @@ function Codeservice:GrantReward(Player: Player, Reward: any): boolean
 		Core:GetService("DailyRewardService"):GrantSaleBoost(Player, tonumber(Reward.DurationSeconds) or 0)
 		return true
 	end
+	if Reward.Type == "LuckBoost" then
+		Core:GetService("MonetizationService"):GrantReputationBoost(Player, tonumber(Reward.DurationSeconds) or 0)
+		return true
+	end
 	return false
+end
+
+function Codeservice:GetLeaderboardCodes(): { string }
+	local Codes = {}
+	for Code, Reward in pairs(Rewardsbycode) do
+		if Reward.Leaderboard then
+			table.insert(Codes, Code)
+		end
+	end
+	table.sort(Codes)
+	return Codes
 end
 
 function Codeservice:RedeemCode(Player: Player, Code: any)
@@ -70,6 +85,9 @@ function Codeservice:RedeemCode(Player: Player, Code: any)
 		return { Success = false, Reason = "RewardFailed" }
 	end
 
+	task.spawn(function()
+		Core:GetService("DataService"):Save(Player)
+	end)
 	return { Success = true, Code = Normalized, ValueText = tostring(Reward.ValueText) }
 end
 

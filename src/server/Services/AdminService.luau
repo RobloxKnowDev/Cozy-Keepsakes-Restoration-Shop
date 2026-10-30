@@ -13,11 +13,14 @@ local Monetizationconfig = require(ReplicatedStorage.Shared.Config.Monetization)
 local Objectconfig = require(ReplicatedStorage.Shared.Config.Object)
 local Playerreport = require(script.Parent.Parent.Utils.Playerreport)
 local Remotemanager = require(ReplicatedStorage.Shared.Packages.RemoteManager)
+local Separatenumber = require(ReplicatedStorage.Shared.Utils.NumberAbbreviator)
 local Upgradesconfig = require(ReplicatedStorage.Shared.Config.Upgrades)
 
 local Banstore = DataStoreService:GetDataStore("Bans_v1")
 local Banattempts = 3
 local Versioncount = 8
+local Codeboardcount = 20
+local Codeboardmaximum = 100
 local Maximumnumber = 1e12
 local Listings: { [Player]: { Userid: number, Versions: { any } } } = {}
 local Broadcasttopic = "AdminBroadcast"
@@ -648,6 +651,38 @@ local Commands = {
 		end,
 	},
 	{
+		Name = "codeboard",
+		Usage = "codeboard <code> [count]",
+		Description = "Luck ranking of the players who entered a contest code",
+		Arguments = { "code", "number" },
+		Run = function(_Caller: Player, Arguments: { string }): string
+			if #Arguments < 1 or #Arguments > 2 then
+				return "Usage: codeboard <code> [count]"
+			end
+			local Code = string.upper(Arguments[1])
+			if not table.find(Core:GetService("CodeService"):GetLeaderboardCodes(), Code) then
+				return "No leaderboard for code: " .. Arguments[1]
+			end
+			local Parsed = if Arguments[2] then Parsenumber(Arguments[2]) else Codeboardcount
+			if not Parsed then
+				return "Invalid count: " .. tostring(Arguments[2])
+			end
+			local Count = math.clamp(math.floor(Parsed), 1, Codeboardmaximum)
+			local Read, Entries = Core:GetService("LeaderboardService"):ReadCode(Code, Count)
+			if not Read then
+				return Code .. ": could not read the leaderboard, " .. tostring(Entries)
+			end
+			if #Entries == 0 then
+				return Code .. ": nobody entered the code yet"
+			end
+			local Lines = { string.format("%s: top %d by Luck (no boosts, 2x pass counts)", Code, #Entries) }
+			for Rank, Entry in ipairs(Entries) do
+				table.insert(Lines, string.format("#%d %s (%d): %s Luck", Rank, Entry.Name, Entry.UserId, Separatenumber(Entry.Value)))
+			end
+			return table.concat(Lines, "\n")
+		end,
+	},
+	{
 		Name = "save",
 		Usage = "save <player>",
 		Description = "Force an immediate save",
@@ -745,7 +780,8 @@ function Adminservice:Init()
 				upgrade = Upgradekeys,
 				boost = { "reputation", "sale", "serverluck" },
 				task = Taskkeys,
-				section = Playerreport.Sections(Core:GetService("DataService"):GetSectionOrder()),
+				code = Core:GetService("CodeService"):GetLeaderboardCodes(),
+				section =Playerreport.Sections(Core:GetService("DataService"):GetSectionOrder()),
 			},
 		}
 	end)

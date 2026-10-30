@@ -261,7 +261,7 @@ function Controller:Enter(Prepared: (Model | BasePart)?)
 	Interface:SetAvailable(Available)
 	Userinputservice.MouseBehavior = Enum.MouseBehavior.Default
 	Updateprogress()
-	Runtime:Select(if Available.Transform then "Transform" else "ToothBrush")
+	Runtime:Select("ToothBrush")
 end
 
 function Controller:ResumePendingEnter()

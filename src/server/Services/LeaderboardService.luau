@@ -61,6 +61,7 @@ local Shutdowndeadline = 27
 local Topic = "LeaderboardScores"
 
 local Stores: { [string]: OrderedDataStore } = {}
+local Codestores: { [string]: OrderedDataStore } = {}
 local Entriesbyboard: { [string]: { Entry } } = {}
 local Lastwritten: { [Player]: { [string]: number } } = {}
 local Namesbyuserid: { [number]: string } = {}
@@ -93,13 +94,11 @@ local function Mergescore(Board: string, Userid: number, Value: number)
 	end
 end
 
-local function Resolvenames()
+local function Fetchnames(Entries: { Entry })
 	local Missing = {}
-	for _, Board in ipairs(Boardorder) do
-		for _, Current in ipairs(Entriesbyboard[Board]) do
-			if not Namesbyuserid[Current.UserId] and not table.find(Missing, Current.UserId) then
-				table.insert(Missing, Current.UserId)
-			end
+	for _, Current in ipairs(Entries) do
+		if not Namesbyuserid[Current.UserId] and not table.find(Missing, Current.UserId) then
+			table.insert(Missing, Current.UserId)
 		end
 	end
 	for First = 1, #Missing, Namebatchsize do
@@ -114,6 +113,14 @@ local function Resolvenames()
 			end
 		end
 	end
+end
+
+local function Resolvenames()
+	local Entries = {}
+	for _, Board in ipairs(Boardorder) do
+		table.move(Entriesbyboard[Board], 1, #Entriesbyboard[Board], #Entries + 1, Entries)
+	end
+	Fetchnames(Entries)
 end
 
 local function Createrow(Display: Display, Rank: number): Row
@@ -193,6 +200,20 @@ local function Writescore(Userid: number, Written: { [string]: number }?, Board:
 	end)
 end
 
+local function Writecodescore(Userid: number, Written: { [string]: number }?, Code: string, Value: number)
+	Pendingwrites += 1
+	local Success, Error = Datastorerequest.Run(Writeattempts, function()
+		Codestores[Code]:SetAsync(tostring(Userid), Value)
+	end)
+	Pendingwrites -= 1
+	if not Success then
+		warn("LeaderboardService: could not write code " .. Code .. " for " .. Userid .. ": " .. tostring(Error))
+		if Written and Written[Code] == Value then
+			Written[Code] = nil
+		end
+	end
+end
+
 local function Refreshboard(Board: string)
 	local Success, Pages = Datastorerequest.Run(Refreshattempts, function()
 		return Stores[Board]:GetSortedAsync(false, Maxentries)
@@ -242,7 +263,33 @@ function Leaderboardservice:Wipe(Userid: number)
 			MessagingService:PublishAsync(Topic, { B = Board, U = Userid, V = 0 })
 		end)
 	end
+	for Code, Store in pairs(Codestores) do
+		local Success, Error = Datastorerequest.Run(Writeattempts, function()
+			Store:RemoveAsync(tostring(Userid))
+		end)
+		if not Success then
+			warn("LeaderboardService: could not erase code " .. Code .. " for " .. Userid .. ": " .. tostring(Error))
+		end
+	end
 	Schedulepush()
+end
+
+function Leaderboardservice:ReadCode(Code: string, Count: number): (boolean, any)
+	local Success, Pages = Datastorerequest.Run(Refreshattempts, function()
+		return Codestores[Code]:GetSortedAsync(false, Count)
+	end)
+	if not Success then
+		return false, tostring(Pages)
+	end
+	local Entries = {}
+	for _, Item in ipairs(Pages:GetCurrentPage()) do
+		table.insert(Entries, { UserId = tonumber(Item.key) :: number, Value = Item.value })
+	end
+	Fetchnames(Entries)
+	for _, Current in ipairs(Entries) do
+		Current.Name = Namesbyuserid[Current.UserId] or "Unknown"
+	end
+	return true, Entries
 end
 
 function Leaderboardservice:Read(Userid: number): { { Board: string, Ok: boolean, Value: any, Rank: number? } }
@@ -321,6 +368,9 @@ function Leaderboardservice:Init()
 		List.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		Displaybyboard[Board] = { List = List, Template = Template, Rows = {} }
 	end
+	for _, Code in ipairs(Core:GetService("CodeService"):GetLeaderboardCodes()) do
+		Codestores[Code] = DataStoreService:GetOrderedDataStore("CodeLeaderboard_" .. Code .. "_v1")
+	end
 
 	Core:GetService("DataService"):Register("Leaderboard", {
 		Load = function() end,
@@ -348,6 +398,17 @@ function Leaderboardservice:Init()
 				if Needswrite then
 					Written[Board] = Value
 					task.spawn(Writescore, Player.UserId, if Release then nil else Written, Board, Value, Previous == nil)
+				end
+			end
+			local Codes = Snapshot.Codes
+			if type(Codes) ~= "table" then
+				return
+			end
+			local Luck = math.floor(tonumber(Stats.RankedReputation) or 0)
+			for Code in pairs(Codestores) do
+				if Codes[Code] == true and Written[Code] ~= Luck then
+					Written[Code] = Luck
+					task.spawn(Writecodescore, Player.UserId, if Release then nil else Written, Code, Luck)
 				end
 			end
 		end,
