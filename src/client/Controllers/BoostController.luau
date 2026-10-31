@@ -48,7 +48,17 @@ function BoostController:CreateBoost(Name: string)
 		Frame.ZIndex = BaseZIndex
 		Tooltip.Visible = false
 	end)
+	Frame.InputBegan:Connect(function(Input: InputObject)
+		local Click = self.clicks[Name]
+		if Click and (Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch) then
+			Click()
+		end
+	end)
 	return Boost
+end
+
+function BoostController:OnClick(Name: string, Callback: () -> ())
+	self.clicks[Name] = Callback
 end
 
 function BoostController:SetBoost(Name: string, EndsAt: number, LayoutOrder: number, Multiplier: number?, Description: string?, ...: any)
@@ -109,6 +119,7 @@ function BoostController:Init()
 	self.frame = PlayerGui:WaitForChild("HUD"):WaitForChild("BoostFrame")
 	self.template = self.frame:WaitForChild("Template") :: ImageLabel
 	self.boosts = {}
+	self.clicks = {}
 	self.frame.Visible = true
 	self.template.Visible = false
 end

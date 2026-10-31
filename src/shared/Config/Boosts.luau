@@ -35,4 +35,11 @@ return {
 		Icon = "rbxassetid://105316064080717",
 		Gradient = Rarity.Legendary.Gradient,
 	},
+
+	FriendBoost = {
+		Title = "Friend Boost",
+		Icon = "rbxassetid://127587294585411",
+		Gradient = Rarity.Common.Gradient,
+		SellPercent = 10,
+	},
 }

@@ -83,6 +83,7 @@ function MonetizationService:GetSaleMultiplier(Player: Player): number
 	end
 	Multiplier *= Core:GetService("DailyRewardService"):GetSaleMultiplier(Player)
 	Multiplier *= Core:GetService("InventoryService"):GetIndexSaleMultiplier(Player)
+	Multiplier *= Core:GetService("FriendService"):GetSaleMultiplier(Player)
 	return Multiplier
 end
 
